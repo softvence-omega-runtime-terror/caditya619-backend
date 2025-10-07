@@ -67,7 +67,7 @@ async def create_user(
 
 @router.get("/users", dependencies=[
         # Depends(login_required),
-        Depends(staff_required),
+        # Depends(staff_required),
         # Depends(permission_required("view_user")),
     ]
 )
