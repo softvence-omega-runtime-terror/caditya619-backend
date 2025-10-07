@@ -22,11 +22,30 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-print("DATABASE_URL", settings.DATABASE_URL)
+# print("DATABASE_URL", settings.DATABASE_URL)
+# TORTOISE_ORM = {
+#     "connections": {
+#         "default": settings.DATABASE_URL or "sqlite://db.sqlite3"   # fallback
+#     },
+#     "apps": {
+#         "models": {
+#             "models": ["applications.user.models", "aerich.models"],
+#             "default_connection": "default",
+#         },
+#     },
+#     "use_tz": True,
+#     "timezone": "UTC",
+# }
+
+
+
+from tortoise import Tortoise
+import os
+
+DATABASE_URL = os.environ.get("DATABASE_URL")  # required in production
+
 TORTOISE_ORM = {
-    "connections": {
-        "default": settings.DATABASE_URL or "sqlite://db.sqlite3"   # fallback
-    },
+    "connections": {"default": DATABASE_URL or "postgres://neondb_owner:npg_kY0Qo2RUXZVL@ep-damp-scene-adfwy4vs-pooler.c-2.us-east-1.aws.neon.tech/neondb"},
     "apps": {
         "models": {
             "models": ["applications.user.models", "aerich.models"],
@@ -37,3 +56,7 @@ TORTOISE_ORM = {
     "timezone": "UTC",
 }
 
+async def init_db():
+    await Tortoise.init(config=TORTOISE_ORM)
+    if os.environ.get("ENV") != "production":
+        await Tortoise.generate_schemas()
