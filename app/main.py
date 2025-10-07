@@ -59,7 +59,7 @@ def get_model_modules(apps):
 
 register_tortoise(
     app,
-    db_url=settings.POSTGRES_URL,
+    db_url=settings.DATABASE_URL,
     modules={"models": get_model_modules(apps)},
     generate_schemas=True,
     add_exception_handlers=True,
