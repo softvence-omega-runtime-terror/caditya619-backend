@@ -3,7 +3,8 @@ from pydantic_settings import BaseSettings
 from tortoise import Tortoise
 import os
 
-DATABASE_URL="postgres://neondb_owner:npg_zwcn6Qk1blht@ep-dark-fire-adgbt70y-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DATABASE_URL="postgres://neondb_owner:npg_zwcn6Qk1blht@ep-dark-fire-adgbt70y-pooler.c-2.us-east-1.aws.neon.tech/neondb"
+# DATABASE_URL="postgres://neondb_owner:npg_zwcn6Qk1blht@ep-dark-fire-adgbt70y-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 class Settings(BaseSettings):
     DEBUG: bool = False
