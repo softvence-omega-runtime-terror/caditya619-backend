@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if not self.DEBUG:
-            env_db_url = os.environ.get("POSTGRES_URL")
+            env_db_url = os.environ.get("DATABASE_URL")
             if env_db_url:
                 self.DATABASE_URL = env_db_url
 
