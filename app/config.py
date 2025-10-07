@@ -1,5 +1,6 @@
 from typing import Optional
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
     DEBUG: bool = False
@@ -11,6 +12,13 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env" 
         env_file_encoding = "utf-8"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if not self.DEBUG:
+            env_db_url = os.environ.get("POSTGRES_URL")
+            if env_db_url:
+                self.DATABASE_URL = env_db_url
 
 settings = Settings()
 
