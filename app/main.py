@@ -1,5 +1,6 @@
 import os
-from fastapi import FastAPI, HTTPException, UploadFile, Form
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -47,6 +48,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, debug=settings.DEBUG)
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Development Home</title>
+    </head>
+    <body>
+        <h1>🚀 FastAPI Development Server</h1>
+        <p>This is the root <code>/</code> page rendered in HTML.</p>
+    </body>
+    </html>
+    """ 
 
 apps = ["user", "item", "auth"]
 
