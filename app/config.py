@@ -13,6 +13,8 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+
+print("DATABASE", settings.DATABASE_URL)
 TORTOISE_ORM = {
     "connections": {
         "default": settings.DATABASE_URL or "sqlite://db.sqlite3"   # fallback
