@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
         await User.create(
             username="admin",
             email="admin@gmail.com",
-            password_hash=User.password("admin"),
+            password=User.hash_password("admin"),
             is_staff=True,
             is_superuser=True,
             is_active=True,
