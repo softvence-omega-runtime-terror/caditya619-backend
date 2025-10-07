@@ -3,18 +3,30 @@ from pydantic_settings import BaseSettings
 from tortoise import Tortoise
 import os
 
-DATABASE_URL="postgres://caditya:npg_ocxBXLF6NHq5@ep-dark-fire-adgbt70y-pooler.c-2.us-east-1.aws.neon.tech/caditya"
+# DATABASE_URL="postgres://caditya:npg_ocxBXLF6NHq5@ep-dark-fire-adgbt70y-pooler.c-2.us-east-1.aws.neon.tech/caditya"
+
+# class Settings(BaseSettings):
+#     DEBUG: bool = True
+#     ENV: str = "development"
+#     DATABASE_URL: str = DATABASE_URL 
+#     SECRET_KEY: Optional[str] = "c6dcf58058a6ce5204199818a25eed7eb58b6758a20df0385e29dbea6b49873dccad7449f8022dc193da4616ba10c97457aa2e16e0b2c5b0e5555fe1ac492aa1"
+
+#     class Config:
+#         env_file = None
+                
 
 class Settings(BaseSettings):
     DEBUG: bool = True
     ENV: str = "development"
-    DATABASE_URL: str = DATABASE_URL 
-    SECRET_KEY: Optional[str] = "c6dcf58058a6ce5204199818a25eed7eb58b6758a20df0385e29dbea6b49873dccad7449f8022dc193da4616ba10c97457aa2e16e0b2c5b0e5555fe1ac492aa1"
+    DATABASE_URL: str
+    SECRET_KEY: Optional[str]
 
     class Config:
-        env_file = None
-                
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        
 settings = Settings()
+
 
 
 
