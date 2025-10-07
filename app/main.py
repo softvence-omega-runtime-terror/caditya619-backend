@@ -6,7 +6,7 @@ from tortoise.contrib.fastapi import register_tortoise
 from .routes import create_sub_app
 import importlib
 from .utils import sync_permissions
-from .config import settings
+from .config import settings, init_db
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
@@ -20,6 +20,7 @@ origins = [
 async def lifespan(app: FastAPI):
     # First: sync permissions
     await sync_permissions()
+    await init_db()
 
     # Second: create default superuser
     from applications.user.models import User
@@ -61,7 +62,7 @@ register_tortoise(
     app,
     db_url=settings.DATABASE_URL,
     modules={"models": get_model_modules(apps)},
-    generate_schemas=True,
+    generate_schemas=not settings.DEBUG,
     add_exception_handlers=True,
 )
 
