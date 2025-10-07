@@ -1,8 +1,41 @@
-.vscode
-menv
-migration/models/*
+# VSCode settings
+.vscode/
+media/
 
+# Virtual environment
+menv/
+venv/
+
+# Python cache files
 __pycache__/
 */__pycache__/
 
-pyproject.toml
+# Migration cache/models
+migrations/
+migration/models/
+
+# Environment files
+.env
+.env/
+.env.local
+
+# Build and packaging
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+# Logs
+*.log
+
+# Byte-compiled / optimized / DLL files
+*.so
+*.dll
+
+# IDE or system files
+.DS_Store
+Thumbs.db
+
+# Optional: if you use Aerich
+aerich.ini
+aerich/

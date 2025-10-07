@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, HTTPException, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -83,5 +84,9 @@ app.add_middleware(
 )
 
 
+# Ensure 'media' folder exists
+MEDIA_DIR = "media"
+os.makedirs(MEDIA_DIR, exist_ok=True)
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Mount static media files
+app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
