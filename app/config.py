@@ -4,7 +4,6 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     DEBUG: bool = True
     ENV: str = "development"
-    
     # DATABASE_URL: str = "mysql://root:root@localhost:3306/mydb"
     # DATABASE_URL: str = "postgres://postgres:root@localhost:5432/mydb"
     DATABASE_URL: str = "postgres://neondb_owner:npg_kY0Qo2RUXZVL@ep-damp-scene-adfwy4vs-pooler.c-2.us-east-1.aws.neon.tech/neondb"
