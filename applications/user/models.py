@@ -4,7 +4,7 @@ from passlib.hash import bcrypt
 
 
 class Permission(Model):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(pk=True, readonly=True, hidden=True)
     name = fields.CharField(max_length=100, unique=True, editable=False)
     codename = fields.CharField(max_length=100, unique=True, editable=False)
 
@@ -50,11 +50,11 @@ class User(Model):
 
         await self.prefetch_related("user_permissions", "groups__permissions")
 
-        for perm in self.user_permissions:
+        for perm in self.user_permissions and self.is_staff:
             if perm.codename == codename:
                 return True
 
-        for group in self.groups:
+        for group in self.groups and self.is_staff:
             for perm in group.permissions:
                 if perm.codename == codename:
                     return True
