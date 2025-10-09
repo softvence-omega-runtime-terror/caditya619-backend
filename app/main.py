@@ -14,35 +14,35 @@ from fastapi.staticfiles import StaticFiles
 
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await sync_permissions()
-    await init_db()
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     await sync_permissions()
+#     await init_db()
 
-    # Second: create default superuser
-    from applications.user.models import User
-    admin_user = await User.filter(username="admin").first()
-    if not admin_user:
-        await User.create(
-            username="admin",
-            email="admin@gmail.com",
-            password=User.hash_password("admin"),
-            is_staff=True,
-            is_superuser=True,
-            is_active=True,
-        )
-        print("✅ Default superuser created: username=admin, password=admin")
-    else:
-        print("ℹ️ Default superuser already exists.")
+#     # Second: create default superuser
+#     from applications.user.models import User
+#     admin_user = await User.filter(username="admin").first()
+#     if not admin_user:
+#         await User.create(
+#             username="admin",
+#             email="admin@gmail.com",
+#             password=User.hash_password("admin"),
+#             is_staff=True,
+#             is_superuser=True,
+#             is_active=True,
+#         )
+#         print("✅ Default superuser created: username=admin, password=admin")
+#     else:
+#         print("ℹ️ Default superuser already exists.")
 
-    # Let FastAPI run
-    yield
+#     # Let FastAPI run
+#     yield
 
-    # Optional: shutdown tasks here
-    print("Application shutdown complete.")
+#     # Optional: shutdown tasks here
+#     print("Application shutdown complete.")
 
 
-app = FastAPI(lifespan=lifespan, debug=settings.DEBUG)
+app = FastAPI(debug=settings.DEBUG)
 
 apps = ["user", "item", "auth"]
 
