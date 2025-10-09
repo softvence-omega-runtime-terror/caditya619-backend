@@ -5,8 +5,8 @@ from passlib.hash import bcrypt
 
 class Permission(Model):
     id = fields.IntField(pk=True)
-    name = fields.CharField(max_length=100, unique=True)
-    codename = fields.CharField(max_length=100, unique=True)
+    name = fields.CharField(max_length=100, unique=True, editable=False)
+    codename = fields.CharField(max_length=100, unique=True, editable=False)
 
     def __str__(self):
         return f"{self.codename}"
@@ -47,14 +47,22 @@ class User(Model):
     async def has_permission(self, codename: str) -> bool:
         if self.is_superuser:
             return True
-        if await self.user_permissions.filter(codename=codename).exists():
-            return True
-        if await Permission.filter(
-            codename=codename,
-            groups__in=await self.groups.all()
-        ).exists():
-            return True
+
+        await self.prefetch_related("user_permissions", "groups__permissions")
+
+        for perm in self.user_permissions:
+            if perm.codename == codename:
+                return True
+
+        for group in self.groups:
+            for perm in group.permissions:
+                if perm.codename == codename:
+                    return True
+
         return False
+
+    
+
     @classmethod
     def hash_password(cls, password: str) -> str:
         return bcrypt.hash(password)
