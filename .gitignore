@@ -39,3 +39,6 @@ Thumbs.db
 # Optional: if you use Aerich
 aerich.ini
 aerich/
+sqlite.db
+sqlite.db-shm
+sqlite.db-wal

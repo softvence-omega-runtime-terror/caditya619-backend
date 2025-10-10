@@ -1,16 +1,16 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Form
 from applications.user.models import User, Permission, Group
 from app.auth import *
+from tortoise.contrib.pydantic import pydantic_model_creator
 
 permission = APIRouter()
 
 # Create Group -> superuser only
-@permission.post("/groups", dependencies=[
-        Depends(login_required),
-        # Depends(staff_required),
-        # Depends(permission_required("view_user")),
-    ]
-)
+Group_Pydantic = pydantic_model_creator(Group, name="Group", exclude=[])
+
+@permission.post("/groups", response_model=Group_Pydantic, dependencies=[
+    Depends(permission_required("add_group")),
+])
 async def create_group(
     name: str = Form(..., description="Group name"),
 ):
@@ -22,11 +22,8 @@ async def create_group(
 
 # List Groups -> staff + superuser
 @permission.get("/groups", dependencies=[
-        Depends(login_required),
-        # Depends(staff_required),
-        # Depends(permission_required("view_user")),
-    ]
-)
+    Depends(permission_required("view_group")),
+])
 async def list_groups():
     groups = await Group.all().values("id", "name")
     return groups
@@ -34,11 +31,8 @@ async def list_groups():
 
 # Assign permissions to group -> superuser only
 @permission.post("/groups/{group_id}/permissions", dependencies=[
-        Depends(login_required),
-        # Depends(staff_required),
-        # Depends(permission_required("view_user")),
-    ]
-)
+    Depends(permission_required("update_group")),
+])
 async def assign_permissions_to_group(
     group_id: int,
     permission_ids: list[int] = Form(..., description="List of permission IDs"),
@@ -55,35 +49,10 @@ async def assign_permissions_to_group(
     return {"message": f"Permissions assigned to group '{group.name}'"}
 
 
-# Create Permission -> superuser only
-@permission.post("/permissions", dependencies=[
-        Depends(superuser_required),
-        # Depends(staff_required),
-    ]
-)
-async def create_permission(
-    name: str = Form(..., description="Permission name (e.g. Can edit items)"),
-    codename: str = Form(..., description="Unique codename (e.g. edit_item)"),
-):
-    if await Permission.filter(codename=codename).exists():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Permission with codename '{codename}' already exists"
-        )
-
-    permission = await Permission.create(name=name, codename=codename)
-    return {
-        "message": f"Permission '{permission.name}' created",
-        "id": permission.id,
-        "codename": permission.codename,
-    }
-
 
 @permission.get("/permissions", dependencies=[
-        Depends(login_required),
-        Depends(superuser_required),
-    ]
-)
+    Depends(permission_required("view_permission")),
+])
 async def list_permissions():
     return await Permission.all().values("id", "name", "codename")
 

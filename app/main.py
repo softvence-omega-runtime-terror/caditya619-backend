@@ -13,14 +13,10 @@ from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
 
-origins = [
-    "http://localhost:3000",   
-    "http://127.0.0.1:3000",
-]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # First: sync permissions
     await sync_permissions()
     await init_db()
 
@@ -91,10 +87,13 @@ for app_name in apps:
     app.mount(f"/{app_name}", sub_app)
     
     
-
+ALLOWED_HOST = [
+    "http://localhost:3000",   
+    "http://127.0.0.1:3000",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,    
+    allow_origins=ALLOWED_HOST,    
     allow_credentials=True,
     allow_methods=["*"],     
     allow_headers=["*"],     
