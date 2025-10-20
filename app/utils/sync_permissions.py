@@ -20,25 +20,3 @@ async def sync_permissions():
     await Permission.exclude(codename__in=valid_codenames).delete()
     
     
-import uuid
-from slugify import slugify 
-
-def generate_random_suffix(length=5):
-    return uuid.uuid4().hex[:length]
-
-async def generate_unique(
-    text: str,
-    model,
-    field: str = "username",
-    max_length: int = 50,
-    suffix_length: int = 5,
-):
-    # Make sure base slug fits within max length (reserving space for suffix)
-    base_slug = slugify(text)[: max_length - suffix_length]
-    slug = f"{base_slug}{generate_random_suffix(suffix_length)}"
-
-    # Keep regenerating until slug is unique
-    while await model.filter(**{field: slug}).exists():
-        slug = f"{base_slug}{generate_random_suffix(suffix_length)}"
-
-    return slug

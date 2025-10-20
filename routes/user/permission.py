@@ -3,12 +3,12 @@ from applications.user.models import User, Permission, Group
 from app.auth import *
 from tortoise.contrib.pydantic import pydantic_model_creator
 
-permission = APIRouter()
+router = APIRouter(tags=['Permission'])
 
 # Create Group -> superuser only
 Group_Pydantic = pydantic_model_creator(Group, name="Group", exclude=[])
 
-@permission.post("/groups", response_model=Group_Pydantic, dependencies=[
+@router.post("/groups", response_model=Group_Pydantic, dependencies=[
     Depends(permission_required("add_group")),
 ])
 async def create_group(
@@ -21,7 +21,7 @@ async def create_group(
 
 
 # List Groups -> staff + superuser
-@permission.get("/groups", dependencies=[
+@router.get("/groups", dependencies=[
     Depends(permission_required("view_group")),
 ])
 async def list_groups():
@@ -30,7 +30,7 @@ async def list_groups():
 
 
 # Assign permissions to group -> superuser only
-@permission.post("/groups/{group_id}/permissions", dependencies=[
+@router.post("/groups/{group_id}/permissions", dependencies=[
     Depends(permission_required("update_group")),
 ])
 async def assign_permissions_to_group(
@@ -50,7 +50,7 @@ async def assign_permissions_to_group(
 
 
 
-@permission.get("/permissions", dependencies=[
+@router.get("/permissions", dependencies=[
     Depends(permission_required("view_permission")),
 ])
 async def list_permissions():

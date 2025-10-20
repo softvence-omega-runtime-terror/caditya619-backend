@@ -1,6 +1,10 @@
 # VSCode settings
 .vscode/
 media/
+.env
+
+run.py
+
 
 # Virtual environment
 menv/
@@ -11,10 +15,9 @@ __pycache__/
 */__pycache__/
 
 # Migration cache/models
-migrations/
-migration/models/
+migrations/models/
 
-# Environment files
+# Environment filesgit add 
 .env
 .env/
 .env.local
@@ -24,6 +27,17 @@ migration/models/
 *.pyo
 *.pyd
 *.sqlite3
+*.db
+*.db-shm
+*.sqlite3-shm
+*.sqlite3-wal
+*.db-wal
+*.egg-info/
+dist/
+build/
+
+
+
 
 # Logs
 *.log
@@ -39,6 +53,3 @@ Thumbs.db
 # Optional: if you use Aerich
 aerich.ini
 aerich/
-sqlite.db
-sqlite.db-shm
-sqlite.db-wal

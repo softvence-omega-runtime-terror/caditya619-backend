@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, FastAPI, Header, Cookie
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import JSONResponse
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
@@ -21,7 +20,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login_auth2")
 
-router = APIRouter()
 
 
 # =========================
@@ -112,28 +110,3 @@ async def get_current_user(
         raise HTTPException(status_code=403, detail="Inactive user")
 
     return user
-
-
-# # =========================
-# # MIDDLEWARE FOR NEW TOKENS
-# # =========================
-# app = FastAPI()
-
-# @app.middleware("http")
-# async def attach_new_tokens(request: Request, call_next):
-#     response = await call_next(request)
-#     if hasattr(request.state, "new_tokens"):
-#         response.headers["X-New-Access-Token"] = request.state.new_tokens["access_token"]
-#         response.headers["X-New-Refresh-Token"] = request.state.new_tokens["refresh_token"]
-#     return response
-
-
-# # =========================
-# # SAMPLE ROUTES
-# # =========================
-# @router.get("/protected")
-# async def protected_route(current_user: User = Depends(login_required)):
-#     return {"message": f"Hello, {current_user.username}"}
-
-
-# app.include_router(router, prefix="/auth", tags=["auth"])

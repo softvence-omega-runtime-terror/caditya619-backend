@@ -1,108 +1,72 @@
 import os
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
-from contextlib import asynccontextmanager
-from tortoise.contrib.fastapi import register_tortoise
-from .routes import create_sub_app
 import importlib
-from .utils import sync_permissions
-from .config import settings, init_db
 from pathlib import Path
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.config import settings, init_db
+from app.redis import init_redis, redis_client
+from app.routes import register_routes
+from app.utils.sync_permissions import sync_permissions
+from applications.user.models import User
+from app.utils.auto_routing import get_module
 
-
+# import logging
+# logging.basicConfig(level=logging.DEBUG)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await sync_permissions()
     await init_db()
-
-    # Second: create default superuser
-    from applications.user.models import User
-    admin_user = await User.filter(username="admin").first()
+    init_redis()
+    await sync_permissions()
+    
+    admin_user = await User.filter(email="admin@gmail.com").first()
     if not admin_user:
         await User.create(
             username="admin",
             email="admin@gmail.com",
-            password=User.hash_password("admin"),
+            password=User.set_password("admin"),
             is_staff=True,
             is_superuser=True,
             is_active=True,
         )
-        print("✅ Default superuser created: username=admin, password=admin")
-    else:
-        print("ℹ️ Default superuser already exists.")
-
-    # Let FastAPI run
+    for app_name in get_module(base_dir="applications"):
+        try:
+            importlib.import_module(f"applications.{app_name}.signals")
+        except ModuleNotFoundError:
+            print(f"⚠️ Warning: No signals.py in '{app_name}' sub-app.")
     yield
-
-    # Optional: shutdown tasks here
+    if redis_client:
+        await redis_client.aclose()
     print("Application shutdown complete.")
 
 
 app = FastAPI(lifespan=lifespan, debug=settings.DEBUG)
+register_routes(app)
+
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Development Home</title>
-    </head>
-    <body>
-        <h1>🚀 FastAPI Development Server</h1>
-        <p>This is the root <code>/</code> page rendered in HTML.</p>
-    </body>
-    </html>
-    """ 
-
-apps = ["user", "item", "auth"]
-
-def get_model_modules(apps):
-    modules = []
-    for app_name in apps:
-        module_path = Path(f"applications/{app_name}/models.py")
-        if module_path.exists():
-            modules.append(f"applications.{app_name}.models")
-    return modules
+    if settings.DEBUG:
+        html_path = Path("templates/development.html")
+    else:
+        html_path = Path("templates/index.html")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
 
-register_tortoise(
-    app,
-    db_url=settings.DATABASE_URL,
-    modules={"models": get_model_modules(apps)},
-    generate_schemas=not settings.DEBUG,
-    add_exception_handlers=True,
-)
 
-
-for app_name in apps:
-    routes_module = importlib.import_module(f"applications.{app_name}.routes")
-    sub_app = create_sub_app(app_name, routes_module.router)
-    app.mount(f"/{app_name}", sub_app)
-    
-    
-ALLOWED_HOST = [
-    "http://localhost:3000",   
-    "http://127.0.0.1:3000",
-]
+ALLOWED_HOST = ["http://localhost:3000", "http://127.0.0.1:3000"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_HOST,    
+    allow_origins=ALLOWED_HOST,
     allow_credentials=True,
-    allow_methods=["*"],     
-    allow_headers=["*"],     
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
-# Ensure 'media' folder exists
-MEDIA_DIR = "media"
-os.makedirs(MEDIA_DIR, exist_ok=True)
-
-# Mount static media files
-app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
+os.makedirs(settings.MEDIA_DIR, exist_ok=True)
+app.mount("/media", StaticFiles(directory=settings.MEDIA_DIR), name="media")

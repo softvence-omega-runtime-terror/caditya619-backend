@@ -2,14 +2,11 @@ from fastapi import APIRouter, HTTPException, status, Depends, Form, Query, Body
 from typing import List, Optional
 from app.auth import *
 from applications.user.models import User, Permission, Group
-from .permission import permission
+
 from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-router = APIRouter()
-router.include_router(permission, tags=["Permission"])
-
-
+router = APIRouter(tags=['User'])
 
 
 # ------------------------------------------------------------------------
