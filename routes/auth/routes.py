@@ -11,11 +11,23 @@ import re
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
+# (?:\+91[\s-]?|0)? → optional country code +91, or a leading 0.
+# [6-9] → Indian mobile numbers always start with 6, 7, 8, or 9.
+# \d{9} → remaining 9 digits (total 10 digits).
+# So it matches:
+# 9876543210
+# 09876543210
+# +919876543210
+# +91 9876543210
+# +91-9876543210
+
+
 async def detect_input_type(value: str) -> str:
     value = value.strip()
-
     email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-    phone_regex = r'^(\+?\d{1,4}[\s-]?)?\d{10,14}$'
+    # Indian phone number: 10 digits starting with 6-9, optional +91 or 0 in front
+    phone_regex = r'^(?:\+91[\s-]?|0)?[6-9]\d{9}$'
 
     if re.match(email_regex, value):
         return 'email'
@@ -28,14 +40,14 @@ async def detect_input_type(value: str) -> str:
 class OAuth2EmailPasswordForm:
     def __init__(
         self,
-        email: EmailStr = Form(...),
-        password: str = Form(...),
+        # email: EmailStr = Form(...),
+        phone: str = Form(...),
+        otp: str = Form(...),
         scope: str = Form(""),
         client_id: str = Form(None),
         client_secret: str = Form(None),
     ):
-        self.email = email
-        self.password = password
+        self.phone = phone
         self.scopes = scope.split()
         self.client_id = client_id
         self.client_secret = client_secret
@@ -49,14 +61,14 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/login_auth2/", response_model=TokenResponse)
-async def login_auth2(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await User.get_or_none(email=form_data.username)  # <- use username as email
-    if not user or not pwd_context.verify(form_data.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+async def login_auth2(form_data: OAuth2EmailPasswordForm = Depends()):
+    user = await User.get_or_none(phone=form_data.phone)
+    # if not user or not pwd_context.verify(form_data.password, user.password):
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Invalid email or password",
+    #         headers={"WWW-Authenticate": "Bearer"},
+    #     )
 
     token_data = {
         "sub": str(user.id),
@@ -79,20 +91,21 @@ async def login_auth2(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @router.post("/login/", response_model=TokenResponse)
 async def login(
-    user_key: str = Form(...),
-    password: str = Form(...)
+    phone: str = Form(...),
+    otp: str = Form(...)
 ):
-    lookup_field = await detect_input_type(user_key)
+    lookup_field = await detect_input_type(phone)
     
-    if lookup_field == "email":
-        user = await User.get_or_none(email=user_key)
-    elif lookup_field == "phone":
-        user = await User.get_or_none(phone=user_key)
+    if lookup_field == "phone":
+        user = await User.get_or_none(phone=phone)
+        if not user:
+            raise HTTPException(status_code=404, detail='User not found')
     else:
-        user = await User.get_or_none(username=user_key)
+        raise HTTPException(status_code=400, detail='Please enter your phone no.')
 
+    verified = await verify_otp(phone, otp, purpose="login")
 
-    if not user or not pwd_context.verify(password, user.password):
+    if not user or not verified:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials"
@@ -119,22 +132,24 @@ async def login(
 
 @router.post("/signup/", response_model=dict)
 async def signup(
-    user_key: str = Form(...),
-    password: str = Form(...),
+    phone: str = Form(...),
+    name: str = Form(...),
     otp: str = Form(...),
 ):
-    await verify_otp(user_key, otp, purpose="signup")
-
-    lookup_field = await detect_input_type(user_key)
-    if lookup_field not in ["email", "phone"]:
+    lookup_field = await detect_input_type(phone)
+    if lookup_field not in ["phone"]:
         raise HTTPException(status_code=400, detail=f"{lookup_field.capitalize()} is not valid")
+    
+    verified = await verify_otp(phone, otp, purpose="signup")
 
-    existing_user = await User.get_or_none(**{lookup_field: user_key})
+    existing_user = await User.get_or_none(**{lookup_field: phone})
     if existing_user:
         raise HTTPException(status_code=400, detail=f"{lookup_field.capitalize()} already registered")
+    
+    if not verified:
+        raise HTTPException(status_code=400, detail=f"OTP not verified.")
 
-    hashed_password = pwd_context.hash(password)
-    user = await User.create(**{lookup_field: user_key}, password=hashed_password)
+    user = await User.create(**{lookup_field: phone}, name=name)
 
     token_data = {
         "sub": str(user.id),
@@ -249,28 +264,29 @@ async def verify_token(request: Request, user: User = Depends(get_current_user))
 
 @router.post("/send_otp/")
 async def send_otp(
-    user_key: str = Form(...),
+    phone: str = Form(...),
     purpose: str = Form(...),
 ):
-    key_type = await detect_input_type(user_key)
-    if key_type == "email":
-        user = await User.get_or_none(email=user_key)
-    elif key_type == "phone":
-        user = await User.get_or_none(phone=user_key)
-    else:
-        user = await User.get_or_none(username=user_key)
+    lookup_field = await detect_input_type(phone)
+    print(">>>>>>>>>>>>>>>>>>>> lookup_field: ", lookup_field)
+    if not lookup_field == "phone":
+        raise HTTPException(status_code=400, detail="Enter correct phone number.")
         
-    if purpose == "forgot_password":
+    user = await User.get_or_none(phone=phone)
+    if purpose == "login":
+        if not user:
+            raise HTTPException(status_code=400, detail="User not found.")
+    elif purpose == "forgot_password":
         if not user:
             raise HTTPException(status_code=400, detail="User not found for password reset.")
     elif purpose == "signup":
         if user:
-            raise HTTPException(status_code=400, detail=f"{key_type} already registered.")
+            raise HTTPException(status_code=400, detail=f"{phone} already registered.")
     else:
         raise HTTPException(status_code=400, detail="Invalid purpose.")
     
     try:
-        otp = await generate_otp(user_key, purpose)
+        await generate_otp(phone, purpose)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -278,7 +294,7 @@ async def send_otp(
 
     return {
         "status": "success",
-        "message": f"OTP sent to {user_key}. Expires in 1 minute.",
+        "message": f"OTP sent to {phone}. Expires in 1 minute.",
         "purpose": purpose,
     }
 

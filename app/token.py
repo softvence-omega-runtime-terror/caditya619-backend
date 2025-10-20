@@ -4,6 +4,9 @@ from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from tortoise.exceptions import DoesNotExist
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer()
 
 from applications.user.models import User
 
@@ -13,12 +16,13 @@ from applications.user.models import User
 SECRET_KEY = "viB2ysUJ7a91SRDPZIHWtjIUlpH-m0Ye0dnrtzsoO1M"
 REFRESH_SECRET_KEY = "IeesoMBlYQjADtCqclUXr58la1ZvlRkqnfcWUNTAn4Q"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+ACCESS_TOKEN_EXPIRE_MINUTES = 1000000
+REFRESH_TOKEN_EXPIRE_DAYS = 70
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login_auth2")
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login_auth2")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/verify-token")
 
 
 
@@ -45,9 +49,11 @@ def create_refresh_token(data: dict):
 # =========================
 async def get_current_user(
     request: Request,
-    token: str = Depends(oauth2_scheme),
+    # token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     refresh_token: str = Header(default=None, alias="refresh_token")
 ) -> User:
+    token = credentials.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 

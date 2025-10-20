@@ -28,9 +28,13 @@ class Group(Model):
 class User(Model):
     id = fields.IntField(pk=True)
     email = fields.CharField(max_length=100, null=True, unique=True)
-    phone = fields.CharField(max_length=20, null=True, unique=True)
+    phone = fields.CharField(max_length=20, unique=True)
     username = fields.CharField(max_length=50, unique=True, blank=True, editable=True)
-    password = fields.CharField(max_length=128)
+    name = fields.CharField(max_length=50, null=True, blank=True)
+
+    is_rider = fields.BooleanField(default=False)
+    is_vendor = fields.BooleanField(default=False)
+
     is_active = fields.BooleanField(default=True)
     is_staff = fields.BooleanField(default=False)
     is_superuser = fields.BooleanField(default=False)
@@ -62,14 +66,6 @@ class User(Model):
                         return True
         return False
 
-    
-
-    @classmethod
-    def set_password(cls, password: str) -> str:
-        return bcrypt.hash(password)
-
-    def verify_password(self, password: str) -> bool:
-        return bcrypt.verify(password, self.password_hash)
 
 
 
@@ -80,8 +76,6 @@ class User(Model):
         return f"{self.username} ({self.email})"
     
     async def save(self, *args, **kwargs):
-        if self.password and not self.password.startswith("$2b$"):
-            self.password = self.set_password(self.password)
         if not self.username:
             base_text = self.email or self.phone or "user"
             self.username = await generate_unique(
@@ -110,6 +104,5 @@ class Profile(Model):
     photo = fields.CharField(max_length=255, null=True, blank=True)
     banner = fields.CharField(max_length=255, null=True, blank=True)
     
-
     class Meta:
         table = "profiles"

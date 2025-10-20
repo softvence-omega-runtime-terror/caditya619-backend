@@ -24,15 +24,12 @@ async def lifespan(app: FastAPI):
     init_redis()
     await sync_permissions()
     
-    admin_user = await User.filter(email="admin@gmail.com").first()
+    admin_user = await User.filter(phone="0123456789").first()
     if not admin_user:
         await User.create(
-            username="admin",
-            email="admin@gmail.com",
-            password=User.set_password("admin"),
+            phone="0123456789",
             is_staff=True,
-            is_superuser=True,
-            is_active=True,
+            is_superuser=True
         )
     for app_name in get_module(base_dir="applications"):
         try:
