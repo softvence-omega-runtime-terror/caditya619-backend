@@ -27,7 +27,7 @@ async def detect_input_type(value: str) -> str:
     value = value.strip()
     email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     # Indian phone number: 10 digits starting with 6-9, optional +91 or 0 in front
-    phone_regex = r'^(?:\+91[\s-]?|0)?[6-9]\d{9}$'
+    phone_regex = r'^\+?[1-9]\d{0,3}?[\s-]?(?:\(?\d{1,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}$'
 
     if re.match(email_regex, value):
         return 'email'
