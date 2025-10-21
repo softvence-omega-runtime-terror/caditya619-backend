@@ -27,7 +27,7 @@ async def detect_input_type(value: str) -> str:
     value = value.strip()
     email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     # Indian phone number: 10 digits starting with 6-9, optional +91 or 0 in front
-    phone_regex = r'^\+?[1-9]\d{0,3}?[\s-]?(?:\(?\d{1,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}$'
+    phone_regex = r'^(?:\+?[1-9]\d{0,3}[\s-]?)?0?\d{9,14}$'
 
     if re.match(email_regex, value):
         return 'email'
@@ -268,7 +268,6 @@ async def send_otp(
     purpose: str = Form(...),
 ):
     lookup_field = await detect_input_type(phone)
-    print(">>>>>>>>>>>>>>>>>>>> lookup_field: ", lookup_field)
     if not lookup_field == "phone":
         raise HTTPException(status_code=400, detail="Enter correct phone number.")
         
@@ -286,7 +285,7 @@ async def send_otp(
         raise HTTPException(status_code=400, detail="Invalid purpose.")
     
     try:
-        await generate_otp(phone, purpose)
+        otp = await generate_otp(phone, purpose)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -294,7 +293,7 @@ async def send_otp(
 
     return {
         "status": "success",
-        "message": f"OTP sent to {phone}. Expires in 1 minute.",
+        "message": f"OTP sent to {phone}. Expires in 1 minute. OTP: {otp}",
         "purpose": purpose,
     }
 
