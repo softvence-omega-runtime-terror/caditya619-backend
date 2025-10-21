@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict
 from pydantic_settings import BaseSettings
 from tortoise import Tortoise
-from app.utils.auto_routing import get_module
+from app.utils.auto_routing import get_module, get_apps_structure
 from pathlib import Path
 
 
@@ -23,36 +23,24 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-apps = get_module(base_dir='applications')
-
-def get_model_modules(apps: List[str]) -> Dict[str, dict]:
-    app_configs = {}
-    for app_name in apps:
-        module_path = Path(f"applications/{app_name}/models.py")
-        if module_path.exists():
-            app_configs[app_name] = {
-                "models": [f"applications.{app_name}.models"],
-                "default_connection": "default",
-            }
-    return app_configs
+apps_config = get_apps_structure("applications")
+import json
+print(json.dumps(apps_config, indent=4))
 
 TORTOISE_ORM = {
-    "connections": {"default": settings.DATABASE_URL},
-    "apps": get_model_modules(apps) | {"aerich": {"models": ["aerich.models"]}},
+    "connections": {
+        "default": settings.DATABASE_URL,
+    },
+    "apps": apps_config | {
+        "aerich": {
+            "models": ["aerich.models"],
+        },
+    },
     "use_tz": True,
     "timezone": "Asia/Dhaka",
 }
 
-print("TORTOISE_ORM Configured:")
-for app_label, app_config in TORTOISE_ORM["apps"].items():
-    print(f"\n📦 App Label: {app_label}")
-    print(f"  🗂 Models:")
-    for model in app_config["models"]:
-        print(f"    - {model}")
-    if "default_connection" in app_config:
-        print(f"  🔗 Connection: {app_config['default_connection']}")
 
-# ✅ Initialize database connection
 async def init_db():
     await Tortoise.init(config=TORTOISE_ORM)
     if settings.ENV != "production":

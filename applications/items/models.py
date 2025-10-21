@@ -2,6 +2,52 @@ from tortoise import fields, models
 from app.utils.generate_unique import generate_unique
 from datetime import datetime, timedelta, timezone
 
+
+class Category(models.Model):
+    id = fields.IntField(pk=True)
+    name = fields.CharField(max_length=100, unique=True)
+    avatar = fields.CharField(max_length=500, null=True)
+    description = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+class SubCategory(models.Model):
+    id = fields.IntField(pk=True)
+    category = fields.ForeignKeyField("items.Category", related_name="subcategories", on_delete=fields.CASCADE)
+    name = fields.CharField(max_length=100)
+    avatar = fields.CharField(max_length=500, null=True)
+    description = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        unique_together = (("category", "name"),)
+
+    def __str__(self):
+        return f"{self.category.name} - {self.name}"
+
+class SubSubCategory(models.Model):
+    id = fields.IntField(pk=True)
+    subcategory = fields.ForeignKeyField("items.SubCategory", related_name="sub_subcategories", on_delete=fields.CASCADE)
+    name = fields.CharField(max_length=100)
+    avatar = fields.CharField(max_length=500, null=True)
+    description = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        unique_together = (("subcategory", "name"),)
+
+    def __str__(self):
+        return f"{self.subcategory.name} - {self.name}"
+
+
 class ItemBase(models.Model):
     id = fields.IntField(pk=True)
     title = fields.CharField(max_length=255)
