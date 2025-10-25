@@ -2,7 +2,9 @@
 .vscode/
 media/
 .env
-
+.idea
+**/.idea/
+*.iml
 run.py
 
 
@@ -17,8 +19,7 @@ __pycache__/
 # Migration cache/models
 migrations/models/
 
-# Environment filesgit add 
-.env
+# Environment filesgit add
 .env/
 .env.local
 

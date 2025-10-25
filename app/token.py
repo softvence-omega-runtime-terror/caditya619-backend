@@ -1,8 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, FastAPI, Header, Cookie
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status,  Request, Header
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
-from passlib.context import CryptContext
 from tortoise.exceptions import DoesNotExist
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -18,12 +16,6 @@ REFRESH_SECRET_KEY = "IeesoMBlYQjADtCqclUXr58la1ZvlRkqnfcWUNTAn4Q"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1000000
 REFRESH_TOKEN_EXPIRE_DAYS = 70
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login_auth2")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/verify-token")
-
 
 
 # =========================
@@ -49,7 +41,6 @@ def create_refresh_token(data: dict):
 # =========================
 async def get_current_user(
     request: Request,
-    # token: str = Depends(oauth2_scheme),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     refresh_token: str = Header(default=None, alias="refresh_token")
 ) -> User:

@@ -1,9 +1,7 @@
-from typing import Optional, List, Dict
+from typing import Optional
 from pydantic_settings import BaseSettings
 from tortoise import Tortoise
-from app.utils.auto_routing import get_module, get_apps_structure
-from pathlib import Path
-
+from app.utils.auto_routing import get_apps_structure
 
 
 class Settings(BaseSettings):
@@ -13,6 +11,7 @@ class Settings(BaseSettings):
     MEDIA_ROOT: str = "media/"
     ENV: str = "development"
     DATABASE_URL: str = "sqlite://db.sqlite3"
+    TWOFACTOR_API_KEY: str = "f1972b11-9a1c-11f0-b922-0200cd936042"
     SECRET_KEY: Optional[str] = None
     BASE_URL: str = "http://localhost:8000/"
 
@@ -20,11 +19,12 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
 
-settings = Settings()
 
+settings = Settings()
 
 apps_config = get_apps_structure("applications")
 import json
+
 print(json.dumps(apps_config, indent=4))
 
 TORTOISE_ORM = {

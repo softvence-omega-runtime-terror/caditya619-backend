@@ -14,20 +14,19 @@ def get_module(base_dir="routes"):
 def get_apps_structure(base_dir: str = "applications") -> Dict[str, dict]:
     base_path = Path(base_dir)
     app_configs = {}
+    EXCLUDED_FILES = {"signals.py", "schemas.py", "services.py"}
 
     # Loop through all subdirectories under applications/
     for app_dir in base_path.iterdir():
         if not app_dir.is_dir():
             continue
 
-        # Collect all *.py files inside this app directory
         model_files = [
             f"{base_dir}.{app_dir.name}.{file.stem}"
             for file in app_dir.glob("*.py")
-            if file.is_file() and not file.name.startswith("__") and not file.name == "signals.py"
+            if file.is_file() and not file.name.startswith("__") and file.name not in EXCLUDED_FILES
         ]
 
-        # Only add apps that actually contain model files
         if model_files:
             app_configs[app_dir.name] = {
                 "models": model_files,

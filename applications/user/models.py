@@ -23,7 +23,7 @@ class Group(Model):
 
     def __str__(self):
         return self.name
-    
+
 
 class User(Model):
     id = fields.IntField(pk=True)
@@ -40,7 +40,7 @@ class User(Model):
     is_superuser = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
-    
+
     groups: fields.ManyToManyRelation["Group"] = fields.ManyToManyField(
         "user.Group", related_name="users", through="user_groups"
     )
@@ -48,7 +48,7 @@ class User(Model):
     user_permissions: fields.ManyToManyRelation["Permission"] = fields.ManyToManyField(
         "user.Permission", related_name="users", through="user_permissions"
     )
-    
+
     async def has_permission(self, codename: str) -> bool:
         if self.is_superuser:
             return True
@@ -66,6 +66,14 @@ class User(Model):
                         return True
         return False
 
+    
+
+    @classmethod
+    def set_password(cls, password: str) -> str:
+        return bcrypt.hash(password)
+
+    def verify_password(self, password: str) -> bool:
+        return bcrypt.verify(password, self.password_hash)
 
 
 
@@ -104,5 +112,6 @@ class Profile(Model):
     photo = fields.CharField(max_length=255, null=True, blank=True)
     banner = fields.CharField(max_length=255, null=True, blank=True)
     
+
     class Meta:
         table = "profiles"

@@ -19,15 +19,17 @@ from app.utils.auto_routing import get_module
 # logging.basicConfig(level=logging.DEBUG)
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(routerAPI: FastAPI):
     await init_db()
     init_redis()
     await sync_permissions()
-    
-    admin_user = await User.filter(phone="0123456789").first()
+
+    admin_user = await User.filter(phone="+919876543210").first()
     if not admin_user:
         await User.create(
-            phone="0123456789",
+            phone="+919876543210",
+            is_rider=True,
+            is_vendor=True,
             is_staff=True,
             is_superuser=True
         )

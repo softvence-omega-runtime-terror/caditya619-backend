@@ -10,8 +10,10 @@ from app.config import settings
 # ------------------------------
 # Constants
 # ------------------------------
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "pdf", "docx", "txt", "mp4", "mp3", "avi", "mkv", "svg", "ai", "eps"}
+ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "docx", "txt", "mp4", "mp3", "avi", "mkv", "svg",
+                      "ai", "eps"]
 DEFAULT_MAX_FILE_SIZE_MB = 10  # 10 MB
+
 
 # ------------------------------
 # Helper Functions
@@ -58,14 +60,14 @@ def _get_relative_path_from_url(file_url: str) -> str | None:
 # Core Async File Handlers
 # ------------------------------
 async def save_file(
-    file: UploadFile,
-    upload_to: str,
-    *,
-    max_size: int = DEFAULT_MAX_FILE_SIZE_MB,
-    allowed_extensions=ALLOWED_EXTENSIONS,
-    compress: bool = True,
-    quality: int = 50,
-    size=(800, 800),
+        file: UploadFile,
+        upload_to: str,
+        *,
+        max_size: int = DEFAULT_MAX_FILE_SIZE_MB,
+        allowed_extensions=ALLOWED_EXTENSIONS,
+        compress: bool = True,
+        quality: int = 50,
+        size=(800, 800),
 ) -> str:
     ext = _get_extension(file.filename)
     if ext not in allowed_extensions:
@@ -119,15 +121,15 @@ async def delete_file(file_url: str) -> bool:
 
 
 async def update_file(
-    new_file: UploadFile,
-    file_url: str | None,
-    upload_to: str,
-    *,
-    max_size: int = DEFAULT_MAX_FILE_SIZE_MB,
-    allowed_extensions=ALLOWED_EXTENSIONS,
-    compress: bool = True,
-    quality: int = 50,
-    size=(800, 800),
+        new_file: UploadFile,
+        file_url: str | None,
+        upload_to: str,
+        *,
+        max_size: int = DEFAULT_MAX_FILE_SIZE_MB,
+        allowed_extensions=ALLOWED_EXTENSIONS,
+        compress: bool = True,
+        quality: int = 50,
+        size=(800, 800),
 ) -> str:
     if file_url:
         await delete_file(file_url)
@@ -141,4 +143,3 @@ async def update_file(
         quality=quality,
         size=size,
     )
-
