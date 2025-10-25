@@ -265,6 +265,7 @@ async def signup(
 
 @router.get("/verify-token/")
 async def verify_token(request: Request, user: User = Depends(get_current_user)):
+    print("verified")
     response_data = {
         "status": "success",
         "id": user.id,
