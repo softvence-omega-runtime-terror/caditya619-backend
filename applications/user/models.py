@@ -18,7 +18,7 @@ class Group(Model):
     name = fields.CharField(max_length=100, unique=True)
 
     permissions: fields.ManyToManyRelation["Permission"] = fields.ManyToManyField(
-        "user.Permission", related_name="groups", through="group_permissions"
+        "models.Permission", related_name="groups", through="group_permissions"
     )
 
     def __str__(self):
@@ -31,6 +31,7 @@ class User(Model):
     phone = fields.CharField(max_length=20, unique=True)
     username = fields.CharField(max_length=50, unique=True, blank=True, editable=True)
     name = fields.CharField(max_length=50, null=True, blank=True)
+    # Lname = fields.CharField(max_length=50, null=True, blank=True)
 
     is_rider = fields.BooleanField(default=False)
     is_vendor = fields.BooleanField(default=False)
@@ -42,11 +43,11 @@ class User(Model):
     updated_at = fields.DatetimeField(auto_now=True)
 
     groups: fields.ManyToManyRelation["Group"] = fields.ManyToManyField(
-        "user.Group", related_name="users", through="user_groups"
+        "models.Group", related_name="users", through="user_groups"
     )
 
     user_permissions: fields.ManyToManyRelation["Permission"] = fields.ManyToManyField(
-        "user.Permission", related_name="users", through="user_permissions"
+        "models.Permission", related_name="users", through="user_permissions"
     )
 
     async def has_permission(self, codename: str) -> bool:
@@ -105,7 +106,7 @@ class User(Model):
 
 class Profile(Model):
     id = fields.IntField(pk=True)
-    user = fields.OneToOneField("user.User", related_name="profile", on_delete=fields.CASCADE)
+    user = fields.OneToOneField("models.User", related_name="profile", on_delete=fields.CASCADE)
     first_name = fields.CharField(max_length=50, null=True, blank=True)
     last_name = fields.CharField(max_length=50, null=True, blank=True)
     bio = fields.TextField(null=True, blank=True)

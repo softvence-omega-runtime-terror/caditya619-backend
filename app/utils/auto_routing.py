@@ -13,10 +13,9 @@ def get_module(base_dir="routes"):
 
 def get_apps_structure(base_dir: str = "applications") -> Dict[str, dict]:
     base_path = Path(base_dir)
-    app_configs = {}
-    EXCLUDED_FILES = {"signals.py", "schemas.py", "services.py"}
+    excluded_files = {"signals.py", "schemas.py", "services.py", "base.py"}
+    all_model_files = []
 
-    # Loop through all subdirectories under applications/
     for app_dir in base_path.iterdir():
         if not app_dir.is_dir():
             continue
@@ -24,13 +23,38 @@ def get_apps_structure(base_dir: str = "applications") -> Dict[str, dict]:
         model_files = [
             f"{base_dir}.{app_dir.name}.{file.stem}"
             for file in app_dir.glob("*.py")
-            if file.is_file() and not file.name.startswith("__") and file.name not in EXCLUDED_FILES
+            if file.is_file() and not file.name.startswith("__") and file.name not in excluded_files
         ]
+        all_model_files.extend(model_files)
 
-        if model_files:
-            app_configs[app_dir.name] = {
-                "models": model_files,
-                "default_connection": "default",
-            }
+    all_model_files.append("aerich.models")
+    return {
+        "models": {
+            "models": all_model_files,
+            "default_connection": "default",
+        }
+    }
 
-    return app_configs
+# def get_apps_structure(base_dir: str = "applications") -> Dict[str, dict]:
+#     base_path = Path(base_dir)
+#     app_configs = {}
+#     EXCLUDED_FILES = {"signals.py", "schemas.py", "services.py"}
+
+#     # Loop through all subdirectories under applications/
+#     for app_dir in base_path.iterdir():
+#         if not app_dir.is_dir():
+#             continue
+
+#         model_files = [
+#             f"{base_dir}.{app_dir.name}.{file.stem}"
+#             for file in app_dir.glob("*.py")
+#             if file.is_file() and not file.name.startswith("__") and file.name not in EXCLUDED_FILES
+#         ]
+
+#         if model_files:
+#             app_configs[app_dir.name] = {
+#                 "models": model_files,
+#                 "default_connection": "default",
+#             }
+
+#     return app_configs

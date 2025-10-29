@@ -4,11 +4,11 @@ from tortoise.validators import MinValueValidator, MaxValueValidator
 
 class ItemReview(models.Model):
     id = fields.IntField(pk=True)
-    item = fields.ForeignKeyField("items.Item", related_name="reviews", on_delete=fields.CASCADE)
-    user = fields.ForeignKeyField('user.User', on_delete=fields.CASCADE, related_name='reviewer')
+    item = fields.ForeignKeyField("models.Item", related_name="reviews", on_delete=fields.CASCADE)
+    user = fields.ForeignKeyField('models.User', on_delete=fields.CASCADE, related_name='reviewer')
     rating = fields.IntField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = fields.TextField(null=True)
-    parent = fields.ForeignKeyField('items.ItemReview', null=True, blank=True, related_name="replies", on_delete=fields.CASCADE)
+    parent = fields.ForeignKeyField('models.ItemReview', null=True, blank=True, related_name="replies", on_delete=fields.CASCADE)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

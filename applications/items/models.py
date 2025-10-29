@@ -15,6 +15,7 @@ class Category(models.Model):
     type = fields.CharField(max_length=20, choices=TYPE_CHOICE, default='book')
     avatar = fields.CharField(max_length=500, null=True)
     description = fields.TextField(null=True)
+    popular = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -26,7 +27,7 @@ class Category(models.Model):
 
 class SubCategory(models.Model):
     id = fields.IntField(pk=True)
-    category = fields.ForeignKeyField("items.Category", related_name="subcategories", on_delete=fields.CASCADE)
+    category = fields.ForeignKeyField("models.Category", related_name="subcategories", on_delete=fields.CASCADE)
     name = fields.CharField(max_length=100)
     avatar = fields.CharField(max_length=500, null=True)
     description = fields.TextField(null=True)
@@ -42,7 +43,7 @@ class SubCategory(models.Model):
 
 class SubSubCategory(models.Model):
     id = fields.IntField(pk=True)
-    subcategory = fields.ForeignKeyField("items.SubCategory", related_name="sub_subcategories",
+    subcategory = fields.ForeignKeyField("models.SubCategory", related_name="sub_subcategories",
                                          on_delete=fields.CASCADE)
     name = fields.CharField(max_length=100)
     avatar = fields.CharField(max_length=500, null=True)
@@ -107,7 +108,7 @@ class Item(models.Model):
 
 
 class ItemBase(models.Model):
-    item = fields.ForeignKeyField("items.Item", on_delete=fields.CASCADE)
+    item = fields.ForeignKeyField("models.Item", on_delete=fields.CASCADE)
     box_price = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     stock = fields.IntField(default=0)
     total_sale = fields.IntField(default=0)

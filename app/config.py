@@ -22,24 +22,17 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-apps_config = get_apps_structure("applications")
-import json
-
-print(json.dumps(apps_config, indent=4))
 
 TORTOISE_ORM = {
     "connections": {
         "default": settings.DATABASE_URL,
     },
-    "apps": apps_config | {
-        "aerich": {
-            "models": ["aerich.models"],
-        },
-    },
+    "apps": get_apps_structure("applications"),
     "use_tz": True,
     "timezone": "Asia/Dhaka",
 }
-
+import json
+print(json.dumps(TORTOISE_ORM, indent=4))
 
 async def init_db():
     await Tortoise.init(config=TORTOISE_ORM)
