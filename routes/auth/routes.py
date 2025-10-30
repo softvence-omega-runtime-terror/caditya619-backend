@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, BackgroundTasks
+from typing import List, Optional
 from pydantic import BaseModel
 from passlib.context import CryptContext
-from applications.user.models import User
+from applications.user.models import User, CustomerProfile, VendorProfile, RiderProfile
 from app.token import get_current_user, create_access_token, create_refresh_token
 from tortoise.contrib.pydantic import pydantic_model_creator
 from app.utils.otp_manager import generate_otp, verify_otp
@@ -11,7 +12,6 @@ from app.config import settings
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-PURPOSE = ['signup', 'login', 'rider_signup', 'rider_login', 'vendor_signup', 'vendor_login', 'management_login']
 
 
 # (?:\+91[\s-]?|0)? → optional country code +91, or a leading 0.
@@ -101,21 +101,21 @@ async def send_otp(
 
     user = await User.get_or_none(phone=phone)
 
-    if purpose in ['login', 'rider_login', 'vendor_login', 'management_login']:
+    if purpose in ['login', 'rider_login', 'vendor_login', 'management_login', 'update_user_data']:
         if not user:
             raise HTTPException(status_code=400, detail="User not found.")
-        elif purpose is 'rider_login' and not user.is_rider:
+        elif purpose == 'rider_login' and not user.is_rider:
             raise HTTPException(status_code=400, detail='You are not yet registered for rider.')
-        elif purpose is 'vendor_login' and not user.is_vendor:
+        elif purpose == 'vendor_login' and not user.is_vendor:
             raise HTTPException(status_code=400, detail='You are not yet registered for vendor.')
-        elif purpose is 'management_login' and not (user.is_superuser or user.is_staff):
+        elif purpose == 'management_login' and not (user.is_superuser or user.is_staff):
             raise HTTPException(status_code=400, detail='Invalid credentials.')
     elif purpose in ['signup', 'rider_signup', 'vendor_signup']:
-        if purpose is 'signup' and user:
+        if purpose == 'signup' and user:
             raise HTTPException(status_code=400, detail=f"{phone} already registered.")
-        elif purpose is 'rider_signup' and user.is_rider:
+        elif purpose == 'rider_signup' and user.is_rider:
             raise HTTPException(status_code=400, detail='You are not yet registered for rider.')
-        elif purpose is 'vendor_signup' and not user.is_vendor:
+        elif purpose == 'vendor_signup' and not user.is_vendor:
             raise HTTPException(status_code=400, detail='You are not yet registered for vendor.')
     else:
         raise HTTPException(status_code=400, detail="Invalid purpose.")
@@ -188,44 +188,67 @@ async def login(
 
 @router.post("/signup/", response_model=dict)
 async def signup(
-        phone: str = Form(...),
-        name: str = Form(...),
-        otp: str = Form(...),
-        purpose: str = Form(...),
+    phone: str = Form(...),
+    name: str = Form(...),
+    otp: str = Form(...),
+    nid: Optional[str] = Form(None),
+    driving_license: Optional[str] = Form(None),
+    purpose: str = Form(...)
 ):
-    lookup_field = await detect_input_type(phone)
-    if not lookup_field == "phone":
-        raise HTTPException(status_code=400, detail="Enter correct phone number.")
+    if await detect_input_type(phone) != "phone":
+        raise HTTPException(status_code=400, detail="Enter a valid phone number.")
 
     verified = await verify_otp(phone, otp, purpose=purpose)
     if not verified:
-        raise HTTPException(status_code=400, detail=f"OTP not verified.")
+        raise HTTPException(status_code=400, detail="OTP not verified.")
 
-    if purpose not in ['signup', 'rider_signup', 'vendor_signup']:
-        raise HTTPException(status_code=400, detail="Invalid purpose.")
+    valid_purposes = ["signup", "rider_signup", "vendor_signup"]
+    if purpose not in valid_purposes:
+        raise HTTPException(status_code=400, detail="Invalid signup purpose.")
 
-    existing_user = await User.get_or_none(phone=phone)
+    user = await User.get_or_none(phone=phone)
 
-    if not existing_user:
+    if not user:
         user = await User.create(phone=phone, name=name)
-        if purpose == 'rider_signup':
-            user.is_rider = True
-        elif purpose == 'vendor_signup':
-            user.is_vendor = True
+        await CustomerProfile.get_or_create(user=user)
+
+    if purpose == "signup":
+        await CustomerProfile.get_or_create(user=user)
+        if user.is_rider or user.is_vendor:
+            raise HTTPException(
+                status_code=400, detail="Already registered as rider or vendor."
+            )
+
+    elif purpose == "rider_signup":
+        if user.is_rider:
+            raise HTTPException(status_code=400, detail="Already registered as rider.")
+        if not (driving_license and nid):
+            raise HTTPException(
+                status_code=400,
+                detail="Driving License and NID are required for rider signup.",
+            )
+
+        user.is_rider = True
         await user.save()
-    else:
-        if purpose == 'signup':
-            raise HTTPException(status_code=400, detail=f"{phone} already registered.")
-        elif purpose == 'rider_signup':
-            if existing_user.is_rider:
-                raise HTTPException(status_code=400, detail="Already registered as rider.")
-            existing_user.is_rider = True
-        elif purpose == 'vendor_signup':
-            if existing_user.is_vendor:
-                raise HTTPException(status_code=400, detail="Already registered as vendor.")
-            existing_user.is_vendor = True
-        await existing_user.save()
-        user = existing_user
+        await RiderProfile.get_or_create(
+            user=user,
+            defaults={"driving_license": driving_license, "nid": nid},
+        )
+
+    elif purpose == "vendor_signup":
+        if user.is_vendor:
+            raise HTTPException(status_code=400, detail="Already registered as vendor.")
+        if not nid:
+            raise HTTPException(
+                status_code=400, detail="NID is required for vendor signup."
+            )
+
+        user.is_vendor = True
+        await user.save()
+        await VendorProfile.get_or_create(
+            user=user,
+            defaults={"nid": nid},
+        )
 
     token_data = {
         "sub": str(user.id),
@@ -233,27 +256,28 @@ async def signup(
         "is_rider": user.is_rider,
         "is_vendor": user.is_vendor,
         "is_staff": user.is_staff,
-        "is_superuser": user.is_superuser
+        "is_superuser": user.is_superuser,
     }
 
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
-    roles = []
-    if user.is_superuser:
-        roles.append("superuser")
-    if user.is_staff:
-        roles.append("staff")
-    if user.is_vendor:
-        roles.append("vendor")
-    if user.is_rider:
-        roles.append("rider")
+    roles = [
+        role
+        for role, active in {
+            "superuser": user.is_superuser,
+            "staff": user.is_staff,
+            "vendor": user.is_vendor,
+            "rider": user.is_rider,
+        }.items()
+        if active
+    ]
 
     return {
         "message": "User created successfully",
         "access_token": access_token,
         "refresh_token": refresh_token,
-        'roles': roles,
+        "roles": roles,
         "token_type": "bearer",
     }
 

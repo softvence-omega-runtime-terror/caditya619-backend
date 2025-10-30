@@ -31,6 +31,7 @@ class User(Model):
     email = fields.CharField(max_length=100, null=True, unique=True)
     phone = fields.CharField(max_length=20, unique=True)
     name = fields.CharField(max_length=50, null=True, blank=True)
+    photo = fields.CharField(max_length=255, null=True, blank=True)
 
     is_rider = fields.BooleanField(default=False)
     is_vendor = fields.BooleanField(default=False)
@@ -81,7 +82,6 @@ class User(Model):
 class CustomerProfile(Model):
     id = fields.IntField(pk=True)
     user = fields.OneToOneField("models.User", related_name="customer_profile", on_delete=fields.CASCADE)
-    photo = fields.CharField(max_length=255, null=True, blank=True)
     add1 = fields.CharField(max_length=100, null=True, blank=True)
     add2 = fields.CharField(max_length=100, null=True, blank=True)
     postal_code = fields.CharField(max_length=20, null=True, blank=True)
@@ -98,7 +98,6 @@ class CustomerProfile(Model):
 class RiderProfile(Model):
     id = fields.IntField(pk=True)
     user = fields.OneToOneField("models.User", related_name="rider_profile", on_delete=fields.CASCADE)
-    photo = fields.CharField(max_length=255, null=True, blank=True)
     driving_license = fields.CharField(max_length=100)
     nid = fields.CharField(max_length=60)
     
@@ -115,7 +114,6 @@ class RiderProfile(Model):
 class VendorProfile(Model):
     id = fields.IntField(pk=True)
     user = fields.OneToOneField("models.User", related_name="vendor_profile", on_delete=fields.CASCADE)
-    photo = fields.CharField(max_length=255, null=True, blank=True)
     nid = fields.CharField(max_length=60)
     
     class Meta:

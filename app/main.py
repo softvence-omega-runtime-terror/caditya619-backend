@@ -14,6 +14,8 @@ from app.routes import register_routes
 from app.utils.sync_permissions import sync_permissions
 from applications.user.models import User
 from app.utils.auto_routing import get_module
+from app.config import settings
+from app.dummy.users import create_test_users
 
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
@@ -24,15 +26,9 @@ async def lifespan(routerAPI: FastAPI):
     init_redis()
     await sync_permissions()
 
-    admin_user = await User.filter(phone="+919876543210").first()
-    if not admin_user:
-        await User.create(
-            phone="+919876543210",
-            is_rider=True,
-            is_vendor=True,
-            is_staff=True,
-            is_superuser=True
-        )
+    if settings.DEBUG:
+        await create_test_users()
+    
     for app_name in get_module(base_dir="applications"):
         try:
             importlib.import_module(f"applications.{app_name}.signals")
