@@ -5,17 +5,9 @@ from app.utils.generate_unique import generate_unique
 
 
 class Category(models.Model):
-    TYPE_CHOICE = [
-        ('book', 'Book'),
-        ('product', 'Product'),
-        ('course', 'Course'),
-    ]
     id = fields.IntField(pk=True)
     name = fields.CharField(max_length=100, unique=True)
-    type = fields.CharField(max_length=20, choices=TYPE_CHOICE, default='book')
     avatar = fields.CharField(max_length=500, null=True)
-    description = fields.TextField(null=True)
-    popular = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -30,7 +22,6 @@ class SubCategory(models.Model):
     category = fields.ForeignKeyField("models.Category", related_name="subcategories", on_delete=fields.CASCADE)
     name = fields.CharField(max_length=100)
     avatar = fields.CharField(max_length=500, null=True)
-    description = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -47,7 +38,6 @@ class SubSubCategory(models.Model):
                                          on_delete=fields.CASCADE)
     name = fields.CharField(max_length=100)
     avatar = fields.CharField(max_length=500, null=True)
-    description = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -60,7 +50,6 @@ class SubSubCategory(models.Model):
 
 class Item(models.Model):
     id = fields.IntField(pk=True)
-    slug = fields.CharField(max_length=255, unique=True)
     title = fields.CharField(max_length=255)
     short_bio = fields.TextField(null=True)
     description = fields.TextField(null=True)

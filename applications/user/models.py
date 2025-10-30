@@ -29,9 +29,8 @@ class User(Model):
     id = fields.IntField(pk=True)
     email = fields.CharField(max_length=100, null=True, unique=True)
     phone = fields.CharField(max_length=20, unique=True)
-    username = fields.CharField(max_length=50, unique=True, blank=True, editable=True)
+    username = fields.CharField(max_length=50, unique=True, blank=True, editable=False)
     name = fields.CharField(max_length=50, null=True, blank=True)
-    # Lname = fields.CharField(max_length=50, null=True, blank=True)
 
     is_rider = fields.BooleanField(default=False)
     is_vendor = fields.BooleanField(default=False)
@@ -77,7 +76,6 @@ class User(Model):
         return bcrypt.verify(password, self.password_hash)
 
 
-
     class Meta:
         table = "users"
 
@@ -94,11 +92,6 @@ class User(Model):
                 max_length=20
             )
         await super().save(*args, **kwargs)
-
-
-        # if is_new:
-        #     from core.tasks import create_profile
-        #     create_profile.delay(self.id)
 
     def __str__(self):
         return self.username
