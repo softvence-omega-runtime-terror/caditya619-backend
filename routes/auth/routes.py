@@ -35,7 +35,7 @@ async def detect_input_type(value: str) -> str:
     elif re.match(phone_regex, value):
         return 'phone'
     else:
-        return 'username'
+        raise ValueError('Please enter a correct phone number.')
 
 
 class OAuth2EmailPasswordForm:
@@ -74,7 +74,6 @@ async def login_auth2(form_data: OAuth2EmailPasswordForm = Depends()):
 
     token_data = {
         "sub": str(user.id),
-        "username": user.username,
         "is_active": user.is_active,
         "is_staff": user.is_staff,
         "is_superuser": user.is_superuser,
@@ -160,7 +159,6 @@ async def login(
 
     token_data = {
         "sub": str(user.id),
-        "username": user.username,
         "is_active": user.is_active,
         "is_rider": user.is_rider,
         "is_vendor": user.is_vendor,
@@ -231,7 +229,6 @@ async def signup(
 
     token_data = {
         "sub": str(user.id),
-        "username": user.username,
         "is_active": user.is_active,
         "is_rider": user.is_rider,
         "is_vendor": user.is_vendor,
@@ -268,7 +265,6 @@ async def verify_token(request: Request, user: User = Depends(get_current_user))
     response_data = {
         "status": "success",
         "id": user.id,
-        "username": user.username,
         "email": user.email,
         "is_active": user.is_active,
         "is_rider": user.is_rider,

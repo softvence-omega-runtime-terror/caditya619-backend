@@ -9,74 +9,23 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 router = APIRouter(tags=['User'])
 
 
-# ------------------------------------------------------------------------
-@router.post(
-    "/users",
-    # dependencies=[
-    #     Depends(login_required),
-    #     Depends(staff_required),  # ensures only staff/superuser can create
-    # ]
-)
-async def create_user(
-    username: str = Form(..., description="Username"),
-    email: str = Form(..., description="Email"),
-    password: str = Form(..., min_length=8, description="User password", example="********"),
-    is_active: bool = Form(True),
-    is_staff: bool = Form(False),
-    is_superuser: bool = Form(False),
-    # current_user: User = Depends(get_current_user),
-):
-    # --- PERMISSION LOGIC ---
-    # if not current_user.is_superuser and is_superuser:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Staff users cannot create superusers."
-    #     )
-
-    # --- CHECK DUPLICATES ---
-    if await User.filter(email=email).exists():
-        raise HTTPException(status_code=400, detail="Email already registered")
-    if await User.filter(username=username).exists():
-        raise HTTPException(status_code=400, detail="Username already registered")
-
-    # --- CREATE USER ---
-    hashed_password = pwd_context.hash(password)
-    new_user = await User.create(
-        username=username,
-        email=email,
-        password=hashed_password,
-        is_active=is_active,
-        is_staff=is_staff,
-        is_superuser=is_superuser
-    )
-
-    return {
-        "detail": "User created successfully",
-        "new_user": {
-            "id": new_user.id,
-            "username": new_user.username,
-            "email": new_user.email,
-            "is_active": new_user.is_active,
-            "is_staff": new_user.is_staff,
-            "is_superuser": new_user.is_superuser,
-        }
-    }
 
 @router.get("/users", dependencies=[
-        # Depends(login_required),
-        # Depends(staff_required),
-        # Depends(permission_required("view_user")),
+        Depends(login_required),
+        Depends(permission_required("view_user")),
     ]
 )
 async def get_all_users():
     return await User.all().values(
-        "id", "username", "email", "is_active", "is_staff", "is_superuser", "created_at", "updated_at"
+        "id", "phone", "email", "is_active", "is_rider", "is_vendor", "is_staff", "is_superuser", "created_at", "updated_at"
     )
 
 
 @router.get(
     "/users/{user_id}",
-    dependencies=[Depends(login_required)]
+    dependencies=[
+        Depends(login_required),
+    ]
 )
 async def get_user(user_id: int, current_user: User = Depends(get_current_user)):
     user = await User.get_or_none(id=user_id).prefetch_related("groups", "user_permissions")
@@ -84,18 +33,14 @@ async def get_user(user_id: int, current_user: User = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="User not found")
 
     # --- NORMAL USERS: can only access their own profile with limited data ---
-    if not current_user.is_staff and not current_user.is_superuser:
+    if current_user.is_rider or current_user.is_vendor:
         if current_user.id != user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="You don't have permission to view this user."
-            )
-        return {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "created_at": user.created_at,
-        }
+            return {
+                "id": user.id,
+                "phone": user.phone,
+                "email": user.email,
+                "created_at": user.created_at,
+            }
 
     # --- STAFF/SUPERUSER: can view others with more detail ---
     groups = [group.name for group in await user.groups.all()]
@@ -103,7 +48,7 @@ async def get_user(user_id: int, current_user: User = Depends(get_current_user))
 
     # If superuser, also collect group perms
     group_perms = []
-    if current_user.is_superuser:
+    if current_user.is_superuser or current_user.id == user.id:
         for group in await user.groups.all():
             perms = await group.permissions.all()
             group_perms.extend([perm.codename for perm in perms])
@@ -112,8 +57,8 @@ async def get_user(user_id: int, current_user: User = Depends(get_current_user))
 
     return {
         "id": user.id,
-        "username": user.username,
         "email": user.email,
+        "phone": user.phone,
         "is_active": user.is_active,
         "is_staff": user.is_staff,
         "is_superuser": user.is_superuser,
@@ -127,13 +72,12 @@ async def get_user(user_id: int, current_user: User = Depends(get_current_user))
 
 @router.put(
     "/users/{user_id}",
-    dependencies=[Depends(login_required)]  # user must be logged in
+    dependencies=[Depends(login_required)]
 )
 async def update_user(
     user_id: int,
-    username: Optional[str] = None,
+    phone: Optional[str] = None,
     email: Optional[str] = None,
-    password: Optional[str] = None,
     is_active: Optional[bool] = None,
     is_staff: Optional[bool] = None,
     is_superuser: Optional[bool] = None,
@@ -172,12 +116,8 @@ async def update_user(
                 )
 
     # --- UPDATE FIELDS ---
-    if username:
-        user.username = username
     if email:
         user.email = email
-    if password:
-        user.password = pwd_context.hash(password)
     if is_active is not None:
         user.is_active = is_active
     if is_staff is not None:
@@ -203,7 +143,7 @@ async def update_user(
         "detail": "User updated successfully",
         "user": {
             "id": user.id,
-            "username": user.username,
+            "phone": user.phone,
             "email": user.email,
             "is_active": user.is_active,
             "is_staff": user.is_staff,
@@ -217,7 +157,6 @@ async def update_user(
 
 @router.delete("/users/{user_id}", dependencies=[
         Depends(login_required),
-        Depends(staff_required),
         Depends(permission_required("delete_user")),
     ]
 )

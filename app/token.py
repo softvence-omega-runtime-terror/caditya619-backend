@@ -5,7 +5,6 @@ from tortoise.exceptions import DoesNotExist
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 security = HTTPBearer()
-
 from applications.user.models import User
 
 # =========================
@@ -45,9 +44,9 @@ async def get_current_user(
     refresh_token: str = Header(default=None, alias="refresh_token")
 ) -> User:
     token = credentials.credentials
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-
     except ExpiredSignatureError:
         if not refresh_token:
             raise HTTPException(
@@ -59,10 +58,15 @@ async def get_current_user(
         try:
             refresh_payload = jwt.decode(refresh_token, REFRESH_SECRET_KEY, algorithms=[ALGORITHM])
 
+            refresh_user = await User.get_or_none(id=refresh_payload.get("sub"))
+            if not refresh_user or not refresh_user.is_active:
+                raise HTTPException(status_code=403, detail="Invalid or inactive user")
+
             token_data = {
                 "sub": refresh_payload.get("sub"),
-                "username": refresh_payload.get("username"),
                 "is_active": refresh_payload.get("is_active"),
+                "is_vendor": refresh_payload.get("is_vendor"),
+                "is_rider": refresh_payload.get("is_rider"),
                 "is_staff": refresh_payload.get("is_staff"),
                 "is_superuser": refresh_payload.get("is_superuser"),
             }
@@ -70,12 +74,10 @@ async def get_current_user(
             new_access_token = create_access_token(token_data)
             new_refresh_token = create_refresh_token(token_data)
 
-
             request.state.new_tokens = {
                 "access_token": new_access_token,
                 "refresh_token": new_refresh_token,
             }
-
 
             payload = jwt.decode(new_access_token, SECRET_KEY, algorithms=[ALGORITHM])
 
@@ -97,10 +99,8 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-
-    try:
-        user = await User.get(id=payload.get("sub"))
-    except DoesNotExist:
+    user = await User.get_or_none(id=payload.get("sub"))
+    if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
     if not user.is_active:

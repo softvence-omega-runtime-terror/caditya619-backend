@@ -1,4 +1,5 @@
 from tortoise import fields
+from tortoise.exceptions import IntegrityError
 from tortoise.models import Model
 from passlib.hash import bcrypt
 from app.utils.generate_unique import generate_unique
@@ -29,7 +30,6 @@ class User(Model):
     id = fields.IntField(pk=True)
     email = fields.CharField(max_length=100, null=True, unique=True)
     phone = fields.CharField(max_length=20, unique=True)
-    username = fields.CharField(max_length=50, unique=True, blank=True, editable=False)
     name = fields.CharField(max_length=50, null=True, blank=True)
 
     is_rider = fields.BooleanField(default=False)
@@ -67,45 +67,63 @@ class User(Model):
         return False
 
     
-
-    @classmethod
-    def set_password(cls, password: str) -> str:
-        return bcrypt.hash(password)
-
-    def verify_password(self, password: str) -> bool:
-        return bcrypt.verify(password, self.password_hash)
-
-
     class Meta:
         table = "users"
 
     def __str__(self):
-        return f"{self.username} ({self.email})"
+        return f"({self.phone})"
     
     async def save(self, *args, **kwargs):
-        if not self.username:
-            base_text = self.email or self.phone or "user"
-            self.username = await generate_unique(
-                model=User,
-                field="username",
-                text=base_text,
-                max_length=20
-            )
         await super().save(*args, **kwargs)
 
-    def __str__(self):
-        return self.username
     
 
-class Profile(Model):
+class CustomerProfile(Model):
     id = fields.IntField(pk=True)
-    user = fields.OneToOneField("models.User", related_name="profile", on_delete=fields.CASCADE)
-    first_name = fields.CharField(max_length=50, null=True, blank=True)
-    last_name = fields.CharField(max_length=50, null=True, blank=True)
-    bio = fields.TextField(null=True, blank=True)
+    user = fields.OneToOneField("models.User", related_name="customer_profile", on_delete=fields.CASCADE)
     photo = fields.CharField(max_length=255, null=True, blank=True)
-    banner = fields.CharField(max_length=255, null=True, blank=True)
-    
+    add1 = fields.CharField(max_length=100, null=True, blank=True)
+    add2 = fields.CharField(max_length=100, null=True, blank=True)
+    postal_code = fields.CharField(max_length=20, null=True, blank=True)
 
     class Meta:
-        table = "profiles"
+        table = "cus_profile"
+    
+    async def save(self, *args, **kwargs):
+        if not self.user:
+            raise IntegrityError("CustomerProfile must be associated with a User before saving.")
+        await super().save(*args, **kwargs)
+        
+
+class RiderProfile(Model):
+    id = fields.IntField(pk=True)
+    user = fields.OneToOneField("models.User", related_name="rider_profile", on_delete=fields.CASCADE)
+    photo = fields.CharField(max_length=255, null=True, blank=True)
+    driving_license = fields.CharField(max_length=100)
+    nid = fields.CharField(max_length=60)
+    
+    class Meta:
+        table = "rider_profile"
+        
+    async def save(self, *args, **kwargs):
+        if not self.user:
+            raise IntegrityError("RiderProfile must be associated with a User.")
+        if not self.user.is_rider:
+            raise IntegrityError("User must be marked as a rider to create RiderProfile.")
+        await super().save(*args, **kwargs)
+
+class VendorProfile(Model):
+    id = fields.IntField(pk=True)
+    user = fields.OneToOneField("models.User", related_name="vendor_profile", on_delete=fields.CASCADE)
+    photo = fields.CharField(max_length=255, null=True, blank=True)
+    nid = fields.CharField(max_length=60)
+    
+    class Meta:
+        table = "vendor_profile"
+        
+    async def save(self, *args, **kwargs):
+        if not self.user:
+            raise IntegrityError("RiderProfile must be associated with a User.")
+        if not self.user.is_vendor:
+            raise IntegrityError("User must be marked as a vendor to create VendorProfile.")
+        await super().save(*args, **kwargs)
