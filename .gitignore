@@ -22,6 +22,7 @@ migrations/models/
 # Environment filesgit add
 .env/
 .env.local
+.env
 
 # Build and packaging
 *.pyc

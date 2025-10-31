@@ -8,38 +8,38 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from app.utils.otp_manager import generate_otp, verify_otp
 import re
 from app.config import settings
+from tortoise.transactions import in_transaction
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# async def phone_number(value: str) -> str:
+#     value = value.strip()
+#     phone_regex = r'^(?:\+?91|0)?[6-9]\d{9}$'
 
+#     if re.match(phone_regex, value):
+#         return 'phone'
+#     else:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail='Please enter a correct phone number.'
+#         )
 
-# (?:\+91[\s-]?|0)? → optional country code +91, or a leading 0.
-# [6-9] → Indian mobile numbers always start with 6, 7, 8, or 9.
-# \d{9} → remaining 9 digits (total 10 digits).
-# So it matches:
-# 9876543210
-# 09876543210
-# +919876543210
-# +91 9876543210
-# +91-9876543210
-
-
-async def detect_input_type(value: str) -> str:
+async def phone_number(value: str) -> str:
     value = value.strip()
-    email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-    phone_regex = r'^(?:\+91|0)?[6-9]\d{9}$'
+    if value.startswith("91") and not value.startswith("+"):
+        value = f"+{value}"
+    elif value.startswith("0"):
+        value = "+91" + value[1:]
+    phone_regex = r'^\+91[6-9]\d{9}$'
 
-    if re.match(email_regex, value):
-        return 'email'
-    elif re.match(phone_regex, value):
-        return 'phone'
+    if re.match(phone_regex, value):
+        return value 
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail='Please enter a correct phone number.'
         )
-
 
 class OAuth2EmailPasswordForm:
     def __init__(
@@ -68,13 +68,6 @@ class TokenResponse(BaseModel):
 @router.post("/login_auth2/", response_model=TokenResponse)
 async def login_auth2(form_data: OAuth2EmailPasswordForm = Depends()):
     user = await User.get_or_none(phone=form_data.phone)
-    # if not user or not pwd_context.verify(form_data.password, user.password):
-    #     raise HTTPException(
-    #         status_code=status.HTTP_401_UNAUTHORIZED,
-    #         detail="Invalid email or password",
-    #         headers={"WWW-Authenticate": "Bearer"},
-    #     )
-
     token_data = {
         "sub": str(user.id),
         "is_active": user.is_active,
@@ -93,13 +86,25 @@ async def login_auth2(form_data: OAuth2EmailPasswordForm = Depends()):
 
 
 
-@router.post("/send_otp/")
+@router.post("/send_otp/", description="""
+### Test User Accounts:
+- **Admin User** — `+919876543210` — Admin / Rider / Vendor / Staff / Superuser  
+- **Rider One** — `+919876543211` — Rider  
+- **Vendor One** — `+919876543212` — Vendor  
+- **Mix One** — `+919876543213` — Rider / Vendor  
+- **Staff One** — `+919876543214` — Staff  
+- **Rider Two** — `+919876543215` — Rider  
+- **Vendor Two** — `+919876543216` — Vendor  
+- **Mix Two** — `+919876543217` — Rider / Vendor  
+- **Staff Two** — `+919876543218` — Staff  
+- **Test Ten** — `+919876543219` — Rider  
+""")
 async def send_otp(
-        phone: str = Form(...),
-        purpose: str = Form(...),
+        phone: str = Form('', description="Enter a valid phone number +91XXXXXXXXXX"),
+        purpose: str = Form('signup', description="'login', 'rider_login', 'vendor_login', 'management_login', 'update_user_data', 'signup', 'rider_signup', 'vendor_signup'"),
 ):
-    lookup_field = await detect_input_type(phone)
-    if not lookup_field == "phone":
+    phone = await phone_number(phone)
+    if not phone:
         raise HTTPException(status_code=400, detail="Enter correct phone number.")
 
     user = await User.get_or_none(phone=phone)
@@ -139,12 +144,12 @@ async def send_otp(
 
 @router.post("/login/", response_model=TokenResponse)
 async def login(
-        phone: str = Form(...),
-        otp: str = Form(...),
-        purpose: str = Form(...),
+        phone: str = Form('91', description="Enter a valid phone number with +91 prefix and 10 digit value"),
+        otp: str = Form(''),
+        purpose: str = Form('login', description="'login', 'rider_login', 'vendor_login', 'management_login', 'update_user_data'"),
 ):
-    lookup_field = await detect_input_type(phone)
-    if lookup_field == "phone":
+    phone = await phone_number(phone)
+    if phone:
         user = await User.get_or_none(phone=phone)
         if not user:
             raise HTTPException(status_code=404, detail='User not found')
@@ -191,68 +196,66 @@ async def login(
 
 @router.post("/signup/", response_model=dict)
 async def signup(
-    phone: str = Form(...),
+    phone: str = Form(..., description="Enter a valid phone number with +91 prefix and 10 digit value"),
     name: str = Form(...),
     otp: str = Form(...),
     nid: Optional[str] = Form(None),
     driving_license: Optional[str] = Form(None),
-    purpose: str = Form(...)
+    purpose: str = Form('signup', description="'signup', 'rider_signup', 'vendor_signup'"),
 ):
-    if await detect_input_type(phone) != "phone":
+    # Validate phone
+    if not await phone_number(phone):
         raise HTTPException(status_code=400, detail="Enter a valid phone number.")
 
-    verified = await verify_otp(phone, otp, purpose=purpose)
-    if not verified:
+    # Verify OTP
+    if not await verify_otp(phone, otp, purpose=purpose):
         raise HTTPException(status_code=400, detail="OTP not verified.")
 
     valid_purposes = ["signup", "rider_signup", "vendor_signup"]
     if purpose not in valid_purposes:
         raise HTTPException(status_code=400, detail="Invalid signup purpose.")
 
-    user = await User.get_or_none(phone=phone)
+    async with in_transaction() as connection:
+        user = await User.get_or_none(phone=phone)
+        
+        # Already registered checks
+        if user:
+            if purpose == "signup":
+                raise HTTPException(status_code=400, detail="Phone number already registered.")
+            elif purpose == "rider_signup" and user.is_rider:
+                raise HTTPException(status_code=400, detail="Already registered as rider.")
+            elif purpose == "vendor_signup" and user.is_vendor:
+                raise HTTPException(status_code=400, detail="Already registered as vendor.")
 
-    if not user:
-        user = await User.create(phone=phone, name=name)
-        await CustomerProfile.get_or_create(user=user)
+        # Create user if not exists
+        if not user:
+            user = await User.create(phone=phone, name=name, using_db=connection)
+            await CustomerProfile.get_or_create(user=user, using_db=connection)
 
-    if purpose == "signup":
-        await CustomerProfile.get_or_create(user=user)
-        if user.is_rider or user.is_vendor:
-            raise HTTPException(
-                status_code=400, detail="Already registered as rider or vendor."
+        # Handle signup types
+        if purpose == "rider_signup":
+            if not (driving_license and nid):
+                raise HTTPException(status_code=400, detail="Driving License and NID are required for rider signup.")
+            user.is_rider = True
+            await user.save(using_db=connection)
+            await RiderProfile.get_or_create(
+                user=user,
+                defaults={"driving_license": driving_license, "nid": nid},
+                using_db=connection,
             )
 
-    elif purpose == "rider_signup":
-        if user.is_rider:
-            raise HTTPException(status_code=400, detail="Already registered as rider.")
-        if not (driving_license and nid):
-            raise HTTPException(
-                status_code=400,
-                detail="Driving License and NID are required for rider signup.",
+        elif purpose == "vendor_signup":
+            if not nid:
+                raise HTTPException(status_code=400, detail="NID is required for vendor signup.")
+            user.is_vendor = True
+            await user.save(using_db=connection)
+            await VendorProfile.get_or_create(
+                user=user,
+                defaults={"nid": nid},
+                using_db=connection,
             )
 
-        user.is_rider = True
-        await user.save()
-        await RiderProfile.get_or_create(
-            user=user,
-            defaults={"driving_license": driving_license, "nid": nid},
-        )
-
-    elif purpose == "vendor_signup":
-        if user.is_vendor:
-            raise HTTPException(status_code=400, detail="Already registered as vendor.")
-        if not nid:
-            raise HTTPException(
-                status_code=400, detail="NID is required for vendor signup."
-            )
-
-        user.is_vendor = True
-        await user.save()
-        await VendorProfile.get_or_create(
-            user=user,
-            defaults={"nid": nid},
-        )
-
+    # Generate tokens
     token_data = {
         "sub": str(user.id),
         "is_active": user.is_active,
@@ -283,9 +286,6 @@ async def signup(
         "roles": roles,
         "token_type": "bearer",
     }
-
-
-
 
 @router.get("/verify-token/")
 async def verify_token(request: Request, user: User = Depends(get_current_user)):

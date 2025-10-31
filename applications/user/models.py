@@ -89,10 +89,6 @@ class CustomerProfile(Model):
     class Meta:
         table = "cus_profile"
     
-    async def save(self, *args, **kwargs):
-        if not self.user:
-            raise IntegrityError("CustomerProfile must be associated with a User before saving.")
-        await super().save(*args, **kwargs)
         
 
 class RiderProfile(Model):
@@ -104,12 +100,6 @@ class RiderProfile(Model):
     class Meta:
         table = "rider_profile"
         
-    async def save(self, *args, **kwargs):
-        if not self.user:
-            raise IntegrityError("RiderProfile must be associated with a User.")
-        if not self.user.is_rider:
-            raise IntegrityError("User must be marked as a rider to create RiderProfile.")
-        await super().save(*args, **kwargs)
 
 class VendorProfile(Model):
     id = fields.IntField(pk=True)
@@ -119,9 +109,3 @@ class VendorProfile(Model):
     class Meta:
         table = "vendor_profile"
         
-    async def save(self, *args, **kwargs):
-        if not self.user:
-            raise IntegrityError("RiderProfile must be associated with a User.")
-        if not self.user.is_vendor:
-            raise IntegrityError("User must be marked as a vendor to create VendorProfile.")
-        await super().save(*args, **kwargs)

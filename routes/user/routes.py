@@ -4,6 +4,7 @@ from app.auth import *
 from applications.user.models import User, Permission, Group, CustomerProfile, VendorProfile, RiderProfile
 from app.utils.otp_manager import verify_otp
 from app.utils.file_manager import save_file, update_file, delete_file
+from tortoise.transactions import in_transaction
 
 from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -68,131 +69,119 @@ async def get_user(user_id: int, current_user: User = Depends(get_current_user))
     }
 
 
-
-@router.put("/{user_id}", dependencies=[Depends(login_required)])
+@router.put("/{user_id}", dependencies=[Depends(login_required)], response_model=dict)
 async def update_user(
     user_id: int,
-    phone: Optional[str] = None,
-    otp: Optional[str] = None,
-    email: Optional[str] = None,
-    add1: Optional[str] = None,
-    add2: Optional[str] = None,
-    postal_code: Optional[str] = None,
-    driving_license: Optional[str] = None,
-    nid: Optional[str] = None,
-    is_active: Optional[bool] = None,
-    is_staff: Optional[bool] = None,
-    is_superuser: Optional[bool] = None,
-    group_ids: Optional[List[int]] = None,
-    permission_ids: Optional[List[int]] = None,
+    phone: Optional[str] = Form(None),
+    otp: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    add1: Optional[str] = Form(None),
+    add2: Optional[str] = Form(None),
+    postal_code: Optional[str] = Form(None),
+    driving_license: Optional[str] = Form(None),
+    nid: Optional[str] = Form(None),
+    is_active: Optional[bool] = Form(None),
+    is_staff: Optional[bool] = Form(None),
+    is_superuser: Optional[bool] = Form(None),
+    group_ids: Optional[List[int]] = Form(None),
+    permission_ids: Optional[List[int]] = Form(None),
     photo: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
 ):
-    user = await User.get_or_none(id=user_id).prefetch_related("groups", "user_permissions")
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    async with in_transaction() as connection:
+        user = await User.get_or_none(id=user_id).using_db(connection).prefetch_related("groups", "user_permissions")
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    if user.is_superuser and not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot update a superuser account.",
-        )
+        # Permission checks
+        if user.is_superuser and not current_user.is_superuser:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot update a superuser account.")
 
-    if current_user.id != user.id:
-        has_perm = await current_user.has_permission("update_user")
-        if not has_perm:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to update this user.",
+        if current_user.id != user.id:
+            has_perm = await current_user.has_permission("update_user")
+            if not has_perm:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No permission to update this user.")
+
+        sensitive_fields = [is_active, is_staff, is_superuser, group_ids, permission_ids]
+        if any(v is not None for v in sensitive_fields):
+            has_perm = await current_user.has_permission("update_user")
+            if not has_perm:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to update sensitive fields.")
+
+        # Email
+        if email:
+            email_exists = await User.filter(email=email).exclude(id=user.id).using_db(connection).exists()
+            if email_exists:
+                raise HTTPException(status_code=400, detail="Email already in use.")
+            user.email = email
+
+        # Phone update with OTP verification
+        if phone:
+            if not otp:
+                raise HTTPException(status_code=400, detail="OTP is required to update phone number.")
+            verified = await verify_otp(phone, otp, purpose="update_user_data")
+            if not verified:
+                raise HTTPException(status_code=400, detail="OTP not verified.")
+            user.phone = phone
+
+        # Update flags
+        if is_active is not None:
+            user.is_active = is_active
+        if is_staff is not None:
+            user.is_staff = is_staff
+        if is_superuser is not None:
+            if not current_user.is_superuser:
+                raise HTTPException(status_code=403, detail="Only superuser can modify superuser status.")
+            user.is_superuser = is_superuser
+
+        # Photo update
+        if photo is not None:
+            user.photo = await update_file(photo, user.photo, upload_to="user_photo", allowed_extensions=["jpg","png","jpeg","webp"])
+
+        await user.save(using_db=connection)
+
+        # Customer profile
+        if any([add1, add2, postal_code]):
+            profile, _ = await CustomerProfile.get_or_create(user=user, using_db=connection)
+            if add1 is not None:
+                profile.add1 = add1
+            if add2 is not None:
+                profile.add2 = add2
+            if postal_code is not None:
+                profile.postal_code = postal_code
+            await profile.save(using_db=connection)
+
+        # Rider profile
+        if user.is_rider:
+            rider_profile, _ = await RiderProfile.get_or_create(
+                user=user, defaults={"driving_license": "", "nid": ""}, using_db=connection
             )
+            if driving_license:
+                rider_profile.driving_license = driving_license
+            if nid:
+                rider_profile.nid = nid
+            await rider_profile.save(using_db=connection)
 
-    sensitive_fields = [is_active, is_staff, is_superuser, group_ids, permission_ids]
-    if any(v is not None for v in sensitive_fields):
-        has_perm = await current_user.has_permission("update_user")
-        if not has_perm:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not allowed to update these fields.",
-            )
+        # Vendor profile
+        if user.is_vendor:
+            vendor_profile, _ = await VendorProfile.get_or_create(user=user, defaults={"nid": ""}, using_db=connection)
+            if nid:
+                vendor_profile.nid = nid
+            await vendor_profile.save(using_db=connection)
 
-    if email:
-        email_exists = await User.filter(email=email).exclude(id=user.id).exists()
-        if email_exists:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This email is already in use.",
-            )
-        user.email = email
+        # Groups
+        if group_ids is not None:
+            groups = await Group.filter(id__in=group_ids).using_db(connection)
+            await user.groups.clear()
+            await user.groups.add(*groups)
 
-    if phone:
-        if not otp:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="OTP is required to update phone number.",
-            )
-        verified = await verify_otp(phone, otp, purpose="update_user_data")
-        if not verified:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="OTP not verified.",
-            )
-        user.phone = phone
+        # Permissions
+        if permission_ids is not None:
+            permissions = await Permission.filter(id__in=permission_ids).using_db(connection)
+            await user.user_permissions.clear()
+            await user.user_permissions.add(*permissions)
 
-    if is_active is not None:
-        user.is_active = is_active
-    if is_staff is not None:
-        user.is_staff = is_staff
-    if is_superuser is not None:
-        if not current_user.is_superuser:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only a superuser can modify superuser status.",
-            )
-        user.is_superuser = is_superuser
-
-    if photo is not None:
-        photo_path = await update_file(photo, user.photo, upload_to='user_photo', allowed_extensions=['jpg', 'png', 'jpeg', 'webp'])
-        user.photo = photo_path
-    await user.save()
-
-    if any([add1, add2, postal_code]):
-        profile, _ = await CustomerProfile.get_or_create(user=user)
-        if add1 is not None:
-            profile.add1 = add1
-        if add2 is not None:
-            profile.add2 = add2
-        if postal_code is not None:
-            profile.postal_code = postal_code
-        await profile.save()
-
-    if user.is_rider:
-        rider_profile, _ = await RiderProfile.get_or_create(
-            user=user, defaults={"driving_license": "", "nid": ""}
-        )
-        if driving_license:
-            rider_profile.driving_license = driving_license
-        if nid:
-            rider_profile.nid = nid
-        await rider_profile.save()
-
-    if user.is_vendor:
-        vendor_profile, _ = await VendorProfile.get_or_create(
-            user=user, defaults={"nid": ""}
-        )
-        if nid:
-            vendor_profile.nid = nid
-        await vendor_profile.save()
-
-    if group_ids is not None:
-        groups = await Group.filter(id__in=group_ids)
-        await user.groups.clear()
-        await user.groups.add(*groups)
-
-    if permission_ids is not None:
-        permissions = await Permission.filter(id__in=permission_ids)
-        await user.user_permissions.clear()
-        await user.user_permissions.add(*permissions)
-
+    # Prepare response
     user_data = {
         "id": user.id,
         "phone": user.phone,
@@ -206,10 +195,7 @@ async def update_user(
         "permissions": [p.id for p in await user.user_permissions.all()],
     }
 
-    return {
-        "message": "User updated successfully",
-        "user": user_data,
-    }
+    return {"message": "User updated successfully", "user": user_data}
 
 
 
