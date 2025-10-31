@@ -144,7 +144,7 @@ async def send_otp(
 
 @router.post("/login/", response_model=TokenResponse)
 async def login(
-        phone: str = Form('91', description="Enter a valid phone number with +91 prefix and 10 digit value"),
+        phone: str = Form('91', description="Enter a valid phone number +91XXXXXXXXXX"),
         otp: str = Form(''),
         purpose: str = Form('login', description="'login', 'rider_login', 'vendor_login', 'management_login', 'update_user_data'"),
 ):
@@ -196,15 +196,16 @@ async def login(
 
 @router.post("/signup/", response_model=dict)
 async def signup(
-    phone: str = Form(..., description="Enter a valid phone number with +91 prefix and 10 digit value"),
-    name: str = Form(...),
-    otp: str = Form(...),
-    nid: Optional[str] = Form(None),
-    driving_license: Optional[str] = Form(None),
+    phone: str = Form("91", description="Enter a valid phone number +91XXXXXXXXXX"),
+    name: str = Form(""),
+    otp: str = Form(""),
+    nid: Optional[str] = Form(""),
+    driving_license: Optional[str] = Form(""),
     purpose: str = Form('signup', description="'signup', 'rider_signup', 'vendor_signup'"),
 ):
     # Validate phone
-    if not await phone_number(phone):
+    phone = await phone_number(phone)
+    if not phone:
         raise HTTPException(status_code=400, detail="Enter a valid phone number.")
 
     # Verify OTP
