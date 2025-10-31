@@ -5,6 +5,7 @@ from applications.user.models import User, Permission, Group, CustomerProfile, V
 from app.utils.otp_manager import verify_otp
 from app.utils.file_manager import save_file, update_file, delete_file
 from tortoise.transactions import in_transaction
+from app.utils.phone_number import phone_number
 
 from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -117,6 +118,7 @@ async def update_user(
 
         # Phone update with OTP verification
         if phone:
+            phone = await phone_number(phone)
             if not otp:
                 raise HTTPException(status_code=400, detail="OTP is required to update phone number.")
             verified = await verify_otp(phone, otp, purpose="update_user_data")
