@@ -147,7 +147,7 @@
 
         .btn {
             text-decoration: none;
-            padding: 1rem 2rem;
+            padding: 0.7rem 2rem;
             background: linear-gradient(135deg, #ff758c, #ff7eb3);
             color: #fff;
             font-weight: bold;
@@ -189,9 +189,9 @@
     <div class="page">
         <h1>FastAPI Dashboard</h1>
         <div class="buttons">
-            <a class="btn" href="/user/docs"><span>User App</span></a>
-            <a class="btn" href="/item/docs"><span>Item App</span></a>
-            <a class="btn" href="/auth/docs"><span>Auth App</span></a>
+            {% for route in routes %}
+                <a class="btn" href="{{ route }}/docs"><span>{{ route }}</span></a>
+            {% endfor %}
         </div>
         <img src="http://www.supah.it/dribbble/008/008.jpg" class="bg-image" />
     </div>

@@ -3,11 +3,11 @@ import importlib
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-
+from fastapi.templating import Jinja2Templates
 from app.config import settings, init_db
 from app.redis import init_redis, redis_client
 from app.routes import register_routes
@@ -43,14 +43,19 @@ async def lifespan(routerAPI: FastAPI):
 app = FastAPI(lifespan=lifespan, debug=settings.DEBUG)
 register_routes(app)
 
-@app.get("/", response_class=HTMLResponse)
-async def home():
-    if settings.DEBUG:
-        html_path = Path("templates/development.html")
-    else:
-        html_path = Path("templates/index.html")
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
+templates = Jinja2Templates(directory="templates")
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    routes = get_module()
+    html_file = "development.html" if settings.DEBUG else "index.html"
+    return templates.TemplateResponse(
+        html_file,
+        {
+            "request": request, 
+            "routes": routes
+        }
+    )
 
 
 ALLOWED_HOST = ["http://localhost:3000", "http://127.0.0.1:3000"]
