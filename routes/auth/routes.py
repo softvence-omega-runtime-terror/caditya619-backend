@@ -35,7 +35,10 @@ async def detect_input_type(value: str) -> str:
     elif re.match(phone_regex, value):
         return 'phone'
     else:
-        raise ValueError('Please enter a correct phone number.')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Please enter a correct phone number.'
+        )
 
 
 class OAuth2EmailPasswordForm:

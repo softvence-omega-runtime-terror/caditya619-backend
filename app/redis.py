@@ -1,7 +1,8 @@
 from redis.asyncio import Redis
 redis_client: Redis | None = None
+from app.config import settings
 
-def init_redis(url="redis://localhost:6379/0"):
+def init_redis(url=settings.RADIS_URL):
     global redis_client
     if not redis_client:
         redis_client = Redis.from_url(url, encoding="utf-8", decode_responses=True)

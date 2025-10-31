@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     TWOFACTOR_API_KEY: str = "f1972b11-9a1c-11f0-b922-0200cd936042"
     SECRET_KEY: Optional[str] = None
     BASE_URL: str = "http://localhost:8000/"
+    RADIS_URL: str = "redis://localhost:6379/0"
 
     class Config:
         env_file = ".env"
