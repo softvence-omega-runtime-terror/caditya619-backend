@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Form, Query, Body, UploadFile, File
 from typing import List, Optional
 from app.auth import *
-from applications.user.models import User, Permission, Group, CustomerProfile, VendorProfile, RiderProfile
+from applications.user.models import User, Permission, Group
+from applications.user.customer import CustomerProfile
+from applications.user.rider import RiderProfile
+from applications.user.vendor import VendorProfile
 from app.utils.otp_manager import verify_otp
-from app.utils.file_manager import save_file, update_file, delete_file
+from app.utils.file_manager import update_file, delete_file
 from tortoise.transactions import in_transaction
 from app.utils.phone_number import phone_number
 
