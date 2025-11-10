@@ -2,11 +2,20 @@ from datetime import datetime, timedelta, timezone
 
 from tortoise import fields, models
 from app.utils.generate_unique import generate_unique
+from tortoise.validators import MinValueValidator, MaxValueValidator
+from tortoise.expressions import Q
+from tortoise.functions import Avg
 
 
 class Category(models.Model):
+    TYPE_CHOICES = (
+        ("food", "Food"),
+        ("groceries", "Groceries"),
+        ("medicine", "Medicine"),
+    )
     id = fields.IntField(pk=True)
     name = fields.CharField(max_length=100, unique=True)
+    type = fields.CharField(max_length=20, choices=TYPE_CHOICES, defaults='groceries')
     avatar = fields.CharField(max_length=500, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
@@ -34,8 +43,7 @@ class SubCategory(models.Model):
 
 class SubSubCategory(models.Model):
     id = fields.IntField(pk=True)
-    subcategory = fields.ForeignKeyField("models.SubCategory", related_name="sub_subcategories",
-                                         on_delete=fields.CASCADE)
+    subcategory = fields.ForeignKeyField("models.SubCategory", related_name="sub_subcategories", on_delete=fields.CASCADE)
     name = fields.CharField(max_length=100)
     avatar = fields.CharField(max_length=500, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -50,13 +58,31 @@ class SubSubCategory(models.Model):
 
 class Item(models.Model):
     id = fields.IntField(pk=True)
+    
+    category = fields.ForeignKeyField("models.Category", related_name="item")
+    subcategory = fields.ForeignKeyField("models.SubCategory", related_name="item", null=True, blank=True)
+    sub_subcategory = fields.ForeignKeyField("models.SubSubCategory", related_name="item", null=True, blank=True)
+    
     title = fields.CharField(max_length=255)
-    short_bio = fields.TextField(null=True)
     description = fields.TextField(null=True)
+    image = fields.CharField(max_length=200, null=True)
     price = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    discount = fields.DecimalField(max_digits=5, decimal_places=2, default=0.0)
+    discount = fields.IntField(validators=[MinValueValidator(0), MaxValueValidator(5)], default=0)
+    
+    ratings = fields.FloatField(default=0.0)
+    stock = fields.IntField(default=0)
+    total_sale = fields.IntField(default=0)
 
-    tag = fields.CharField(max_length=2000, null=True, )
+    popular = fields.BooleanField(default=False)
+    free_delivery = fields.BooleanField(default=False)
+    hot_deals = fields.BooleanField(default=False)
+    flash_sale = fields.BooleanField(default=False)
+    
+    weight = fields.FloatField(null=True)
+    vendor = fields.ForeignKeyField("models.User", related_name='Vendor')
+    
+    isOTC = fields.BooleanField(default=False)
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -66,16 +92,28 @@ class Item(models.Model):
     def __str__(self):
         return self.title
 
-    # Computed properties
+    async def update_average_rating(self):
+        from applications.items.review import ItemReview
+        result = await ItemReview.filter(
+            Q(item=self) & Q(parent__isnull=True) & Q(rating__not_isnull=True)
+        ).aggregate(avg_rating=Avg("rating"))
+        avg = round(result["avg_rating"] or 0.0, 2)
+        self.ratings = avg
+        await self.save(update_fields=["ratings"])
+
+
     @property
-    def tags_list(self):
-        if self.tag:
-            return [tag.strip() for tag in self.tag.split(',')]
-        return []
+    def is_in_stock(self):
+        return self.stock > 0
 
     @property
     def new_arrival(self):
         return datetime.now(timezone.utc) - self.created_at <= timedelta(days=3)
+
+    @property
+    def today_deals(self):
+        created_date = self.created_at.astimezone(timezone.utc).date()
+        return self.hot_deals and created_date == datetime.now(timezone.utc).date()
 
     @property
     def discounted_price(self):
@@ -88,33 +126,5 @@ class Item(models.Model):
     def __str__(self) -> str:
         return self.title
 
-    async def save(self, *args, **kwargs):
-        if not self.slug:
-            self.slug = await generate_unique(model=self.__class__, field='slug', text=self.title)
-        if self.discount < 0 or self.discount > 100:
-            raise ValueError("Discount must be between 0 and 100.")
-        await super().save(*args, **kwargs)
 
-
-class ItemBase(models.Model):
-    item = fields.ForeignKeyField("models.Item", on_delete=fields.CASCADE)
-    box_price = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    stock = fields.IntField(default=0)
-    total_sale = fields.IntField(default=0)
-
-    popular = fields.BooleanField(default=False)
-    free_delivery = fields.BooleanField(default=False)
-    hot_deals = fields.BooleanField(default=False)
-    flash_sale = fields.BooleanField(default=False)
-
-    class Meta:
-        abstract = True
-
-    @property
-    def is_in_stock(self):
-        return self.stock > 0
-
-    @property
-    def today_deals(self):
-        created_date = self.item.created_at.astimezone(timezone.utc).date()
-        return self.hot_deals and created_date == datetime.now(timezone.utc).date()
+    
