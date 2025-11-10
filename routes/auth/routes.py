@@ -116,7 +116,7 @@ async def send_otp(
 
     return {
         "status": "success",
-        "message": f"OTP sent to {phone}. Expires in 1 minute.{otp}",
+        "message": f"OTP sent to {phone}. Expires in 1 minute.{otp if settings.DEBUG else ""}",
         "purpose": purpose,
     }
 
@@ -173,99 +173,103 @@ async def login(
     }
 
 
-@router.post("/signup/", response_model=dict)
-async def signup(
-    phone: str = Form("91", description="Enter a valid phone number +91XXXXXXXXXX"),
-    name: str = Form(""),
-    otp: str = Form(""),
-    nid: Optional[str] = Form(""),
-    driving_license: Optional[str] = Form(""),
-    purpose: str = Form('signup', description="'signup', 'rider_signup', 'vendor_signup'"),
-):
-    # Validate phone
-    phone = await phone_number(phone)
-    if not phone:
-        raise HTTPException(status_code=400, detail="Enter a valid phone number.")
+# @router.post("/signup/", response_model=dict)
+# async def signup(
+#     phone: str = Form("91", description="Enter a valid phone number +91XXXXXXXXXX"),
+#     name: str = Form(""),
+#     otp: str = Form(""),
+#     nid: Optional[str] = Form(""),
+#     driving_license: Optional[str] = Form(""),
+#     purpose: str = Form('signup', description="'signup', 'rider_signup', 'vendor_signup'"),
+#     type: str = Form("", description='food/groceries/medicine')
+# ):
+#     # Validate phone
+#     phone = await phone_number(phone)
+#     if not phone:
+#         raise HTTPException(status_code=400, detail="Enter a valid phone number.")
 
-    # Verify OTP
-    if not await verify_otp(phone, otp, purpose=purpose):
-        raise HTTPException(status_code=400, detail="OTP not verified.")
+#     # Verify OTP
+#     if not await verify_otp(phone, otp, purpose=purpose):
+#         raise HTTPException(status_code=400, detail="OTP not verified.")
 
-    valid_purposes = ["signup", "rider_signup", "vendor_signup"]
-    if purpose not in valid_purposes:
-        raise HTTPException(status_code=400, detail="Invalid signup purpose.")
+#     valid_purposes = ["signup", "rider_signup", "vendor_signup"]
+#     if purpose not in valid_purposes:
+#         raise HTTPException(status_code=400, detail="Invalid signup purpose.")
 
-    async with in_transaction() as connection:
-        user = await User.get_or_none(phone=phone)
+#     async with in_transaction() as connection:
+#         user = await User.get_or_none(phone=phone)
         
-        # Already registered checks
-        if user:
-            if purpose == "signup":
-                raise HTTPException(status_code=400, detail="Phone number already registered.")
-            elif purpose == "rider_signup" and user.is_rider:
-                raise HTTPException(status_code=400, detail="Already registered as rider.")
-            elif purpose == "vendor_signup" and user.is_vendor:
-                raise HTTPException(status_code=400, detail="Already registered as vendor.")
+#         # Already registered checks
+#         if user:
+#             if purpose == "signup":
+#                 raise HTTPException(status_code=400, detail="Phone number already registered.")
+#             elif purpose == "rider_signup" and user.is_rider:
+#                 raise HTTPException(status_code=400, detail="Already registered as rider.")
+#             elif purpose == "vendor_signup" and user.is_vendor:
+#                 raise HTTPException(status_code=400, detail="Already registered as vendor.")
 
-        # Create user if not exists
-        if not user:
-            user = await User.create(phone=phone, name=name, using_db=connection)
-            await CustomerProfile.get_or_create(user=user, using_db=connection)
+#         # Create user if not exists
+#         if not user:
+#             user = await User.create(phone=phone, name=name, using_db=connection)
+#             await CustomerProfile.get_or_create(user=user, using_db=connection)
 
-        # Handle signup types
-        if purpose == "rider_signup":
-            if not (driving_license and nid):
-                raise HTTPException(status_code=400, detail="Driving License and NID are required for rider signup.")
-            user.is_rider = True
-            await user.save(using_db=connection)
-            await RiderProfile.get_or_create(
-                user=user,
-                defaults={"driving_license": driving_license, "nid": nid},
-                using_db=connection,
-            )
+#         # Handle signup types
+#         if purpose == "rider_signup":
+#             if not (driving_license and nid):
+#                 raise HTTPException(status_code=400, detail="Driving License and NID are required for rider signup.")
+#             user.is_rider = True
+#             await user.save(using_db=connection)
+#             await RiderProfile.get_or_create(
+#                 user=user,
+#                 defaults={"driving_license": driving_license, "nid": nid},
+#                 using_db=connection,
+#             )
 
-        elif purpose == "vendor_signup":
-            if not nid:
-                raise HTTPException(status_code=400, detail="NID is required for vendor signup.")
-            user.is_vendor = True
-            await user.save(using_db=connection)
-            await VendorProfile.get_or_create(
-                user=user,
-                defaults={"nid": nid},
-                using_db=connection,
-            )
+#         elif purpose == "vendor_signup":
+#             if not nid:
+#                 raise HTTPException(status_code=400, detail="NID is required for vendor signup.")
+#             if not type:
+#                 raise HTTPException(status_code=400, detail="Type is required for vendor signup.")
+#             user.is_vendor = True
+#             await user.save(using_db=connection)
+#             await VendorProfile.get_or_create(
+#                 user=user,
+#                 type=type,
+#                 defaults={"nid": nid},
+#                 using_db=connection,
+#             )
 
-    # Generate tokens
-    token_data = {
-        "sub": str(user.id),
-        "is_active": user.is_active,
-        "is_rider": user.is_rider,
-        "is_vendor": user.is_vendor,
-        "is_staff": user.is_staff,
-        "is_superuser": user.is_superuser,
-    }
+#     # Generate tokens
+#     token_data = {
+#         "sub": str(user.id),
+#         "is_active": user.is_active,
+#         "is_rider": user.is_rider,
+#         "is_vendor": user.is_vendor,
+#         "is_staff": user.is_staff,
+#         "is_superuser": user.is_superuser,
+#     }
 
-    access_token = create_access_token(token_data)
-    refresh_token = create_refresh_token(token_data)
+#     access_token = create_access_token(token_data)
+#     refresh_token = create_refresh_token(token_data)
 
-    roles = [
-        role
-        for role, active in {
-            "superuser": user.is_superuser,
-            "staff": user.is_staff,
-            "vendor": user.is_vendor,
-            "rider": user.is_rider,
-        }.items()
-        if active
-    ]
+#     roles = [
+#         role
+#         for role, active in {
+#             "superuser": user.is_superuser,
+#             "staff": user.is_staff,
+#             "vendor": user.is_vendor,
+#             "rider": user.is_rider,
+#         }.items()
+#         if active
+#     ]
 
-    return {
-        "message": "User created successfully",
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "roles": roles,
-        "token_type": "bearer",
-    }
+#     return {
+#         "message": "User created successfully",
+#         "access_token": access_token,
+#         "refresh_token": refresh_token,
+#         "roles": roles,
+#         "token_type": "bearer",
+#     }
 
 @router.get("/verify-token/")
 async def verify_token(request: Request, user: User = Depends(get_current_user)):
