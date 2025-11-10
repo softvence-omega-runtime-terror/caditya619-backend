@@ -16,6 +16,9 @@ from applications.user.models import User
 from app.utils.auto_routing import get_module
 from app.config import settings
 from app.dummy.users import create_test_users
+from app.dummy.categories import create_test_categories
+from app.dummy.sub_categories import create_test_subcategories
+from app.dummy.items import create_dummy_items
 
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
@@ -28,6 +31,10 @@ async def lifespan(routerAPI: FastAPI):
 
     if settings.DEBUG:
         await create_test_users()
+        await create_test_categories()
+        await create_test_subcategories()
+        await create_dummy_items()
+        
     
     for app_name in get_module(base_dir="applications"):
         try:
