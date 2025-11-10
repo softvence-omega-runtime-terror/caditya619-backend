@@ -79,33 +79,5 @@ class User(Model):
 
     
 
-class CustomerProfile(Model):
-    id = fields.IntField(pk=True)
-    user = fields.OneToOneField("models.User", related_name="customer_profile", on_delete=fields.CASCADE)
-    add1 = fields.CharField(max_length=100, null=True, blank=True)
-    add2 = fields.CharField(max_length=100, null=True, blank=True)
-    postal_code = fields.CharField(max_length=20, null=True, blank=True)
 
-    class Meta:
-        table = "cus_profile"
-    
-        
 
-class RiderProfile(Model):
-    id = fields.IntField(pk=True)
-    user = fields.OneToOneField("models.User", related_name="rider_profile", on_delete=fields.CASCADE)
-    driving_license = fields.CharField(max_length=100)
-    nid = fields.CharField(max_length=60)
-    
-    class Meta:
-        table = "rider_profile"
-        
-
-class VendorProfile(Model):
-    id = fields.IntField(pk=True)
-    user = fields.OneToOneField("models.User", related_name="vendor_profile", on_delete=fields.CASCADE)
-    nid = fields.CharField(max_length=60)
-    
-    class Meta:
-        table = "vendor_profile"
-        

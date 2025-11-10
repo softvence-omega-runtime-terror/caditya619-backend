@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Ba
 from typing import List, Optional
 from pydantic import BaseModel
 from passlib.context import CryptContext
-from applications.user.models import User, CustomerProfile, VendorProfile, RiderProfile
+from applications.user.models import User
+from applications.user.customer import CustomerProfile
+from applications.user.vendor import VendorProfile
+from applications.user.rider import RiderProfile
 from app.token import get_current_user, create_access_token, create_refresh_token
 from tortoise.contrib.pydantic import pydantic_model_creator
 from app.utils.otp_manager import generate_otp, verify_otp
@@ -93,13 +96,14 @@ async def send_otp(
             raise HTTPException(status_code=400, detail='You are not yet registered for vendor.')
         elif purpose == 'management_login' and not (user.is_superuser or user.is_staff):
             raise HTTPException(status_code=400, detail='Invalid credentials.')
+        
     elif purpose in ['signup', 'rider_signup', 'vendor_signup']:
         if purpose == 'signup' and user:
             raise HTTPException(status_code=400, detail=f"{phone} already registered.")
-        elif purpose == 'rider_signup' and user.is_rider:
-            raise HTTPException(status_code=400, detail='You are not yet registered for rider.')
-        elif purpose == 'vendor_signup' and not user.is_vendor:
-            raise HTTPException(status_code=400, detail='You are not yet registered for vendor.')
+        elif purpose == 'rider_signup' and user and not user.is_rider:
+            raise HTTPException(status_code=400, detail='You have already registered for rider.')
+        elif purpose == 'vendor_signup' and user and user.is_vendor:
+            raise HTTPException(status_code=400, detail='You have already registered for vendor.')
     else:
         raise HTTPException(status_code=400, detail="Invalid purpose.")
 

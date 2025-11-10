@@ -1,5 +1,8 @@
 from tortoise.exceptions import IntegrityError
-from applications.user.models import User, RiderProfile, CustomerProfile, VendorProfile
+from applications.user.models import User
+from applications.user.rider import RiderProfile
+from applications.user.vendor import VendorProfile
+from applications.user.customer import CustomerProfile
 
 USERS_DATA = [
     {
