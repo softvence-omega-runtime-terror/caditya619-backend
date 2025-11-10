@@ -2,18 +2,7 @@ from tortoise import fields, models
 from enum import Enum
 
 
-class DeliveryType(str, Enum):
-    STANDARD = "standard"
-    EXPRESS = "express"
-    PICKUP = "pickup"
-
-
-class PaymentType(str, Enum):
-    COD = "cod"
-    CARD = "card"
-    WALLET = "wallet"
-    UPI = "upi"
-
+# ==================== Enums ====================
 
 class OrderStatus(str, Enum):
     PENDING = "pending"
@@ -26,8 +15,51 @@ class OrderStatus(str, Enum):
     REFUNDED = "refunded"
 
 
+class DeliveryType(str, Enum):
+    STANDARD = "standard"
+    EXPRESS = "express"
+    PICKUP = "pickup"
 
 
+class PaymentMethodType(str, Enum):
+    PAYTM = "paytm"
+    GOOGLE_PAY = "googlePay"
+    PHONE_PE = "phonePe"
+    CASHFREE = "cashfree"
+    RAZORPAY = "razorpay"
+    COD = "cod"
+    CARD = "card"
+    WALLET = "wallet"
+    UPI = "upi"
+
+
+
+# ==================== Cart Models ====================
+
+class Cart(models.Model):
+    """Cart Model"""
+    id = fields.CharField(max_length=255, pk=True)
+    user = fields.ForeignKeyField("models.User", related_name="carts")
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "carts"
+
+
+class CartItem(models.Model):
+    """Cart Item Model"""
+    id = fields.CharField(max_length=255, pk=True)
+    cart = fields.ForeignKeyField("models.Cart", related_name="items", on_delete=fields.CASCADE)
+    product = fields.ForeignKeyField("models.Product", related_name="cart_items")
+    quantity = fields.IntField(default=1)
+    added_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "cart_items"
+
+
+# ==================== Order Models ====================
 
 class ShippingAddress(models.Model):
     """Shipping Address Model"""
@@ -41,7 +73,7 @@ class ShippingAddress(models.Model):
     country = fields.CharField(max_length=255)
     phone_number = fields.CharField(max_length=50)
     is_default = fields.BooleanField(default=False)
-    
+
     class Meta:
         table = "shipping_addresses"
 
@@ -53,7 +85,7 @@ class DeliveryOption(models.Model):
     title = fields.CharField(max_length=255)
     description = fields.TextField()
     price = fields.DecimalField(max_digits=10, decimal_places=2)
-    
+
     class Meta:
         table = "delivery_options"
 
@@ -61,9 +93,10 @@ class DeliveryOption(models.Model):
 class PaymentMethod(models.Model):
     """Payment Method Model"""
     id = fields.IntField(pk=True)
-    type = fields.CharEnumField(PaymentType, max_length=50)
+    type = fields.CharEnumField(PaymentMethodType, max_length=50)
     name = fields.CharField(max_length=255)
-    
+    icon_path = fields.CharField(max_length=500, null=True)
+
     class Meta:
         table = "payment_methods"
 
@@ -71,7 +104,7 @@ class PaymentMethod(models.Model):
 class Order(models.Model):
     """Order Model"""
     order_id = fields.CharField(max_length=255, pk=True)
-    user_id = fields.CharField(max_length=255, index=True)
+    user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
     
     # Relationships
     shipping_address = fields.ForeignKeyField(
@@ -99,7 +132,7 @@ class Order(models.Model):
     
     # Order tracking
     order_date = fields.DatetimeField(auto_now_add=True)
-    status = fields.CharEnumField(OrderStatus, max_length=50, default=OrderStatus.PENDING)
+    status = fields.CharEnumField(OrderStatus, max_length=50, default=OrderStatus.PENDING, index=True)
     transaction_id = fields.CharField(max_length=255, null=True)
     tracking_number = fields.CharField(max_length=255, null=True, index=True)
     estimated_delivery = fields.DatetimeField(null=True)
@@ -115,10 +148,6 @@ class Order(models.Model):
         table = "orders"
         ordering = ["-order_date"]
 
-    def __str__(self):
-        return f"Order {self.order_id} - {self.status}"
-    
-
 
 class OrderItem(models.Model):
     """Order Item Model"""
@@ -126,7 +155,7 @@ class OrderItem(models.Model):
     order = fields.ForeignKeyField("models.Order", related_name="items", on_delete=fields.CASCADE)
     product_id = fields.CharField(max_length=255)
     title = fields.CharField(max_length=500)
-    price = fields.DecimalField(max_digits=10, decimal_places=2)
+    price = fields.CharField(max_length=50)
     quantity = fields.IntField()
     image_path = fields.CharField(max_length=1000)
     
@@ -134,5 +163,52 @@ class OrderItem(models.Model):
         table = "order_items"
 
 
-# Note: Pydantic serializers are now in schemas.py
-# Following the pattern: Model_Pydantic = pydantic_model_creator(Model, name="Model")
+# ==================== Prescription Models ====================
+
+# class Prescription(models.Model):
+#     """Prescription Model"""
+#     id = fields.CharField(max_length=255, pk=True)
+#     user = fields.ForeignKeyField("models.User", related_name="prescriptions")
+#     image_path = fields.CharField(max_length=1000)
+#     file_name = fields.CharField(max_length=500)
+#     uploaded_at = fields.DatetimeField(auto_now_add=True)
+#     status = fields.CharEnumField(PrescriptionStatus, max_length=50, default=PrescriptionStatus.UPLOADED)
+#     notes = fields.TextField(null=True)
+#     created_at = fields.DatetimeField(auto_now_add=True)
+#     updated_at = fields.DatetimeField(auto_now=True)
+
+#     class Meta:
+#         table = "prescriptions"
+
+
+# class VendorResponse(models.Model):
+#     """Vendor Response to Prescription"""
+#     id = fields.CharField(max_length=255, pk=True)
+#     prescription = fields.ForeignKeyField("models.Prescription", related_name="vendor_responses")
+#     vendor_id = fields.CharField(max_length=255)
+#     vendor_name = fields.CharField(max_length=255)
+#     total_amount = fields.DecimalField(max_digits=10, decimal_places=2)
+#     status = fields.CharEnumField(VendorResponseStatus, max_length=50, default=VendorResponseStatus.PENDING)
+#     responded_at = fields.DatetimeField(auto_now_add=True)
+#     notes = fields.TextField(null=True)
+
+#     class Meta:
+#         table = "vendor_responses"
+
+
+# class Medicine(models.Model):
+#     """Medicine in Vendor Response"""
+#     id = fields.CharField(max_length=255, pk=True)
+#     vendor_response = fields.ForeignKeyField("models.VendorResponse", related_name="medicines")
+#     name = fields.CharField(max_length=255)
+#     brand = fields.CharField(max_length=255)
+#     dosage = fields.CharField(max_length=100)
+#     quantity = fields.IntField()
+#     price = fields.DecimalField(max_digits=10, decimal_places=2)
+#     notes = fields.TextField(null=True)
+#     is_available = fields.BooleanField(default=True)
+#     image_path = fields.CharField(max_length=1000, null=True)
+#     vendor_id = fields.CharField(max_length=255)
+
+#     class Meta:
+#         table = "medicines"

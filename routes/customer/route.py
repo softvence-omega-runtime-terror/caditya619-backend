@@ -38,7 +38,7 @@ async def create_cart(current_user: User = Depends(get_current_user)):
     #         "created_at": cart.created_at
     #     }
     # }
-    return {"message": current_user.name}
+    return {"message": current_user.phone}
 
 
 # @router.get("/{cart_id}/")
