@@ -74,7 +74,7 @@ async def get_order(order_id: str):
             "user_id": order.user_id,
             "items": [
                 {
-                    "product_id": item.product_id,
+                    "item_id": item.item_id,
                     "title": item.title,
                     "price": item.price,
                     "quantity": item.quantity,
@@ -128,130 +128,6 @@ async def cancel_order(order_id: str):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
-# # ==================== Prescription Routes ====================
-
-# prescription_router = APIRouter(prefix="/prescriptions", tags=["Prescriptions"])
-
-
-# @prescription_router.post("/", status_code=status.HTTP_201_CREATED)
-# async def upload_prescription(prescription_data: PrescriptionUploadSchema):
-#     """Upload a prescription"""
-#     user = await User.filter(id=prescription_data.user_id).first()
-#     if not user:
-#         raise HTTPException(status_code=404, detail="User not found")
-    
-#     prescription = await Prescription.create(
-#         id=f"presc_{int(datetime.utcnow().timestamp())}",
-#         user=user,
-#         image_path=prescription_data.image_path,
-#         file_name=prescription_data.file_name
-#     )
-    
-#     return {
-#         "success": True,
-#         "message": "Prescription uploaded successfully",
-#         "data": {
-#             "id": prescription.id,
-#             "user_id": prescription.user_id,
-#             "image_path": prescription.image_path,
-#             "file_name": prescription.file_name,
-#             "status": prescription.status,
-#             "uploaded_at": prescription.uploaded_at
-#         }
-#     }
-
-
-# @prescription_router.get("/{prescription_id}/")
-# async def get_prescription(prescription_id: str):
-#     """Get prescription with vendor responses"""
-#     prescription = await Prescription.filter(id=prescription_id).prefetch_related(
-#         "vendor_responses"
-#     ).first()
-    
-#     if not prescription:
-#         raise HTTPException(status_code=404, detail="Prescription not found")
-    
-#     vendor_responses = await VendorResponse.filter(prescription=prescription).prefetch_related("medicines")
-    
-#     return {
-#         "success": True,
-#         "message": "Prescription retrieved successfully",
-#         "data": {
-#             "id": prescription.id,
-#             "user_id": prescription.user_id,
-#             "image_path": prescription.image_path,
-#             "file_name": prescription.file_name,
-#             "status": prescription.status,
-#             "uploaded_at": prescription.uploaded_at,
-#             "vendor_responses": [
-#                 {
-#                     "id": vr.id,
-#                     "vendor_id": vr.vendor_id,
-#                     "vendor_name": vr.vendor_name,
-#                     "total_amount": float(vr.total_amount),
-#                     "status": vr.status
-#                 }
-#                 for vr in vendor_responses
-#             ]
-#         }
-#     }
-
-
-# # ==================== Profile Routes ====================
-
-# profile_router = APIRouter(prefix="/customer/profile", tags=["Profile"])
-
-
-# @profile_router.get("/")
-# async def get_profile(user_id: str = Query(...)):
-#     """Get user profile"""
-#     user = await User.filter(id=user_id).first()
-#     if not user:
-#         raise HTTPException(status_code=404, detail="User not found")
-    
-#     return {
-#         "success": True,
-#         "message": "Profile retrieved successfully",
-#         "data": {
-#             "id": user.id,
-#             "first_name": user.first_name,
-#             "last_name": user.last_name,
-#             "email": user.email,
-#             "phone_number": user.phone_number,
-#             "address_1": user.address_1,
-#             "address_2": user.address_2,
-#             "postal_code": user.postal_code
-#         }
-#     }
-
-
-# @profile_router.put("/")
-# async def update_profile(user_id: str, profile_data: UserProfileUpdateSchema):
-#     """Update user profile"""
-#     user = await User.filter(id=user_id).first()
-#     if not user:
-#         raise HTTPException(status_code=404, detail="User not found")
-    
-#     if profile_data.first_name:
-#         user.first_name = profile_data.first_name
-#     if profile_data.last_name:
-#         user.last_name = profile_data.last_name
-#     if profile_data.phone_number:
-#         user.phone_number = profile_data.phone_number
-#     if profile_data.address_1:
-#         user.address_1 = profile_data.address_1
-#     if profile_data.address_2:
-#         user.address_2 = profile_data.address_2
-#     if profile_data.postal_code:
-#         user.postal_code = profile_data.postal_code
-    
-#     await user.save()
-    
-#     return {
-#         "success": True,
-#         "message": "Profile updated successfully"
-#     }
 
 
 # # ==================== Dashboard Routes ====================

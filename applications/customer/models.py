@@ -1,5 +1,6 @@
 from tortoise import fields, models
 from enum import Enum
+from applications.user.models import *
 
 
 # ==================== Enums ====================
@@ -14,25 +15,16 @@ class OrderStatus(str, Enum):
     CANCELLED = "cancelled"
     REFUNDED = "refunded"
 
-
 class DeliveryType(str, Enum):
     STANDARD = "standard"
     EXPRESS = "express"
     PICKUP = "pickup"
+    URGENT = "urgent"
 
 
 class PaymentMethodType(str, Enum):
-    PAYTM = "paytm"
-    GOOGLE_PAY = "googlePay"
-    PHONE_PE = "phonePe"
-    CASHFREE = "cashfree"
     RAZORPAY = "razorpay"
     COD = "cod"
-    CARD = "card"
-    WALLET = "wallet"
-    UPI = "upi"
-
-
 
 # ==================== Cart Models ====================
 
@@ -61,46 +53,6 @@ class CartItem(models.Model):
 
 # ==================== Order Models ====================
 
-class ShippingAddress(models.Model):
-    """Shipping Address Model"""
-    id = fields.CharField(max_length=255, pk=True)
-    full_name = fields.CharField(max_length=255)
-    address_line1 = fields.CharField(max_length=500)
-    address_line2 = fields.CharField(max_length=500, null=True)
-    city = fields.CharField(max_length=255)
-    state = fields.CharField(max_length=255)
-    postal_code = fields.CharField(max_length=50)
-    country = fields.CharField(max_length=255)
-    phone_number = fields.CharField(max_length=50)
-    is_default = fields.BooleanField(default=False)
-
-    class Meta:
-        table = "shipping_addresses"
-
-
-class DeliveryOption(models.Model):
-    """Delivery Option Model"""
-    id = fields.IntField(pk=True)
-    type = fields.CharEnumField(DeliveryType, max_length=50)
-    title = fields.CharField(max_length=255)
-    description = fields.TextField()
-    price = fields.DecimalField(max_digits=10, decimal_places=2)
-
-    class Meta:
-        table = "delivery_options"
-
-
-class PaymentMethod(models.Model):
-    """Payment Method Model"""
-    id = fields.IntField(pk=True)
-    type = fields.CharEnumField(PaymentMethodType, max_length=50)
-    name = fields.CharField(max_length=255)
-    icon_path = fields.CharField(max_length=500, null=True)
-
-    class Meta:
-        table = "payment_methods"
-
-
 class Order(models.Model):
     """Order Model"""
     order_id = fields.CharField(max_length=255, pk=True)
@@ -108,17 +60,17 @@ class Order(models.Model):
     
     # Relationships
     shipping_address = fields.ForeignKeyField(
-        "models.ShippingAddress", 
+        "models.CustomerShippingAddress", 
         related_name="orders",
         null=True
     )
-    delivery_option = fields.ForeignKeyField(
-        "models.DeliveryOption", 
-        related_name="orders",
+    delivery_type = fields.CharEnumField(
+        DeliveryType,
+        max_length=20,  # should be at least as long as your longest enum value
         null=True
     )
-    payment_method = fields.ForeignKeyField(
-        "models.PaymentMethod", 
+    payment_method = fields.CharEnumField(
+        PaymentMethodType, 
         related_name="orders",
         null=True
     )

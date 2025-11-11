@@ -104,7 +104,7 @@ class OrderService:
         for item_data in order_data.items:
             await OrderItem.create(
                 order=order,
-                product_id=item_data.product_id,
+                item_id=item_data.item_id,
                 title=item_data.title,
                 price=Decimal(item_data.price),
                 quantity=item_data.quantity,

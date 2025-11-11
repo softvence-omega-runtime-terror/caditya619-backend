@@ -50,7 +50,7 @@ class CartCreateSchema(BaseModel):
 
 class CartItemCreateSchema(BaseModel):
     """Add Item to Cart Schema"""
-    product_id: str
+    item_id: str
     quantity: int = Field(..., gt=0)
 
 
@@ -62,7 +62,7 @@ class CartItemUpdateSchema(BaseModel):
 class CartItemResponseSchema(BaseModel):
     """Cart Item Response"""
     id: str
-    product_id: str
+    item_id: str
     quantity: int
     added_at: datetime
 
@@ -85,7 +85,7 @@ class CartResponseSchema(BaseModel):
 
 class OrderItemCreateSchema(BaseModel):
     """Order Item Schema"""
-    product_id: str
+    item_id: str
     title: str
     price: str
     quantity: int = Field(..., gt=0)
@@ -106,28 +106,14 @@ class ShippingAddressSchema(BaseModel):
     is_default: bool = False
 
 
-class DeliveryOptionSchema(BaseModel):
-    """Delivery Option Schema"""
-    type: str = Field(..., description="standard | express | pickup")
-    title: str
-    description: str
-    price: float
-
-
-class PaymentMethodSchema(BaseModel):
-    """Payment Method Schema"""
-    type: str = Field(..., description="cod | card | wallet | upi | paytm | googlePay | phonePe | cashfree | razorpay")
-    name: str
-    icon_path: Optional[str] = None
-
 
 class OrderCreateSchema(BaseModel):
     """Order Creation Schema"""
     user_id: str
     items: List[OrderItemCreateSchema]
     shipping_address: ShippingAddressSchema
-    delivery_option: DeliveryOptionSchema
-    payment_method: PaymentMethodSchema
+    # delivery_option: DeliveryOptionSchema
+    # payment_method: PaymentMethodSchema
     coupon_code: Optional[str] = None
 
 
@@ -145,8 +131,8 @@ class OrderResponseSchema(BaseModel):
     user_id: str
     items: List[OrderItemCreateSchema]
     shipping_address: ShippingAddressSchema
-    delivery_option: DeliveryOptionSchema
-    payment_method: PaymentMethodSchema
+    # delivery_option: DeliveryOptionSchema
+    # payment_method: PaymentMethodSchema
     subtotal: float
     delivery_fee: float
     total: float
