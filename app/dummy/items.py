@@ -41,7 +41,7 @@ async def create_dummy_items():
                     continue
 
                 # 3. Create 10 items per sub-subcategory
-                for i in range(10):
+                for i in range(2):
                     title = f"{sub_subcategory.name} Item {i+1}"
                     description = fake.text(max_nb_chars=200)
                     price = round(random.uniform(5, 100), 2)
