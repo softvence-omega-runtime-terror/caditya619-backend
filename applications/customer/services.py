@@ -2,7 +2,11 @@ from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from applications.customer.models import *
 from applications.customer.schemas import *
-from decimal import Decimal
+from applications.items.models import *
+from applications.user.models import *
+from applications.user.schemas import *
+from applications.user.customer import *
+from decimal import Decimal, InvalidOperation
 import uuid
 
 
@@ -42,20 +46,28 @@ class OrderService:
     async def create_order(self, order_data: OrderCreateSchema) -> Order:
         """Create a new order"""
         # Calculate prices
-        subtotal = sum(
-            float(item.price) * item.quantity 
-            for item in order_data.items
-        )
+        subtotal = 0
+        for item in order_data.items:
+            try:
+                price = Decimal(item.price)  # will fail if item.price is not numeric
+                subtotal += price * item.quantity
+            except (InvalidOperation, ValueError, TypeError):
+                # Handle invalid price
+                print(f"Warning: invalid price '{item.price}' for item {item}")
+                # Option 1: skip this item
+                continue
+                # Option 2: raise an error
+                # raise ValueError(f"Invalid price '{item.price}' for item {item}")
         delivery_fee = order_data.delivery_option.price
         discount = self._apply_coupon(subtotal, order_data.coupon_code)
         total = subtotal + delivery_fee - discount
 
         # Create or get shipping address
-        shipping_address, _ = await ShippingAddress.get_or_create(
+        shipping_address, _ = await CustomerShippingAddress.get_or_create(
             id=order_data.shipping_address.id,
             defaults={
                 "full_name": order_data.shipping_address.full_name,
-                "address_line1": order_data.shipping_address.address_line1,
+                "address_line1": order_data.shipping_address.address_line,
                 "address_line2": order_data.shipping_address.address_line2,
                 "city": order_data.shipping_address.city,
                 "state": order_data.shipping_address.state,
@@ -67,7 +79,7 @@ class OrderService:
         )
 
         # Create delivery option
-        delivery_option = await DeliveryOption.create(
+        delivery_option = await DeliveryType.create(
             type=order_data.delivery_option.type,
             title=order_data.delivery_option.title,
             description=order_data.delivery_option.description,
@@ -75,7 +87,7 @@ class OrderService:
         )
 
         # Create payment method
-        payment_method = await PaymentMethod.create(
+        payment_method = await PaymentMethodType.create(
             type=order_data.payment_method.type,
             name=order_data.payment_method.name
         )
