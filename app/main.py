@@ -50,7 +50,6 @@ async def lifespan(routerAPI: FastAPI):
 app = FastAPI(lifespan=lifespan, debug=settings.DEBUG)
 register_routes(app)
 
-
 templates = Jinja2Templates(directory="templates")
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):

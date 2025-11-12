@@ -4,9 +4,9 @@ from applications.customer.models import *
 from applications.customer.schemas import *
 from applications.items.models import *
 from app.token import get_current_user
+from applications.user.customer import *
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
-
 
 @router.get("/")
 async def get_profile(user_id: str = Query(...)):

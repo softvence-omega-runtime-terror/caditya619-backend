@@ -1,6 +1,8 @@
 from tortoise import fields, models
 from enum import Enum
+from tortoise.models import Model
 from applications.user.models import *
+from applications.user.customer import CustomerShippingAddress
 
 
 # ==================== Enums ====================
@@ -15,17 +17,42 @@ class OrderStatus(str, Enum):
     CANCELLED = "cancelled"
     REFUNDED = "refunded"
 
-class DeliveryType(str, Enum):
+# Keep the Enum separate
+class DeliveryTypeEnum(str, Enum):
     STANDARD = "standard"
     EXPRESS = "express"
     PICKUP = "pickup"
     URGENT = "urgent"
 
+# Create a proper Tortoise Model for delivery options
+class DeliveryOption(Model):
+    id = fields.IntField(pk=True)
+    type = fields.CharEnumField(DeliveryTypeEnum, max_length=20)
+    title = fields.CharField(max_length=100)
+    description = fields.TextField()
+    price = fields.DecimalField(max_digits=10, decimal_places=2)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+    
+    class Meta:
+        table = "delivery_options"
+
 
 class PaymentMethodType(str, Enum):
     RAZORPAY = "razorpay"
     COD = "cod"
-
+    
+class PaymentMethod(Model):
+    id = fields.IntField(pk=True)
+    type = fields.CharEnumField(PaymentMethodType, max_length=20)
+    title = fields.CharField(max_length=100)
+    description = fields.TextField(null=True)
+    is_active = fields.BooleanField(default=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+    
+    class Meta:
+        table = "payment_methods"
 # ==================== Cart Models ====================
 
 class Cart(models.Model):
@@ -55,9 +82,9 @@ class CartItem(models.Model):
 
 class Order(models.Model):
     """Order Model"""
-    order_id = fields.CharField(max_length=255, pk=True)
+    id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
-    
+    cart = fields.ForeignKeyField("models.Cart", related_name="cart_orders", on_delete=fields.SET_NULL, null=True)
     # Relationships
     shipping_address = fields.ForeignKeyField(
         "models.CustomerShippingAddress", 
@@ -65,7 +92,7 @@ class Order(models.Model):
         null=True
     )
     delivery_type = fields.CharEnumField(
-        DeliveryType,
+        DeliveryTypeEnum,
         max_length=20,  # should be at least as long as your longest enum value
         null=True
     )
@@ -103,9 +130,9 @@ class Order(models.Model):
 
 class OrderItem(models.Model):
     """Order Item Model"""
-    id = fields.IntField(pk=True)
+    id = fields.IntField(pk=True, generated=True)
     order = fields.ForeignKeyField("models.Order", related_name="items", on_delete=fields.CASCADE)
-    item_id = fields.ForeignKeyField("models.Item", related_name="order_items")
+    item_id = fields.ForeignKeyField("models.Item",          related_name="order_items")
     title = fields.CharField(max_length=500)
     price = fields.CharField(max_length=50)
     quantity = fields.IntField()

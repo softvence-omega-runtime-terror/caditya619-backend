@@ -5,6 +5,10 @@ from datetime import datetime
 from applications.customer.models import *
 from applications.items.models import *
 from applications.user.models import *
+from applications.user.customer import CustomerShippingAddress
+from applications.user.schemas import *
+from decimal import Decimal
+import re
 
 
 # Cart Schemas
@@ -15,30 +19,27 @@ CartItem_Pydantic = pydantic_model_creator(CartItem, name="CartItem")
 Order_Pydantic = pydantic_model_creator(Order, name="Order")
 OrderItem_Pydantic = pydantic_model_creator(OrderItem, name="OrderItem")
 
-# DeliveryType Schemas
-DeliveryType_Pydantic = pydantic_model_creator(
-    DeliveryType, 
-    name="DeliveryType"
+# Create Pydantic models from Tortoise model
+DeliveryOption_Pydantic = pydantic_model_creator(
+    DeliveryOption, 
+    name="DeliveryOption"
 )
 
-DeliveryTypeIn_Pydantic = pydantic_model_creator(
-    DeliveryType, 
-    name="DeliveryTypeIn",
-    exclude_readonly=True,
-    exclude=("id",)
+DeliveryOption_Pydantic_In = pydantic_model_creator(
+    DeliveryOption, 
+    name="DeliveryOptionIn",
+    exclude_readonly=True  # Excludes id, created_at, updated_at
 )
 
-# PaymentMethod Schemas
-PaymentMethodType_Pydantic = pydantic_model_creator(
-    PaymentMethodType, 
-    name="PaymentMethodType"
+PaymentMethod_Pydantic = pydantic_model_creator(
+    PaymentMethod, 
+    name="PaymentMethod"
 )
 
-PaymentMethodIn_Pydantic = pydantic_model_creator(
-    PaymentMethodType, 
+PaymentMethod_Pydantic_In = pydantic_model_creator(
+    PaymentMethod, 
     name="PaymentMethodIn",
-    exclude_readonly=True,
-    exclude=("id",)
+    exclude_readonly=True
 )
 
 # ==================== Cart Schemas ====================
@@ -61,10 +62,11 @@ class CartItemUpdateSchema(BaseModel):
 
 class CartItemResponseSchema(BaseModel):
     """Cart Item Response"""
-    id: str
     item_id: str
+    title: str
+    price: Decimal
     quantity: int
-    added_at: datetime
+    image_path: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -72,10 +74,7 @@ class CartItemResponseSchema(BaseModel):
 
 class CartResponseSchema(BaseModel):
     """Cart Response with Items"""
-    id: str
-    user_id: str
     items: List[CartItemResponseSchema]
-    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -85,36 +84,74 @@ class CartResponseSchema(BaseModel):
 
 class OrderItemCreateSchema(BaseModel):
     """Order Item Schema"""
-    item_id: str
-    title: str
-    price: condecimal(max_digits=10, decimal_places=2) 
-    quantity: int = Field(..., gt=0)
-    image_path: str
-
+    cart_id: str
 
 class ShippingAddressSchema(BaseModel):
-    """Shipping Address Schema"""
-    id: str
-    full_name: str
-    address_line1: str
-    address_line2: Optional[str] = None
-    city: str
-    state: str
-    postal_code: str
-    country: str
-    phone_number: str
-    is_default: bool = False
+    """Shipping Address Input Schema"""
+    id: Optional[str] = None
+    full_name: str = Field(..., alias="fullName", min_length=1, max_length=255)
+    address_line1: str = Field(..., alias="addressLine1", min_length=1, max_length=500)
+    address_line2: Optional[str] = Field(None, alias="addressLine2", max_length=500)
+    city: Optional[str] = Field(None, max_length=255)
+    state: Optional[str] = Field(None, max_length=255)
+    postal_code: Optional[str] = Field(None, alias="postalCode", max_length=20)
+    country: Optional[str] = Field(None, max_length=255)
+    phone_number: str = Field(..., alias="phoneNumber", max_length=50)
+    is_default: bool = Field(False, alias="isDefault")
+    
+    @validator('phone_number')
+    def validate_phone(cls, v):
+        # Remove spaces and check if it's a valid phone format
+        phone = v.replace(" ", "").replace("-", "")
+        if not re.match(r'^\+?[1-9]\d{1,14}$', phone):
+            raise ValueError('Invalid phone number format')
+        return v
+    
+    class Config:
+        populate_by_name = True  # Allows both camelCase and snake_case
+        from_attributes = True
 
+class ShippingAddressResponseSchema(BaseModel):
+    """Shipping Address Response Schema"""
+    id: str
+    full_name: str = Field(..., alias="fullName")
+    address_line1: str = Field(..., alias="addressLine1")
+    address_line2: str = Field(..., alias="addressLine2")
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = Field(None, alias="postalCode")
+    country: Optional[str] = None
+    phone_number: str = Field(..., alias="phoneNumber")
+    is_default: bool = Field(..., alias="isDefault")
+    
+    class Config:
+        populate_by_name = True
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "addr_1234567890",
+                "fullName": "John Doe",
+                "addressLine1": "123 Main Street",
+                "addressLine2": "Apt 4B",
+                "city": "New York",
+                "state": "NY",
+                "postalCode": "10001",
+                "country": "USA",
+                "phoneNumber": "+1234567890",
+                "isDefault": True
+            }
+        }
 
 
 class OrderCreateSchema(BaseModel):
     """Order Creation Schema"""
-    user_id: str
+    user_id: Optional[int] = None
+    carts: List[OrderItemCreateSchema]
     items: List[OrderItemCreateSchema]
     shipping_address: ShippingAddressSchema
-    # DeliveryType_Pydantic: Optional[str] = DeliveryType.STANDARD.value
-    # payment_method: Optional[str] = PaymentMethodType.RAZORPAY.value
-    subtotal: condecimal(max_digits=10, decimal_places=2)
+    delivery_option: DeliveryOption_Pydantic_In
+    payment_method: PaymentMethod_Pydantic_In
+    # subtotal: condecimal(max_digits=10, decimal_places=2)
     coupon_code: Optional[str] = None
 
 
@@ -130,15 +167,15 @@ class OrderResponseSchema(BaseModel):
     """Order Response Schema"""
     order_id: str
     user_id: str
-    items: List[OrderItemCreateSchema]
-    shipping_address: ShippingAddressSchema
-    # delivery_option: str
-    # payment_method: str
-    subtotal: float
-    delivery_fee: float
-    total: float
+    items: List[CartResponseSchema]
+    shipping_address: ShippingAddressResponseSchema
+    delivery_option: str
+    payment_method: str
+    subtotal: Decimal
+    delivery_fee: Decimal
+    total: Decimal
     coupon_code: Optional[str]
-    discount: float
+    discount: Decimal
     order_date: datetime
     status: str
     transaction_id: Optional[str]
@@ -171,7 +208,7 @@ class UserProfileUpdateSchema(BaseModel):
 #     total_users: int
 #     total_orders: int
 #     total_products: int
-#     total_revenue: float = 0.0
+#     total_revenue: Decimal = 0.0
 
 
 # # ==================== API Response Schemas ====================

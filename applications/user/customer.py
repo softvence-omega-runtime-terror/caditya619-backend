@@ -1,5 +1,6 @@
 from tortoise import fields, models
-
+import time
+from applications.user.models import *
 
 class CustomerProfile(models.Model):
     id = fields.IntField(pk=True)
@@ -11,6 +12,11 @@ class CustomerProfile(models.Model):
     class Meta:
         table = "cus_profile"
     
+    @classmethod
+    async def create_for_user(cls, user):
+        # Use user's ID as profile ID
+        profile = await cls.create(id=user.id, user=user)
+        return profile
 
 
 class CustomerShippingAddress(models.Model):
@@ -19,7 +25,7 @@ class CustomerShippingAddress(models.Model):
     user = fields.ForeignKeyField("models.User", related_name="shipping_addresses", on_delete=fields.CASCADE)
     
     full_name = fields.CharField(max_length=255, default="")
-    address_line = fields.CharField(max_length=500, default="")
+    address_line1 = fields.CharField(max_length=500, default="")
     address_line2 = fields.CharField(max_length=500, default="")
     city = fields.CharField(max_length=255, null=True)
     state = fields.CharField(max_length=255, null=True)
@@ -30,6 +36,13 @@ class CustomerShippingAddress(models.Model):
     class Meta:
         table = "customer_shipping_address"
 
+    @classmethod
+    async def create_for_profile(cls, profile: CustomerProfile, **kwargs):
+        # Generate shipping address ID based on profile ID
+        address_id = f"{profile.id}_addr_{int(time.time() * 1000)}"
+        shipping_address = await cls.create(id=address_id, user_id=profile.user.id, **kwargs)
+        return shipping_address
+
     async def get_defaults(self):
         """Get default values from User and CustomerProfile"""
         await self.fetch_related('user', 'user__customer_profile')
@@ -37,7 +50,7 @@ class CustomerShippingAddress(models.Model):
         defaults = {
             'full_name': self.user.name or "",
             'phone_number': self.user.phone or "",
-            'address_line': ""
+            'address_line1': ""
         }
         
         # Get address from CustomerProfile if exists
@@ -48,6 +61,6 @@ class CustomerShippingAddress(models.Model):
                 address_parts.append(profile.add1)
             if profile.add2:
                 address_parts.append(profile.add2)
-            defaults['address_line'] = ", ".join(address_parts)
+            defaults['address_line1'] = ", ".join(address_parts)
         
         return defaults

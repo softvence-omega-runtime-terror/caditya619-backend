@@ -7,12 +7,11 @@ from applications.user.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *
 from applications.items.models import *
-from applications.user.customer import CustomerProfile
 # Import schemas
 from app.token import get_current_user
+from applications.user.customer import *
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
-
 
 @router.get("/")
 async def list_orders(
@@ -94,11 +93,11 @@ async def get_order(order_id: str):
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def place_order(order_data: OrderCreateSchema):
+async def place_order(order_data: OrderCreateSchema , current_user: User = Depends(get_current_user)):
     """Place a new order"""
     from applications.customer.services import OrderService
     service = OrderService()
-    order = await service.create_order(order_data)
+    order = await service.create_order(order_data, current_user)
     
     return {
         "success": True,
@@ -130,25 +129,25 @@ async def cancel_order(order_id: str):
 
 
 
-# # ==================== Dashboard Routes ====================
+# # # ==================== Dashboard Routes ====================
 
-# dashboard_router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
+# # dashboard_router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
-# @dashboard_router.get("/stats/")
-# async def get_dashboard_stats():
-#     """Get all dashboard statistics (Admin only)"""
-#     total_users = await User.all().count()
-#     total_orders = await Order.all().count()
-#     total_products = await Product.all().count()
+# # @dashboard_router.get("/stats/")
+# # async def get_dashboard_stats():
+# #     """Get all dashboard statistics (Admin only)"""
+# #     total_users = await User.all().count()
+# #     total_orders = await Order.all().count()
+# #     total_products = await Product.all().count()
     
-#     return {
-#         "success": True,
-#         "message": "Dashboard statistics retrieved successfully",
-#         "data": {
-#             "total_users": total_users,
-#             "total_orders": total_orders,
-#             "total_products": total_products,
-#             "total_revenue": 0.0  # Calculate from orders
-#         }
-#     }
+# #     return {
+# #         "success": True,
+# #         "message": "Dashboard statistics retrieved successfully",
+# #         "data": {
+# #             "total_users": total_users,
+# #             "total_orders": total_orders,
+# #             "total_products": total_products,
+# #             "total_revenue": 0.0  # Calculate from orders
+# #         }
+# #     }
