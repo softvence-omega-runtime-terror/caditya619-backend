@@ -103,7 +103,7 @@ async def place_order(order_data: OrderCreateSchema , current_user: User = Depen
         "success": True,
         "message": "Order placed successfully",
         "data": {
-            "order_id": order.order_id,
+            "order_id": order.id,
             "status": order.status,
             "tracking_number": order.tracking_number,
             "total": float(order.total)

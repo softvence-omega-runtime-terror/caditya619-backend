@@ -87,8 +87,7 @@ class OrderItemCreateSchema(BaseModel):
     cart_id: str
 
 class ShippingAddressSchema(BaseModel):
-    """Shipping Address Input Schema"""
-    id: Optional[str] = None
+    """Shipping Address Input Schema (ID will be auto-generated)"""
     full_name: str = Field(..., alias="fullName", min_length=1, max_length=255)
     address_line1: str = Field(..., alias="addressLine1", min_length=1, max_length=500)
     address_line2: Optional[str] = Field(None, alias="addressLine2", max_length=500)
@@ -101,16 +100,13 @@ class ShippingAddressSchema(BaseModel):
     
     @validator('phone_number')
     def validate_phone(cls, v):
-        # Remove spaces and check if it's a valid phone format
-        phone = v.replace(" ", "").replace("-", "")
-        if not re.match(r'^\+?[1-9]\d{1,14}$', phone):
-            raise ValueError('Invalid phone number format')
+        if not v or len(v.strip()) < 10:
+            raise ValueError('Phone number must be at least 10 characters')
         return v
     
     class Config:
-        populate_by_name = True  # Allows both camelCase and snake_case
+        populate_by_name = True
         from_attributes = True
-
 class ShippingAddressResponseSchema(BaseModel):
     """Shipping Address Response Schema"""
     id: str
@@ -145,9 +141,9 @@ class ShippingAddressResponseSchema(BaseModel):
 
 class OrderCreateSchema(BaseModel):
     """Order Creation Schema"""
-    user_id: Optional[int] = None
+    # user_id: Optional[int] = None
     carts: List[OrderItemCreateSchema]
-    items: List[OrderItemCreateSchema]
+    # items: List[OrderItemCreateSchema]
     shipping_address: ShippingAddressSchema
     delivery_option: DeliveryOption_Pydantic_In
     payment_method: PaymentMethod_Pydantic_In
@@ -165,7 +161,7 @@ class OrderUpdateSchema(BaseModel):
 
 class OrderResponseSchema(BaseModel):
     """Order Response Schema"""
-    order_id: str
+    order_id: str 
     user_id: str
     items: List[CartResponseSchema]
     shipping_address: ShippingAddressResponseSchema

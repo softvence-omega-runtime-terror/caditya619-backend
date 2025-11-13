@@ -20,131 +20,74 @@ class OrderService:
         """Generate unique order ID"""
         return f"ORD_{uuid.uuid4().hex[:8].upper()}"
 
-    @staticmethod
-    def _generate_tracking_number() -> str:
-        """Generate tracking number"""
-        return f"TRK_{uuid.uuid4().hex[:10].upper()}"
-
-    @staticmethod
-    def _calculate_estimated_delivery(delivery_type: str) -> datetime:
-        """Calculate estimated delivery date based on delivery type"""
-        days_map = {
-            "standard": 5,
-            "express": 2,
-            "pickup": 1
-        }
-        days = days_map.get(delivery_type, 5)
-        return datetime.utcnow() + timedelta(days=days)
-
-    @staticmethod
-    def _apply_coupon(subtotal: Decimal, coupon_code: Optional[str]) -> Decimal:
-        coupon_discounts = {
-            "NEWUSER50": Decimal("50.0"),
-            "SAVE20": Decimal("20.0"),
-            "WELCOME10": Decimal("10.0")
-    }
-        return coupon_discounts.get(coupon_code, Decimal("0.0"))
-
     async def create_order(self, order_data: OrderCreateSchema, current_user) -> Order:
         """Create a new order"""
-        # Calculate prices
         subtotal = Decimal("0")
         order_items = []
-        shipping_address_id = order_data.shipping_address.id
-    # Loop through each cart
+        
+        user = current_user
+        user_id = user.id
+        
+        # Process cart items
         for cart_data in order_data.carts:
-            # Fetch the cart with its items
-            cart = await Cart.get(id=cart_data.cart_id).prefetch_related('items')
+            cart = await Cart.get(id=cart_data.cart_id).prefetch_related('items__item')
             
-            # Calculate subtotal from cart items
             for cart_item in cart.items:
                 try:
-                    # Fetch the actual item to get price
-                    item = await Item.get(id=cart_item.item_id)
+                    item = cart_item.item
                     price = Decimal(str(item.price))
                     quantity = cart_item.quantity
-                    
                     subtotal += price * quantity
                     
-                    # Store item details for order creation
                     order_items.append({
-                        'item_id': str(item.id),
+                        'item': item,
                         'title': item.title,
                         'price': price,
                         'quantity': quantity,
-                        'image_path': item.image_path if hasattr(item, 'image_path') else ''
+                        'image_path': getattr(item, 'image', '')
                     })
                     
-                except (InvalidOperation, ValueError, TypeError, AttributeError) as e:
-                    print(f"Warning: Error processing cart item {cart_item.id}: {e}")
-                    continue
                 except Exception as e:
-                    print(f"Error fetching item {cart_item.item_id}: {e}")
+                    print(f"Error processing cart item: {e}")
                     continue
-    
-        # Get delivery fee as Decimal
+        
+        # Calculate totals
         delivery_fee = Decimal(str(order_data.delivery_option.price))
-        
-        # Get discount as Decimal
         discount = self._apply_coupon(subtotal, order_data.coupon_code)
-        
-        # Calculate total
         total = subtotal + delivery_fee - discount
-        user = current_user
-        user_id = user.id
-        print("user_id=======dfsdfsdfsdfds========:", user_id)
-
-        # Create or get shipping address
-        if not shipping_address_id:
-            shipping_address_id = f"addr_{int(time.time() * 1000)}"
-            # Create a new address
-            shipping_address = await CustomerShippingAddress.create(
-                id=shipping_address_id,
-                user_id=user_id,
-                full_name=order_data.shipping_address.full_name or "",
-                address_line1=order_data.shipping_address.address_line1 or "",
-                address_line2=order_data.shipping_address.address_line2 or "",
-                city=order_data.shipping_address.city or "",
-                state=order_data.shipping_address.state or "",
-                country=order_data.shipping_address.country or "",
-                phone_number=order_data.shipping_address.phone_number or "",
-                is_default=order_data.shipping_address.is_default or False
-            )
-        else:
-            # Fetch existing address
-            shipping_address = await CustomerShippingAddress.get(id=shipping_address_id)
-
-        # Create delivery option
-        delivery_option = await DeliveryOption.create(
-        type=order_data.delivery_option.type,  # Should be a DeliveryTypeEnum value
-        title=order_data.delivery_option.title,
-        description=order_data.delivery_option.description,
-        price=Decimal(str(order_data.delivery_option.price))
-)
-
-        # Create or get payment method
-        payment_method = await PaymentMethod.create(
-        type=order_data.payment_method.type,  # PaymentMethodType value
-        title=order_data.payment_method.title,
-        description=order_data.payment_method.description,
-        is_active=True
-)
-
-        # # Or get existing payment method
-        # payment_method = await PaymentMethod.get(type=PaymentMethodType.COD)
-
-        # Create order
-        order = await Order.create(
-            order_id=self._generate_order_id(),
+        
+        # Create shipping address
+        shipping_address_id = f"addr_{int(time.time() * 1000)}"
+        shipping_address = await CustomerShippingAddress.create(
+            id=shipping_address_id,
             user_id=user_id,
-            shipping_address=shipping_address,
-            delivery_option=delivery_option,
-            payment_method=order_data.payment_method.type,
-            subtotal=Decimal(str(subtotal)),
-            delivery_fee=Decimal(str(delivery_fee)),
-            total=Decimal(str(total)),
+            full_name=order_data.shipping_address.full_name or "",
+            address_line1=order_data.shipping_address.address_line1 or "",
+            address_line2=order_data.shipping_address.address_line2 or "",
+            city=order_data.shipping_address.city or "",
+            state=order_data.shipping_address.state or "",
+            postal_code=order_data.shipping_address.postal_code or "",
+            country=order_data.shipping_address.country or "",
+            phone_number=order_data.shipping_address.phone_number or "",
+            is_default=order_data.shipping_address.is_default or False
+        )
+        
+        # Generate unique order ID
+        order_id = f"order_{int(time.time() * 1000)}"
+        
+        # ✅ Create the order - matching your model fields
+        order = await Order.create(
+            id=order_id,  # ✅ Changed from order_id to id
+            user_id=user_id,
+            cart_id=order_data.carts[0].cart_id if order_data.carts else None,  # ✅ Added cart reference
+            shipping_address_id=shipping_address.id,
+            delivery_type=order_data.delivery_option.type,  # ✅ Changed to delivery_type enum
+            payment_method=order_data.payment_method.type,  # ✅ Changed to payment_method enum
+            subtotal=subtotal,
+            delivery_fee=delivery_fee,
+            total=total,
             coupon_code=order_data.coupon_code,
-            discount=Decimal(str(discount)),
+            discount=discount,
             status=OrderStatus.PENDING,
             tracking_number=self._generate_tracking_number(),
             estimated_delivery=self._calculate_estimated_delivery(
@@ -152,25 +95,53 @@ class OrderService:
             ),
             metadata={"created_at": datetime.utcnow().isoformat()}
         )
-
+        
         # Create order items
-        for cart_data in order_data.carts:
-            # Fetch the cart with its items
-            cart = await Cart.get(id=cart_data.cart_id).prefetch_related("items__item")
-            order_items = []
-            for cart_item in cart.items:
-                await OrderItem.create(
-                    order=order,
-                    item_id=cart_item.item,
-                    title=cart_item.item.title,
-                    price=Decimal(cart_item.item.price),
-                    quantity=cart_item.quantity,
-                    image_path=cart_item.item.image
-                )
-
-        # Fetch order with related data
-        await order.fetch_related("carts", "shipping_address", "delivery_option", "payment_method")
+        for item_data in order_items:
+            await OrderItem.create(
+                order_id=order.id,
+                item_id_id=item_data['item'].id,  # ✅ Note: Tortoise uses field_name_id for ForeignKey
+                title=item_data['title'],
+                price=str(item_data['price']),  # ✅ Your model has CharField for price
+                quantity=item_data['quantity'],
+                image_path=item_data['image_path']
+            )
+        
+        # Fetch related data
+        await order.fetch_related("shipping_address", "user", "cart")
+        
         return order
+
+
+    def _generate_tracking_number(self) -> str:
+        """Generate tracking number"""
+        import random
+        return f"TRK{random.randint(100000000, 999999999)}"
+
+
+    def _calculate_estimated_delivery(self, delivery_type: str) -> datetime:
+        """Calculate estimated delivery date"""
+        days_map = {
+            "standard": 5,
+            "express": 2,
+            "pickup": 1,
+            "urgent": 1
+        }
+        days = days_map.get(delivery_type, 5)
+        return datetime.utcnow() + timedelta(days=days)
+
+
+    @staticmethod
+    def _apply_coupon(subtotal: Decimal, coupon_code: Optional[str]) -> Decimal:
+        """Apply coupon discount"""
+        coupon_discounts = {
+            "NEWUSER50": Decimal("50.0"),
+            "SAVE20": Decimal("20.0"),
+            "WELCOME10": Decimal("10.0")
+        }
+        return coupon_discounts.get(coupon_code, Decimal("0.0"))
+    
+
 
     async def get_order(self, order_id: str) -> Optional[Order]:
         """Get order by ID"""

@@ -25,8 +25,9 @@ class DeliveryTypeEnum(str, Enum):
     URGENT = "urgent"
 
 # Create a proper Tortoise Model for delivery options
+# In models.py
 class DeliveryOption(Model):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(pk=True)  # Auto-incrementing integer
     type = fields.CharEnumField(DeliveryTypeEnum, max_length=20)
     title = fields.CharField(max_length=100)
     description = fields.TextField()
@@ -38,12 +39,14 @@ class DeliveryOption(Model):
         table = "delivery_options"
 
 
+
 class PaymentMethodType(str, Enum):
     RAZORPAY = "razorpay"
     COD = "cod"
     
+
 class PaymentMethod(Model):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(pk=True)  # Auto-incrementing integer
     type = fields.CharEnumField(PaymentMethodType, max_length=20)
     title = fields.CharField(max_length=100)
     description = fields.TextField(null=True)
