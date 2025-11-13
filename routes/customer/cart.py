@@ -118,7 +118,10 @@ async def add_cart_item(cart_id: str, item_data: CartItemCreateSchema):
 @router.patch("/{cart_id}/items/{item_id}/")
 async def update_cart_item(cart_id: str, item_id: str, item_data: CartItemUpdateSchema):
     """Update cart item quantity"""
-    item = await CartItem.filter(id=item_id, cart_id=cart_id).first()
+    print("Updating cart item: ", cart_id, item_id, item_data)
+    item = await CartItem.filter(item=item_id, cart=cart_id).first()
+    print("item info: ", item)
+
     if not item:
         raise HTTPException(status_code=404, detail="Cart item not found")
     
@@ -138,7 +141,7 @@ async def update_cart_item(cart_id: str, item_id: str, item_data: CartItemUpdate
 @router.delete("/{cart_id}/items/{item_id}/")
 async def delete_cart_item(cart_id: str, item_id: str):
     """Remove item from cart"""
-    item = await CartItem.filter(id=item_id, cart_id=cart_id).first()
+    item = await CartItem.filter(item=item_id, cart=cart_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Cart item not found")
     
