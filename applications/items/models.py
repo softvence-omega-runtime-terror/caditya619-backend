@@ -59,9 +59,9 @@ class SubSubCategory(models.Model):
 class Item(models.Model):
     id = fields.IntField(pk=True)
     
-    category = fields.ForeignKeyField("models.Category", related_name="item")
-    subcategory = fields.ForeignKeyField("models.SubCategory", related_name="item", null=True, blank=True)
-    sub_subcategory = fields.ForeignKeyField("models.SubSubCategory", related_name="item", null=True, blank=True)
+    category = fields.ForeignKeyField("models.Category", related_name="item", on_delete=fields.CASCADE)
+    subcategory = fields.ForeignKeyField("models.SubCategory", related_name="item", null=True, blank=True, on_delete=fields.SET_NULL)
+    sub_subcategory = fields.ForeignKeyField("models.SubSubCategory", related_name="item", null=True, blank=True, on_delete=fields.SET_NULL)
     
     title = fields.CharField(max_length=255)
     description = fields.TextField(null=True)
@@ -79,7 +79,7 @@ class Item(models.Model):
     flash_sale = fields.BooleanField(default=False)
     
     weight = fields.FloatField(null=True)
-    vendor = fields.ForeignKeyField("models.User", related_name='Vendor')
+    vendor = fields.ForeignKeyField("models.User", related_name='item', on_delete=fields.CASCADE)
     
     isOTC = fields.BooleanField(default=False)
 
