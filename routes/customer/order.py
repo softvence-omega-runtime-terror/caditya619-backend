@@ -30,6 +30,10 @@ async def get_order(
     return {
         "order_id": order.id,  # ✅ Changed from order.order_id
         "user_id": str(order.user_id),
+        "items": [
+                OrderItemResponseSchema.from_orm(item) 
+                for item in order.items
+            ] if hasattr(order, 'items') else [],
         "shipping_address": order.shipping_address,
         "delivery_option": order.delivery_type,  # ✅ Changed from delivery_option
         "payment_method": order.payment_method,
@@ -111,7 +115,7 @@ async def cancel_order(order_id: str):
         return {
             "success": True,
             "message": "Order cancelled successfully",
-            "data": {"order_id": order.order_id, "status": order.status}
+            "data": {"id": order.id, "status": order.status}
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

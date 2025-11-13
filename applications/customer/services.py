@@ -145,10 +145,7 @@ class OrderService:
 
     async def get_order(self, order_id: str) -> Optional[Order]:
         """Get order by ID"""
-        order = await Order.filter(id=order_id).prefetch_related(
-            "carts", "shipping_address"
-        ).first()
-        print("oooooooooooooooooo   ", order)
+        order = await Order.filter(id=order_id).prefetch_related("cart", "shipping_address").first()
         return order
 
     async def get_user_orders(
