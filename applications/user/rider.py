@@ -83,8 +83,8 @@ class RiderZoneAssignment(models.Model):
 class RiderCurrentLocation(models.Model):
     id = fields.IntField(pk=True)
     rider_profile = fields.OneToOneField("models.RiderProfile", on_delete=fields.CASCADE, related_name="current_location")
-    latitude = fields.FloatField()
-    longitude = fields.FloatField()
+    latitude = fields.FloatField(default= 0.0)
+    longitude = fields.FloatField(default= 0.0)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
@@ -111,6 +111,18 @@ class RiderAvailabilityStatus(models.Model):
         return f"Availability of RiderProfile ID {self.rider_profile_id}: {'Available' if self.is_available else 'Unavailable'}"
 
 
+
+
+#*********************************************************************#
+#              Rider State Related Models
+#*********************************************************************#
+
+
+class RiderDailyStats(models.Model):
+    id = fields.IntField(pk=True)
+    rider_profile = fields.ForeignKeyField("models.RiderProfile", on_delete=fields.CASCADE, related_name="daily_stats")
+    date = fields.DateField()
+    delivery_count = fields.IntField(default=0)
 
 
 

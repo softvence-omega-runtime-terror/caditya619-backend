@@ -136,6 +136,23 @@ async def update_rider_documents_me(
 
 
 
+@router.put("/admin-verify-rider/{rider_id}/", response_model=RiderProfile_Pydantic)
+async def admin_verify_rider(
+    rider_id: int = Path(..., description="The ID of the rider to verify"),
+    is_verified: bool = Body(..., embed=True, description="Verification status to set"),
+    user: User = Depends(get_current_user)
+):
+    if not user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized to verify riders")
+    
+    rider_profile = await RiderProfile.get_or_none(id=rider_id)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    
+    rider_profile.is_verified = is_verified
+    await rider_profile.save()
+    return await RiderProfile_Pydantic.from_tortoise_orm(rider_profile)
+
 
 
 
