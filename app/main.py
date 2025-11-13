@@ -16,6 +16,9 @@ from applications.user.models import User
 from app.utils.auto_routing import get_module
 from app.config import settings
 from app.dummy.users import create_test_users
+from app.dummy.categories import create_test_categories
+from app.dummy.sub_categories import create_test_subcategories
+from app.dummy.items import create_dummy_items
 
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
@@ -28,6 +31,10 @@ async def lifespan(routerAPI: FastAPI):
 
     if settings.DEBUG:
         await create_test_users()
+        await create_test_categories()
+        await create_test_subcategories()
+        await create_dummy_items()
+        
     
     for app_name in get_module(base_dir="applications"):
         try:
@@ -44,61 +51,6 @@ app = FastAPI(lifespan=lifespan, debug=settings.DEBUG)
 register_routes(app)
 
 
-
-from fastapi.responses import JSONResponse
-from deep_translator import GoogleTranslator
-import json
-
-@app.middleware("http")
-async def translate_response_middleware(request: Request, call_next):
-    # Get primary language from header, default to 'bn'
-    lang_header = request.headers.get("accept-language", "fr")
-    lang = lang_header.split(",")[0].strip().lower()
-
-    response = await call_next(request)
-
-    # Only translate JSON responses
-    if "application/json" in response.headers.get("content-type", ""):
-        try:
-            # Extract JSON data safely
-            if hasattr(response, "body"):
-                data = json.loads(response.body.decode())
-            else:
-                return response
-
-            # Recursive translation
-            def translate_data(obj):
-                if isinstance(obj, str):
-                    try:
-                        return GoogleTranslator(source='auto', target=lang).translate(obj)
-                    except Exception:
-                        return obj
-                elif isinstance(obj, list):
-                    return [translate_data(item) for item in obj]
-                elif isinstance(obj, dict):
-                    return {k: translate_data(v) for k, v in obj.items()}
-                return obj
-
-            translated_data = translate_data(data)
-            return JSONResponse(content=translated_data, status_code=response.status_code)
-
-        except Exception as e:
-            # If translation fails, return original response
-            print("Translation middleware error:", e)
-            return response
-
-    return response
-
-
-
-@app.get("/greet")
-async def greet():
-    return {"message": "Hello, welcome to our platform!", "info": "This is a sample message."}
-
-@app.get("/farewell")
-async def farewell():
-    return {"message": "Goodbye! See you soon."}
-
 templates = Jinja2Templates(directory="templates")
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -108,7 +60,8 @@ async def home(request: Request):
         html_file,
         {
             "request": request, 
-            "routes": routes
+            "routes": routes,
+            "image_url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1920&q=80"
         }
     )
 

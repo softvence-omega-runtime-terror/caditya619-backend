@@ -54,7 +54,7 @@ class User(Model):
         if self.is_superuser:
             return True
 
-        await self.prefetch_related("user_permissions", "groups__permissions")
+        await self.fetch_related("user_permissions", "groups__permissions")
 
         if self.is_staff:
             for perm in self.user_permissions:
