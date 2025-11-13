@@ -82,7 +82,7 @@ class CartResponseSchema(BaseModel):
 
 # ==================== Order Schemas ====================
 
-class OrderItemCreateSchema(BaseModel):
+class CartItemsCreateSchema(BaseModel):
     """Order Item Schema"""
     cart_id: str
 
@@ -142,7 +142,7 @@ class ShippingAddressResponseSchema(BaseModel):
 class OrderCreateSchema(BaseModel):
     """Order Creation Schema"""
     # user_id: Optional[int] = None
-    carts: List[OrderItemCreateSchema]
+    carts: List[CartItemsCreateSchema]
     # items: List[OrderItemCreateSchema]
     shipping_address: ShippingAddressSchema
     delivery_option: DeliveryOption_Pydantic_In
@@ -159,30 +159,42 @@ class OrderUpdateSchema(BaseModel):
     estimated_delivery: Optional[datetime] = None
 
 
-class OrderResponseSchema(BaseModel):
-    """Order Response Schema"""
-    order_id: str 
-    user_id: str
-    items: List[CartResponseSchema]
-    shipping_address: ShippingAddressResponseSchema
-    delivery_option: str
-    payment_method: str
-    subtotal: Decimal
-    delivery_fee: Decimal
-    total: Decimal
-    coupon_code: Optional[str]
-    discount: Decimal
-    order_date: datetime
-    status: str
-    transaction_id: Optional[str]
-    tracking_number: Optional[str]
-    estimated_delivery: Optional[datetime]
-    metadata: Optional[dict]
-
+class OrderItemResponseSchema(BaseModel):
+    """Order Item Response Schema"""
+    id: int
+    item_id: str
+    title: str
+    price: str
+    quantity: int
+    image_path: str
+    
     class Config:
         from_attributes = True
 
 
+class OrderResponseSchema(BaseModel):
+    """Order Response Schema"""
+    order_id: str = Field(..., alias="id")
+    user_id: str
+    items: List[OrderItemResponseSchema] = []  # Empty list by default
+    shipping_address: Optional[ShippingAddressResponseSchema] = None
+    delivery_option: str = Field(..., alias="delivery_type")
+    payment_method: str
+    subtotal: Decimal
+    delivery_fee: Decimal
+    total: Decimal
+    coupon_code: Optional[str] = None
+    discount: Decimal
+    order_date: datetime
+    status: str
+    transaction_id: Optional[str] = None
+    tracking_number: Optional[str] = None
+    estimated_delivery: Optional[datetime] = None
+    metadata: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
 
 
 # User Profile Update Schema

@@ -52,45 +52,68 @@ async def list_orders(
         "page_size": page_size
     }
 
+# In routes/customer/order.py
 
-@router.get("/{order_id}/")
-async def get_order(order_id: str):
-    """Get specific order details"""
-    order = await Order.filter(order_id=order_id).prefetch_related(
-        "items", "shipping_address", "delivery_option", "payment_method"
-    ).first()
+@router.get("/{order_id}", response_model=OrderResponseSchema)
+async def get_order(
+    order_id: str,
+    current_user = Depends(get_current_user)
+):
+    """Get a specific order"""
+    order = await Order.get(id=order_id).prefetch_related("shipping_address", "user", "cart", "items")
     
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    
-    items = await OrderItem.filter(order=order)
+    # Check if order belongs to current user
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this order")
     
     return {
-        "success": True,
-        "message": "Order retrieved successfully",
-        "data": {
-            "order_id": order.order_id,
-            "user_id": order.user_id,
-            "items": [
-                {
-                    "item_id": item.item_id,
-                    "title": item.title,
-                    "price": item.price,
-                    "quantity": item.quantity,
-                    "image_path": item.image_path
-                }
-                for item in items
-            ],
-            "subtotal": float(order.subtotal),
-            "delivery_fee": float(order.delivery_fee),
-            "total": float(order.total),
-            "discount": float(order.discount),
-            "status": order.status,
-            "order_date": order.order_date,
-            "tracking_number": order.tracking_number
-        }
+        "order_id": order.id,  # ✅ Changed from order.order_id
+        "user_id": str(order.user_id),
+        "shipping_address": order.shipping_address,
+        "delivery_option": order.delivery_type,  # ✅ Changed from delivery_option
+        "payment_method": order.payment_method,
+        "subtotal": order.subtotal,
+        "delivery_fee": order.delivery_fee,
+        "total": order.total,
+        "coupon_code": order.coupon_code,
+        "discount": order.discount,
+        "order_date": order.order_date,
+        "status": order.status,
+        "transaction_id": order.transaction_id,
+        "tracking_number": order.tracking_number,
+        "estimated_delivery": order.estimated_delivery,
+        "metadata": order.metadata
     }
 
+
+@router.get("/", response_model=List[OrderResponseSchema])
+async def get_orders(
+    current_user = Depends(get_current_user)
+):
+    """Get all orders for current user"""
+    orders = await Order.filter(user_id=current_user.id).prefetch_related("shipping_address", "items")
+    
+    return [
+        {
+            "order_id": order.id,  # ✅ Changed from order.order_id
+            "user_id": str(order.user_id),
+            "shipping_address": order.shipping_address,
+            "delivery_option": order.delivery_type,  # ✅ Changed
+            "payment_method": order.payment_method,
+            "subtotal": order.subtotal,
+            "delivery_fee": order.delivery_fee,
+            "total": order.total,
+            "coupon_code": order.coupon_code,
+            "discount": order.discount,
+            "order_date": order.order_date,
+            "status": order.status,
+            "transaction_id": order.transaction_id,
+            "tracking_number": order.tracking_number,
+            "estimated_delivery": order.estimated_delivery,
+            "metadata": order.metadata
+        }
+        for order in orders
+    ]
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def place_order(order_data: OrderCreateSchema , current_user: User = Depends(get_current_user)):

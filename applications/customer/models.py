@@ -36,7 +36,7 @@ class DeliveryOption(Model):
     updated_at = fields.DatetimeField(auto_now=True)
     
     class Meta:
-        table = "delivery_options"
+        table = "delivery_option"
 
 
 
@@ -55,7 +55,7 @@ class PaymentMethod(Model):
     updated_at = fields.DatetimeField(auto_now=True)
     
     class Meta:
-        table = "payment_methods"
+        table = "payment_method"
 # ==================== Cart Models ====================
 
 class Cart(models.Model):
