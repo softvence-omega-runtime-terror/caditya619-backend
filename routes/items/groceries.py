@@ -2,10 +2,14 @@ from fastapi import APIRouter, HTTPException, UploadFile, Form, Depends
 from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.transactions import in_transaction
 from typing import Optional, List
+
+from app.token import get_current_user
 from applications.items.models import Item, Category, SubCategory, SubSubCategory
 from app.utils.file_manager import save_file, update_file, delete_file
-from app.auth import permission_required
+from app.auth import permission_required, vendor_required
 import json
+
+from applications.user.models import User
 
 router = APIRouter(prefix="/groceries", tags=["Groceries"])
 
@@ -51,7 +55,7 @@ async def serialize_item(item: Item):
 
 
 # ----------------------- CREATE -----------------------
-@router.post("/", response_model=dict, dependencies=[Depends(permission_required("add_item"))])
+@router.post("/", response_model=dict, dependencies=[Depends(vendor_required)])
 async def create_item(
         title: str = Form(...),
         description: Optional[str] = Form(None),
@@ -67,13 +71,15 @@ async def create_item(
         flash_sale: bool = Form(False),
         isOTC: bool = Form(False),
         weight: Optional[float] = Form(None),
-        vendor_id: Optional[int] = Form(None),
-        image: Optional[UploadFile] = None
+        image: Optional[UploadFile] = None,
+        vendor: User = Depends(get_current_user)
 ):
     async with in_transaction() as conn:
         category = await Category.get_or_none(id=category_id, using_db=conn)
-        if not category:
+        if not category and not category.type == 'grocery':
             raise HTTPException(status_code=404, detail="Category not found")
+        if vendor.vendor_profile.type != 'grocery':
+            raise HTTPException(status_code=403, detail="Vendor type mismatch")
 
         subcategory = await SubCategory.get_or_none(id=subcategory_id, using_db=conn) if subcategory_id else None
         sub_subcategory = await SubSubCategory.get_or_none(id=sub_subcategory_id, using_db=conn) if sub_subcategory_id else None
