@@ -5,10 +5,10 @@ from applications.customer.schemas import *
 from applications.items.models import *
 from applications.user.models import *
 from applications.user.schemas import *
-from applications.user.customer import CustomerShippingAddress
+from applications.customer.models import CustomerShippingAddress
 from decimal import Decimal, InvalidOperation
 import uuid
-from applications.customer.models import DeliveryTypeEnum, DeliveryOption
+from applications.customer.models import *
 import time
 from fastapi import Depends
 from tortoise.models import Model

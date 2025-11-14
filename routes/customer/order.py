@@ -9,7 +9,7 @@ from applications.customer.schemas import *
 from applications.items.models import *
 # Import schemas
 from app.token import get_current_user
-from applications.user.customer import *
+from applications.customer.models import *
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 

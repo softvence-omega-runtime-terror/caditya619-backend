@@ -3,7 +3,7 @@ from tortoise.transactions import in_transaction
 from applications.user.models import User
 from applications.user.rider import RiderProfile
 from applications.user.vendor import VendorProfile
-from applications.user.customer import CustomerProfile
+from applications.customer.models import *
 
 USERS_DATA = [
     {

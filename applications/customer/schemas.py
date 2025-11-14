@@ -5,7 +5,7 @@ from datetime import datetime
 from applications.customer.models import *
 from applications.items.models import *
 from applications.user.models import *
-from applications.user.customer import CustomerShippingAddress
+from applications.customer.models import CustomerShippingAddress
 from applications.user.schemas import *
 from decimal import Decimal
 import re
@@ -234,7 +234,27 @@ class UserProfileUpdateSchema(BaseModel):
     address_2: Optional[str] = None
     postal_code: Optional[str] = None
 
+class CustomerProfileSchema(BaseModel):
+    """Customer Profile Input Schema"""
+    name: Optional[str] = Field(None, max_length=50)
+    email: Optional[EmailStr] = None
+    photo: Optional[str] = Field(None, max_length=255)
+    address_1: Optional[str] = Field(None, max_length=100, alias="address1")
+    address_2: Optional[str] = Field(None, max_length=100, alias="address2")
+    postal_code: Optional[str] = Field(None, max_length=20, alias="postalCode")
+    
+    class Config:
+        populate_by_name = True  # Allow both camelCase and snake_case
 
+
+class CustomerProfileResponseSchema(BaseModel):
+    """Customer Profile Response Schema"""
+    success: bool = True
+    message: str
+    data: dict
+    
+    class Config:
+        from_attributes = True
 
 """
 # # ==================== Dashboard Schemas ====================
