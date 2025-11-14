@@ -39,15 +39,15 @@ async def get_cart(cart_id: str, current_user = Depends(get_current_user)):
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_cart(cart_data: CartCreateSchema, current_user: User = Depends(get_current_user)):
+async def create_cart(current_user: User = Depends(get_current_user)):
     """Create a new cart"""
-    user = await User.filter(id=cart_data.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # user = await User.filter(id=cart_data.user_id).first()
+    # if not user:
+    #     raise HTTPException(status_code=404, detail="User not found")
     
     cart = await Cart.create(
         id=f"cart_{int(datetime.utcnow().timestamp())}",
-        user=user
+        user=current_user
     )
     
     return {
@@ -55,7 +55,7 @@ async def create_cart(cart_data: CartCreateSchema, current_user: User = Depends(
         "message": "Cart created successfully",
         "data": {
             "id": cart.id,
-            "user_id": cart.user_id,
+            "user_id": cart.user.id,
             "items": [],
             "created_at": cart.created_at
         }

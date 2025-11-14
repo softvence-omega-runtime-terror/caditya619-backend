@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from applications.user.models import *
+from applications.user.customer import *
 from applications.items.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *

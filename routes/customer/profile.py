@@ -1,6 +1,6 @@
 # routes/customer/profile.py
 from fastapi import APIRouter, HTTPException, Depends, status
-from applications.user.models import *
+from applications.user.customer import *
 from applications.customer.models import *
 from applications.customer.schemas import *
 from app.token import get_current_user
@@ -128,24 +128,24 @@ async def delete_profile(current_user: User = Depends(get_current_user)):
     }
 
 
-@router.delete("/hard-delete", status_code=status.HTTP_200_OK)
-async def hard_delete_profile(current_user: User = Depends(get_current_user)):
-    """Permanently delete customer profile"""
-    profile = await CustomerProfile.filter(user=current_user).first()
+# @router.delete("/hard-delete", status_code=status.HTTP_200_OK)
+# async def hard_delete_profile(current_user: User = Depends(get_current_user)):
+#     """Permanently delete customer profile"""
+#     profile = await CustomerProfile.filter(user=current_user).first()
     
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profile not found"
-        )
+#     if not profile:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Profile not found"
+#         )
     
-    # Delete profile record
-    await profile.delete()
+#     # Delete profile record
+#     await profile.delete()
     
-    return {
-        "success": True,
-        "message": "Profile deleted permanently"
-    }
+#     return {
+#         "success": True,
+#         "message": "Profile deleted permanently"
+#     }
 
 
 

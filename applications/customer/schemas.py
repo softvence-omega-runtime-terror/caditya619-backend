@@ -46,7 +46,8 @@ PaymentMethod_Pydantic_In = pydantic_model_creator(
 
 class CartCreateSchema(BaseModel):
     """Cart Creation Schema"""
-    user_id: str
+    # user_id: str
+    pass
 
 
 class CartItemCreateSchema(BaseModel):
