@@ -4,15 +4,12 @@ from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import os
 from applications.user.models import *
+from applications.items.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *
-from applications.items.models import *
-# Import schemas
 from app.token import get_current_user
-from applications.customer.models import *
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
-
 
 
 @router.get("/{order_id}", response_model=OrderResponseSchema)

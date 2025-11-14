@@ -2,7 +2,8 @@ from tortoise import fields, models
 from enum import Enum
 from tortoise.models import Model
 from applications.user.models import *
-
+from applications.items.models import *
+from applications.customer.schemas import *
 
 # ==================== Enums ====================
 
@@ -177,13 +178,13 @@ class CustomerShippingAddress(models.Model):
     id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField("models.User", related_name="shipping_addresses", on_delete=fields.CASCADE)
     
-    # full_name = fields.CharField(max_length=255, default="")
+    full_name = fields.CharField(max_length=255, default="")
     address_line1 = fields.CharField(max_length=500, default="")
     address_line2 = fields.CharField(max_length=500, default="")
     city = fields.CharField(max_length=255, null=True)
     state = fields.CharField(max_length=255, null=True)
     country = fields.CharField(max_length=255, null=True)
-    # phone_number = fields.CharField(max_length=50, default="")
+    phone_number = fields.CharField(max_length=50, default="")
     is_default = fields.BooleanField(default=False)
 
     class Meta:

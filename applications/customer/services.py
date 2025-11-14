@@ -1,14 +1,12 @@
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
+from applications.user.models import *
+from applications.items.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *
-from applications.items.models import *
-from applications.user.models import *
-from applications.user.schemas import *
-from applications.customer.models import CustomerShippingAddress
+from app.token import get_current_user
 from decimal import Decimal, InvalidOperation
 import uuid
-from applications.customer.models import *
 import time
 from fastapi import Depends
 from tortoise.models import Model

@@ -2,11 +2,11 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from pydantic import BaseModel, Field, EmailStr, validator, condecimal
 from typing import List, Optional
 from datetime import datetime
-from applications.customer.models import *
-from applications.items.models import *
 from applications.user.models import *
-from applications.customer.models import CustomerShippingAddress
-from applications.user.schemas import *
+from applications.items.models import *
+from applications.customer.models import *
+from applications.customer.schemas import *
+from app.token import get_current_user
 from decimal import Decimal
 import re
 

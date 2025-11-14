@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query, status, Depends
 from datetime import datetime
 from applications.user.models import *
+from applications.items.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *
-from applications.items.models import *
-from app.token import get_current_user
-from applications.customer.models import *
 from app.token import get_current_user
 
 router = APIRouter(prefix="/carts", tags=["Cart"])
