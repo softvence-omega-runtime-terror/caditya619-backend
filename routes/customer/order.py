@@ -105,7 +105,7 @@ async def place_order(order_data: OrderCreateSchema , current_user: User = Depen
 
 
 @router.delete("/{order_id}/")
-async def cancel_order(order_id: str):
+async def cancel_order(order_id: str, current_user = Depends(get_current_user)):
     """Cancel an order"""
     from applications.customer.services import OrderService
     service = OrderService()
