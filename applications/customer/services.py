@@ -145,10 +145,7 @@ class OrderService:
 
     async def get_order(self, order_id: str) -> Optional[Order]:
         """Get order by ID"""
-        order = await Order.filter(id=order_id).prefetch_related(
-            "carts", "shipping_address"
-        ).first()
-        print("oooooooooooooooooo   ", order)
+        order = await Order.filter(id=order_id).prefetch_related("cart", "shipping_address").first()
         return order
 
     async def get_user_orders(
@@ -158,11 +155,11 @@ class OrderService:
         limit: int = 10
     ) -> Tuple[List[Order], int]:
         """Get all orders for a user with pagination"""
-        orders = await Order.filter(user_id=user_id).prefetch_related(
-            "carts", "shipping_address", "delivery_option", "payment_method"
+        orders = await Order.filter(user=user_id).prefetch_related(
+            "carts", "shipping_address"
         ).offset(skip).limit(limit).all()
         
-        total = await Order.filter(user_id=user_id).count()
+        total = await Order.filter(user=user_id).count()
         return orders, total
 
     async def update_order(

@@ -13,46 +13,7 @@ from applications.user.customer import *
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
-@router.get("/")
-async def list_orders(
-    user_id: str = Query(...),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100)
-):
-    """List all orders for current user"""
-    skip = (page - 1) * page_size
-    orders = await Order.filter(user_id=user_id).prefetch_related(
-        "items", "shipping_address", "delivery_option", "payment_method"
-    ).offset(skip).limit(page_size)
-    
-    total = await Order.filter(user_id=user_id).count()
-    
-    orders_data = []
-    for order in orders:
-        items = await OrderItem.filter(order=order)
-        orders_data.append({
-            "order_id": order.order_id,
-            "user_id": order.user_id,
-            "subtotal": float(order.subtotal),
-            "delivery_fee": float(order.delivery_fee),
-            "total": float(order.total),
-            "discount": float(order.discount),
-            "status": order.status,
-            "order_date": order.order_date,
-            "tracking_number": order.tracking_number,
-            "estimated_delivery": order.estimated_delivery
-        })
-    
-    return {
-        "success": True,
-        "message": "Orders retrieved successfully",
-        "data": orders_data,
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
 
-# In routes/customer/order.py
 
 @router.get("/{order_id}", response_model=OrderResponseSchema)
 async def get_order(
@@ -69,6 +30,10 @@ async def get_order(
     return {
         "order_id": order.id,  # ✅ Changed from order.order_id
         "user_id": str(order.user_id),
+        "items": [
+                OrderItemResponseSchema.from_orm(item) 
+                for item in order.items
+            ] if hasattr(order, 'items') else [],
         "shipping_address": order.shipping_address,
         "delivery_option": order.delivery_type,  # ✅ Changed from delivery_option
         "payment_method": order.payment_method,
@@ -91,29 +56,34 @@ async def get_orders(
     current_user = Depends(get_current_user)
 ):
     """Get all orders for current user"""
-    orders = await Order.filter(user_id=current_user.id).prefetch_related("shipping_address", "items")
+    orders = await Order.filter(user=current_user.id).prefetch_related("shipping_address", "items")
     
-    return [
-        {
-            "order_id": order.id,  # ✅ Changed from order.order_id
+    result = []
+    for order in orders:
+        result.append({
+            "order_id": order.id,
             "user_id": str(order.user_id),
-            "shipping_address": order.shipping_address,
-            "delivery_option": order.delivery_type,  # ✅ Changed
-            "payment_method": order.payment_method,
+            "items": [
+                OrderItemResponseSchema.from_orm(item) 
+                for item in order.items
+            ] if hasattr(order, 'items') else [],
+            "shipping_address": ShippingAddressResponseSchema.from_orm(order.shipping_address) if order.shipping_address else None,
+            "delivery_option": order.delivery_type.value,  # ✅ Get enum value
+            "payment_method": order.payment_method.value,  # ✅ Get enum value
             "subtotal": order.subtotal,
             "delivery_fee": order.delivery_fee,
             "total": order.total,
             "coupon_code": order.coupon_code,
             "discount": order.discount,
             "order_date": order.order_date,
-            "status": order.status,
+            "status": order.status.value,  # ✅ Get enum value
             "transaction_id": order.transaction_id,
             "tracking_number": order.tracking_number,
             "estimated_delivery": order.estimated_delivery,
             "metadata": order.metadata
-        }
-        for order in orders
-    ]
+        })
+    
+    return result
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def place_order(order_data: OrderCreateSchema , current_user: User = Depends(get_current_user)):
@@ -135,7 +105,7 @@ async def place_order(order_data: OrderCreateSchema , current_user: User = Depen
 
 
 @router.delete("/{order_id}/")
-async def cancel_order(order_id: str):
+async def cancel_order(order_id: str, current_user = Depends(get_current_user)):
     """Cancel an order"""
     from applications.customer.services import OrderService
     service = OrderService()
@@ -145,7 +115,7 @@ async def cancel_order(order_id: str):
         return {
             "success": True,
             "message": "Order cancelled successfully",
-            "data": {"order_id": order.order_id, "status": order.status}
+            "data": {"id": order.id, "status": order.status}
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

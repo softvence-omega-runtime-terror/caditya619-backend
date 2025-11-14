@@ -168,15 +168,23 @@ class OrderItemResponseSchema(BaseModel):
     quantity: int
     image_path: str
     
+    @validator('item_id', pre=True)
+    def convert_item_id(cls, v):
+        """Convert ForeignKey to string ID"""
+        if hasattr(v, 'id'):
+            return str(v.id)
+        return str(v)
+    
     class Config:
         from_attributes = True
+        # orm_mode = True
 
 
 class OrderResponseSchema(BaseModel):
     """Order Response Schema"""
     order_id: str = Field(..., alias="id")
     user_id: str
-    items: List[OrderItemResponseSchema] = []  # Empty list by default
+    items: List[OrderItemResponseSchema] = []
     shipping_address: Optional[ShippingAddressResponseSchema] = None
     delivery_option: str = Field(..., alias="delivery_type")
     payment_method: str
@@ -192,11 +200,31 @@ class OrderResponseSchema(BaseModel):
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
 
+    @validator('user_id', pre=True)
+    def convert_user_id(cls, v):
+        """Convert user_id to string"""
+        return str(v)
+    
+    @validator('delivery_option', pre=True)
+    def convert_delivery_enum(cls, v):
+        """Convert enum to string value"""
+        return v.value if hasattr(v, 'value') else v
+    
+    @validator('payment_method', pre=True)
+    def convert_payment_enum(cls, v):
+        """Convert enum to string value"""
+        return v.value if hasattr(v, 'value') else v
+    
+    @validator('status', pre=True)
+    def convert_status_enum(cls, v):
+        """Convert enum to string value"""
+        return v.value if hasattr(v, 'value') else v
+
     class Config:
         from_attributes = True
         populate_by_name = True
 
-
+        
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
     first_name: Optional[str] = None

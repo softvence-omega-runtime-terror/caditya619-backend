@@ -6,11 +6,12 @@ from applications.customer.schemas import *
 from applications.items.models import *
 from app.token import get_current_user
 from applications.user.customer import *
+from app.token import get_current_user
 
 router = APIRouter(prefix="/carts", tags=["Cart"])
 
 @router.get("/{cart_id}/")
-async def get_cart(cart_id: str):
+async def get_cart(cart_id: str, current_user = Depends(get_current_user)):
     """Get cart details"""
     cart = await Cart.filter(id=cart_id).prefetch_related("items").first()
     if not cart:
@@ -64,7 +65,7 @@ async def create_cart(cart_data: CartCreateSchema, current_user: User = Depends(
 
 
 @router.delete("/{cart_id}/")
-async def delete_cart(cart_id: str):
+async def delete_cart(cart_id: str, current_user = Depends(get_current_user)):
     """Delete cart"""
     cart = await Cart.filter(id=cart_id).first()
     if not cart:
@@ -79,7 +80,7 @@ async def delete_cart(cart_id: str):
 
 
 @router.post("/{cart_id}/items/", status_code=status.HTTP_201_CREATED)
-async def add_cart_item(cart_id: str, item_data: CartItemCreateSchema):
+async def add_cart_item(cart_id: str, item_data: CartItemCreateSchema, current_user = Depends(get_current_user)):
     """Add item to cart"""
     cart = await Cart.filter(id=cart_id).first()
     if not cart:
@@ -116,7 +117,7 @@ async def add_cart_item(cart_id: str, item_data: CartItemCreateSchema):
 
 
 @router.patch("/{cart_id}/items/{item_id}/")
-async def update_cart_item(cart_id: str, item_id: str, item_data: CartItemUpdateSchema):
+async def update_cart_item(cart_id: str, item_id: str, item_data: CartItemUpdateSchema, current_user = Depends(get_current_user)):
     """Update cart item quantity"""
     print("Updating cart item: ", cart_id, item_id, item_data)
     item = await CartItem.filter(item=item_id, cart=cart_id).first()
@@ -139,7 +140,7 @@ async def update_cart_item(cart_id: str, item_id: str, item_data: CartItemUpdate
 
 
 @router.delete("/{cart_id}/items/{item_id}/")
-async def delete_cart_item(cart_id: str, item_id: str):
+async def delete_cart_item(cart_id: str, item_id: str, current_user = Depends(get_current_user)):
     """Remove item from cart"""
     item = await CartItem.filter(item=item_id, cart=cart_id).first()
     if not item:
