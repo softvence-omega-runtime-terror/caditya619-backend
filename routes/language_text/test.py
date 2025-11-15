@@ -8,6 +8,8 @@ router = APIRouter(prefix='/lang', tags=['Language'])
 async def greet(request: Request):
     lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     
+    print("language : ", lang)
+    
     message = {
         "slug": "sdfsfsfsdfwrwe",
         "message": translate("Hello, welcome to our platform!", lang),
