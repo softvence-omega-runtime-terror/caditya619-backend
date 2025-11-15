@@ -2,8 +2,8 @@ from tortoise import fields, models
 from enum import Enum
 from tortoise.models import Model
 from applications.user.models import *
-from applications.user.customer import CustomerShippingAddress
-
+from applications.items.models import *
+from applications.customer.schemas import *
 
 # ==================== Enums ====================
 
@@ -143,4 +143,6 @@ class OrderItem(models.Model):
     
     class Meta:
         table = "order_item"
+
+
 

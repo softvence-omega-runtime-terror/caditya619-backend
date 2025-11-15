@@ -2,11 +2,11 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from pydantic import BaseModel, Field, EmailStr, validator, condecimal
 from typing import List, Optional
 from datetime import datetime
-from applications.customer.models import *
-from applications.items.models import *
 from applications.user.models import *
-from applications.user.customer import CustomerShippingAddress
-from applications.user.schemas import *
+from applications.items.models import *
+from applications.customer.models import *
+from applications.customer.schemas import *
+from app.token import get_current_user
 from decimal import Decimal
 import re
 
@@ -46,7 +46,8 @@ PaymentMethod_Pydantic_In = pydantic_model_creator(
 
 class CartCreateSchema(BaseModel):
     """Cart Creation Schema"""
-    user_id: str
+    # user_id: str
+    pass
 
 
 class CartItemCreateSchema(BaseModel):
@@ -168,15 +169,23 @@ class OrderItemResponseSchema(BaseModel):
     quantity: int
     image_path: str
     
+    @validator('item_id', pre=True)
+    def convert_item_id(cls, v):
+        """Convert ForeignKey to string ID"""
+        if hasattr(v, 'id'):
+            return str(v.id)
+        return str(v)
+    
     class Config:
         from_attributes = True
+        # orm_mode = True
 
 
 class OrderResponseSchema(BaseModel):
     """Order Response Schema"""
     order_id: str = Field(..., alias="id")
     user_id: str
-    items: List[OrderItemResponseSchema] = []  # Empty list by default
+    items: List[OrderItemResponseSchema] = []
     shipping_address: Optional[ShippingAddressResponseSchema] = None
     delivery_option: str = Field(..., alias="delivery_type")
     payment_method: str
@@ -192,11 +201,31 @@ class OrderResponseSchema(BaseModel):
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
 
+    @validator('user_id', pre=True)
+    def convert_user_id(cls, v):
+        """Convert user_id to string"""
+        return str(v)
+    
+    @validator('delivery_option', pre=True)
+    def convert_delivery_enum(cls, v):
+        """Convert enum to string value"""
+        return v.value if hasattr(v, 'value') else v
+    
+    @validator('payment_method', pre=True)
+    def convert_payment_enum(cls, v):
+        """Convert enum to string value"""
+        return v.value if hasattr(v, 'value') else v
+    
+    @validator('status', pre=True)
+    def convert_status_enum(cls, v):
+        """Convert enum to string value"""
+        return v.value if hasattr(v, 'value') else v
+
     class Config:
         from_attributes = True
         populate_by_name = True
 
-
+        
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
     first_name: Optional[str] = None
@@ -206,7 +235,27 @@ class UserProfileUpdateSchema(BaseModel):
     address_2: Optional[str] = None
     postal_code: Optional[str] = None
 
+class CustomerProfileSchema(BaseModel):
+    """Customer Profile Input Schema"""
+    name: Optional[str] = Field(None, max_length=50)
+    email: Optional[EmailStr] = None
+    photo: Optional[str] = Field(None, max_length=255)
+    address_1: Optional[str] = Field(None, max_length=100, alias="address1")
+    address_2: Optional[str] = Field(None, max_length=100, alias="address2")
+    postal_code: Optional[str] = Field(None, max_length=20, alias="postalCode")
+    
+    class Config:
+        populate_by_name = True  # Allow both camelCase and snake_case
 
+
+class CustomerProfileResponseSchema(BaseModel):
+    """Customer Profile Response Schema"""
+    success: bool = True
+    message: str
+    data: dict
+    
+    class Config:
+        from_attributes = True
 
 """
 # # ==================== Dashboard Schemas ====================

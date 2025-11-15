@@ -1,21 +1,32 @@
 from tortoise import fields, models
 import time
-from applications.user.models import *
+# from applications.user.models import *
 
+# applications/customer/models.py
 class CustomerProfile(models.Model):
     id = fields.IntField(pk=True)
-    user = fields.OneToOneField("models.User", related_name="customer_profile", on_delete=fields.CASCADE)
-    add1 = fields.CharField(max_length=100, null=True, blank=True)
-    add2 = fields.CharField(max_length=100, null=True, blank=True)
-    postal_code = fields.CharField(max_length=20, null=True, blank=True)
-
+    user = fields.OneToOneField(
+        "models.User", 
+        related_name="customer_profile", 
+        on_delete=fields.CASCADE
+    )
+    add1 = fields.CharField(max_length=100, null=True)
+    add2 = fields.CharField(max_length=100, null=True)
+    postal_code = fields.CharField(max_length=20, null=True)
+    
     class Meta:
         table = "cus_profile"
     
     @classmethod
     async def create_for_user(cls, user):
-        # Use user's ID as profile ID
-        profile = await cls.create(id=user.id, user=user)
+        """Create profile for user"""
+        # Check if profile already exists
+        existing = await cls.filter(user=user).first()
+        if existing:
+            return existing
+        
+        # Create new profile
+        profile = await cls.create(user=user)
         return profile
 
 
@@ -50,6 +61,7 @@ class CustomerShippingAddress(models.Model):
         defaults = {
             'full_name': self.user.name or "",
             'phone_number': self.user.phone or "",
+            'email': self.user.email or "",
             'address_line1': ""
         }
         
