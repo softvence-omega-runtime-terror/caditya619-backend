@@ -6,14 +6,14 @@ router = APIRouter(prefix='/lang', tags=['Language'])
 
 @router.get("/greet")
 async def greet(request: Request):
-    
-    
     lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     
-    # translated = translate(response_data, lang)
-    response_data = {
-        "message": lang("Hello, welcome to our platform!"),
+    print("language : ", lang)
+    
+    message = {
+        "slug": "sdfsfsfsdfwrwe",
+        "message": translate("Hello, welcome to our platform!", lang),
         "info": "This is a sample message."
     }
     
-    return JSONResponse(content=response_data)
+    return JSONResponse(content=message)
