@@ -6,7 +6,7 @@ from tortoise import fields, models
 from applications.user.models import User
 from enum import Enum
 from app.token import get_current_user
-from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus
+from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus, RiderCurrentLocation
 from app.utils.file_manager import save_file, update_file, delete_file
 from tortoise.exceptions import IntegrityError
 from fastapi import Body
@@ -185,6 +185,21 @@ async def update_rider_profile_me(
 
 
 
+@router.put("/rider-online-offline/")
+async def go_online_offline(is_available: bool, user: User=Depends(get_current_user)):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    
+    rider_profile.is_available = is_available
+
+    await rider_profile.save()
+    await user.save()
+
+    return {"is_available":rider_profile.is_available}
+
+
+
 #*****************************************************
 #            Vehicle related endpoints
 #*****************************************************
@@ -347,6 +362,27 @@ async def delete_zone(
         raise HTTPException(status_code=404, detail="Zone not found")
     await zone.delete()
     return {"message": f"Zone with ID {zone_id} has been deleted."}
+
+
+
+
+@router.post("/rider-current-location")
+async def rider_current_location(lat:float, lng:float, user:User = Depends(get_current_user)):
+    if not user.is_rider:
+        raise HTTPException(status_code=204, detail="Must be rider to set the location")
+    
+    rider_profile = await RiderProfile.get_or_none(user=user)
+
+    
+    current_location = await RiderCurrentLocation.create(
+        rider_profile = rider_profile,
+        latitude = lat, 
+        longitude = lng
+    )
+
+    await current_location.save()
+
+    return {"rider":rider_profile.id, "lat":current_location.latitude, "long":current_location.longitude}
 
 
 
