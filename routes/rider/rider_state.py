@@ -6,7 +6,7 @@ from tortoise import fields, models
 from applications.user.models import User
 from enum import Enum
 from app.token import get_current_user
-from applications.user.rider import RiderProfile as Rider, Withdrawal, Notification
+from applications.user.rider import RiderProfile as Rider, Withdrawal, Notification, OrderOffer
 from app.utils.file_manager import save_file, update_file, delete_file
 from .helper_functions import *
 
@@ -21,32 +21,6 @@ router = APIRouter(tags=['Rider State'])
 
 
 
-
-@router.get("/orders/upcoming/", response_model=List[OrderOut])
-async def get_upcoming_orders(user: User = Depends(get_current_user)):
-    rider = await Rider.get_or_none(user=user)
-    orders = await Order.filter(rider=rider, status="offered").all()
-    return [OrderOut(**o.__dict__) for o in orders]
-
-@router.post("/orders/{order_id}/accept/")
-async def accept_order(order_id: uuid.UUID, rider: rider = Depends(get_current_user)):
-    order = await Order.get_or_none(id=order_id, rider=rider, status="offered")
-    if not order:
-        raise HTTPException(404, "Order not found")
-    order.status = "accepted"
-    order.accepted_at = datetime.utcnow()
-    await order.save()
-    # Update workday orders_accepted? Assume separate endpoint for workday tracking
-    return {"status": "accepted"}
-
-@router.post("/orders/{order_id}/reject/")
-async def reject_order(order_id: uuid.UUID, rider: rider = Depends(get_current_user)):
-    order = await Order.get_or_none(id=order_id, rider=rider, status="offered")
-    if not order:
-        raise HTTPException(404, "Order not found")
-    order.status = "rejected"
-    await order.save()
-    return {"status": "rejected"}
 
 @router.post("/orders/{order_id}/complete/")
 async def complete_order(order_id: uuid.UUID, is_on_time: bool, rider: rider = Depends(get_current_user)):
@@ -63,8 +37,11 @@ async def complete_order(order_id: uuid.UUID, is_on_time: bool, rider: rider = D
 
 # Wallet
 @router.get("/wallet/")
-async def get_wallet(period: str = "month", rider: rider = Depends(get_current_user)):
+async def get_wallet(period: str = "month", user: User = Depends(get_current_user)):
     now = datetime.utcnow()
+    rider = await Rider.get(user=user)
+    if not rider:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rider not found")
     if period == "today":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)

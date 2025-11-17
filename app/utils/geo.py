@@ -1,6 +1,7 @@
 # utils/geo.py
 import math
 from typing import Tuple, List
+from datetime import timedelta
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Return distance in kilometers."""
@@ -16,3 +17,9 @@ def bbox_for_radius(lat: float, lng: float, km: float) -> Tuple[float, float, fl
     lat_delta = km / 111.0
     lng_delta = km / (111.320 * math.cos(math.radians(lat)) or 1e-6)
     return lat - lat_delta, lat + lat_delta, lng - lng_delta, lng + lng_delta
+
+
+def estimate_eta(distance_km, speed_kph=25):
+    """25 km/h average bike speed"""
+    hours = distance_km / speed_kph
+    return timedelta(hours=hours)

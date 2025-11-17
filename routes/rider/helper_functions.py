@@ -7,7 +7,8 @@ from typing import List, Optional, Dict
 import uuid
 from pydantic import BaseModel
 from applications.customer.models import *
-from applications.user.rider import RiderProfile as rider, Rating, Complaint, WorkDay
+from applications.user.rider import RiderProfile as rider, Rating, Complaint, WorkDay, OrderOffer as Order
+from applications.customer.models import Order as CustomerOrder
 
 
 
@@ -84,7 +85,7 @@ def calculate_distance_bonus(distance: float) -> float:
 
 async def get_deliveries_count(rider: rider, start: datetime, end: datetime) -> int:
     orders = await Order.filter(
-        rider=rider, status="completed", completed_at__gte=start, completed_at__lt=end
+        rider=rider, status="accepted", accepted_at__gte=start, accepted_at__lt=end
     ).all()
     count = 0
     for order in orders:
@@ -96,9 +97,16 @@ async def get_delivery_pay(rider: rider, start: datetime, end: datetime) -> floa
 
 async def get_earnings(rider: rider, start: datetime, end: datetime) -> float:
     orders = await Order.filter(
-        rider=rider, status="completed", completed_at__gte=start, completed_at__lt=end
+        rider=rider, status="accepted", accepted_at__gte=start, accepted_at__lt=end
     ).all()
-    return sum(float(order.payout) for order in orders)
+    earnings = 0.0
+    for offer in orders:
+        order = await CustomerOrder.get(id=order.order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No order found with ID {order.id}")
+        earnings += order.delivery_fee
+    
+    return earnings
 
 async def get_monthly_rating(rider: rider, start: datetime, end: datetime) -> float:
     ratings = await Rating.filter(order__rider=rider, created_at__gte=start, created_at__lt=end).all()

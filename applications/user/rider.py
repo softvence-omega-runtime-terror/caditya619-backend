@@ -140,10 +140,10 @@ class OrderOffer(models.Model):
     pickup_distance_km = fields.FloatField()
     pickup_time = fields.DatetimeField()
     eta_minutes = fields.IntField()
-    payment_type = fields.CharField(max_length=50)
     base_rate = fields.DecimalField(max_digits=10, decimal_places=2, default=44.00)
     distance_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     offered_at = fields.DatetimeField(auto_now_add=True)
+    expires_at = fields.DatetimeField()
     accepted_at = fields.DatetimeField(null=True)
     completed_at = fields.DatetimeField(null=True)
     is_on_time = fields.BooleanField(null=True)
@@ -218,7 +218,7 @@ class WorkDay(models.Model):
     rider = fields.ForeignKeyField("models.RiderProfile", related_name="work_days")
     date = fields.DateField()
     hours_worked = fields.FloatField(default=0.0)
-    orders_accepted = fields.IntField(default=0)
+    order_offer_count = fields.IntField(default=0)
     is_scheduled_leave = fields.BooleanField(default=False)
 
     class Meta:
