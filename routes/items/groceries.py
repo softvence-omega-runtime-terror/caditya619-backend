@@ -42,7 +42,6 @@ async def serialize_item(item: Item):
         "free_delivery": item.free_delivery,
         "hot_deals": item.hot_deals,
         "flash_sale": item.flash_sale,
-        "isOTC": item.isOTC,
         "weight": item.weight,
         "vendor_id": item.vendor_id,
         "image": item.image,
@@ -69,7 +68,6 @@ async def create_item(
         free_delivery: bool = Form(False),
         hot_deals: bool = Form(False),
         flash_sale: bool = Form(False),
-        isOTC: bool = Form(False),
         weight: Optional[float] = Form(None),
         image: Optional[UploadFile] = None,
         vendor: User = Depends(get_current_user)
@@ -101,9 +99,8 @@ async def create_item(
             free_delivery=free_delivery,
             hot_deals=hot_deals,
             flash_sale=flash_sale,
-            isOTC=isOTC,
             weight=weight,
-            vendor_id=vendor_id,
+            vendor_id=vendor,
             image=img_path,
             using_db=conn,
         )
@@ -200,7 +197,6 @@ async def update_item(
         free_delivery: bool = Form(False),
         hot_deals: bool = Form(False),
         flash_sale: bool = Form(False),
-        isOTC: bool = Form(False),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
         image: Optional[UploadFile] = None
@@ -233,7 +229,6 @@ async def update_item(
         item.free_delivery = free_delivery
         item.hot_deals = hot_deals
         item.flash_sale = flash_sale
-        item.isOTC = isOTC
         item.weight = weight
         item.vendor_id = vendor_id
         item.image = img_path
@@ -260,7 +255,6 @@ async def patch_item(
         free_delivery: Optional[bool] = Form(None),
         hot_deals: Optional[bool] = Form(None),
         flash_sale: Optional[bool] = Form(None),
-        isOTC: Optional[bool] = Form(None),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
         image: Optional[UploadFile] = None
@@ -296,7 +290,7 @@ async def patch_item(
         updates = {
             "title": title, "description": description, "price": price, "discount": discount,
             "stock": stock, "popular": popular, "free_delivery": free_delivery,
-            "hot_deals": hot_deals, "flash_sale": flash_sale, "isOTC": isOTC,
+            "hot_deals": hot_deals, "flash_sale": flash_sale,
             "weight": weight, "vendor_id": vendor_id
         }
         for k, v in updates.items():
