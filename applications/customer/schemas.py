@@ -87,6 +87,49 @@ class CartItemsCreateSchema(BaseModel):
     """Order Item Schema"""
     cart_id: str
 
+class CustomerShippingAddressCreate(BaseModel):
+    full_name: Optional[str]
+    address_line1: Optional[str]
+    address_line2: Optional[str]
+    city: Optional[str]
+    state: Optional[str]
+    country: Optional[str]
+    postal_code: Optional[str]
+    phone_number: Optional[str]
+    email: Optional[str]
+    addressType: Optional[str] = "HOME"
+    make_default: Optional[bool] = False
+
+class CustomerShippingAddressUpdate(BaseModel):
+    full_name: Optional[str]
+    address_line1: Optional[str]
+    address_line2: Optional[str]
+    city: Optional[str]
+    state: Optional[str]
+    country: Optional[str]
+    postal_code: Optional[str]
+    phone_number: Optional[str]
+    email: Optional[str]
+    addressType: Optional[str]
+    make_default: Optional[bool]
+
+class CustomerShippingAddressOut(BaseModel):
+    id: str
+    user_id: int
+    full_name: str
+    address_line1: str
+    address_line2: str
+    city: Optional[str]
+    state: Optional[str]
+    country: Optional[str]
+    postal_code: Optional[str]
+    phone_number: str
+    email: str
+    is_default: bool
+    addressType: str
+
+
+
 class ShippingAddressSchema(BaseModel):
     """Shipping Address Input Schema (ID will be auto-generated)"""
     full_name: str = Field(..., alias="fullName", min_length=1, max_length=255)

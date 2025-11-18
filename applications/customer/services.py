@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
-from applications.user.models import *
-from applications.user.customer import *
+from applications.user.models import User
+from applications.user.customer import CustomerShippingAddress, CustomerProfile
 from applications.items.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *
@@ -11,6 +11,40 @@ import uuid
 import time
 from fastapi import Depends
 from tortoise.models import Model
+current_user = Depends(get_current_user)
+
+
+async def create_shipping_address(current_user: int, data: dict):
+    user = await User.get(id=current_user)
+    profile = await CustomerProfile.create_for_user(user)
+    address = await CustomerShippingAddress.create_for_profile(profile, **data)
+    return address
+
+async def update_shipping_address(address_id: str, data: dict):
+    address = await CustomerShippingAddress.get(id=address_id)
+    make_default = data.pop("make_default", None)
+    for key, value in data.items():
+        setattr(address, key, value)
+    if make_default is not None:
+        if make_default:
+            await address.set_as_default()
+        else:
+            address.is_default = False
+            await address.save()
+    else:
+        await address.save()
+    return address
+
+async def get_shipping_addresses(current_user):
+    return await CustomerShippingAddress.filter(user_id=current_user).all()
+
+async def get_shipping_addresses(addressType: int):
+    return await CustomerShippingAddress.filter(addressType=addressType).all()
+
+async def get_default_shipping_address(user_id: int):
+    return await CustomerShippingAddress.filter(user_id=current_user, is_default=True).first()
+
+
 
 class OrderService:
     
