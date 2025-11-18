@@ -137,7 +137,7 @@ async def get_all_items(
     offset: int = 0,
     limit: int = 20
 ):
-    query = Item.all().prefetch_related("category", "subcategory", "sub_subcategory")
+    query = Item.filter(category__type='food').prefetch_related("category", "subcategory", "sub_subcategory")
 
     if category:
         query = query.filter(category_id=category)
