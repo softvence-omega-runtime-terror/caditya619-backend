@@ -268,7 +268,7 @@ async def accept_order(order_id: str, user: User = Depends(get_current_user), re
     # workday, _ = await WorkDay.get_or_create(rider=rider_profile, date=today, defaults={"hours_worked": 0.0, "orders_accepted": 0})
     # workday.orders_accepted += 1
     # await workday.save()
-    # Notify
+   
     notify_payload = {
         "type": "order_accepted",
         "order_id": order_id,
