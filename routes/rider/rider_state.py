@@ -69,7 +69,7 @@ async def get_wallet(period: str = "month", user: User = Depends(get_current_use
                 if not wd.is_scheduled_leave:
                     if wd.hours_worked < 6:
                         all_hours_ok = False
-                    if wd.orders_accepted < 1:
+                    if wd.order_offer_count < 1:
                         all_orders_ok = False
         total_days = 6  # Monday-Saturday
         remaining_days = total_days - len(dates)
@@ -93,7 +93,7 @@ async def get_wallet(period: str = "month", user: User = Depends(get_current_use
         month_start = datetime.combine(month_start_date, datetime.min.time())
         month_end = month_start + relativedelta(months=1)
         deliveries = await get_deliveries_count(rider, month_start, month_end)
-        delivery_pay = await get_delivery_pay(rider, month_start, month_end)
+        delivery_pay = await get_delivery_pay(rider, month_start, month_end)      
         weekly_bonuses_dict = await get_weekly_bonuses(rider, month_start_date, (month_end - timedelta(seconds=1)).date())
         weekly_bonuses = weekly_bonuses_dict["total"]
         excellence_bonus = await get_excellence_bonus(rider, month_start, month_end)
@@ -103,18 +103,18 @@ async def get_wallet(period: str = "month", user: User = Depends(get_current_use
         final_earnings = subtotal + top_up
 
         # Bonus status
-        rated_count = await get_monthly_rated_count(rider, month_start, month_end)
-        rating = await get_monthly_rating(rider, month_start, month_end)
+        # rated_count = await get_monthly_rated_count(rider, month_start, month_end)
+        # rating = await get_monthly_rating(rider, month_start, month_end)
         acceptance = await get_acceptance_rate(rider, month_start, month_end)
         on_time = await get_on_time_rate(rider, month_start, month_end)
-        complaints = await get_serious_complaints(rider, month_start, month_end)
+        # complaints = await get_serious_complaints(rider, month_start, month_end)
         bonus_status = {
             "deliveries": f"{deliveries}/170 {'✅' if deliveries >= 170 else '⚠️'}",
-            "rating": f"{rating:.1f}/4.0 {'✅' if rating >= 4.0 or rated_count < 20 else '⚠️'}",
+            # "rating": f"{rating:.1f}/4.0 {'✅' if rating >= 4.0 or rated_count < 20 else '⚠️'}",
             "acceptance": f"{acceptance:.0f}%/90% {'✅' if acceptance >= 90 else '⚠️'}",
             "on_time": f"{on_time:.0f}%/92% {'✅' if on_time >= 92 else '⚠️'}",
-            "complaints": f"{complaints} {'✅' if complaints == 0 else '⚠️'}",
-            "criteria_met": sum([deliveries >= 170, rating >= 4.0 or rated_count < 20, acceptance >= 90, on_time >= 92, complaints == 0])
+            # "complaints": f"{complaints} {'✅' if complaints == 0 else '⚠️'}",
+            # "criteria_met": sum([deliveries >= 170, rating >= 4.0 or rated_count < 20, acceptance >= 90, on_time >= 92, complaints == 0])
         }
 
         # Forecast
@@ -200,27 +200,30 @@ async def get_performance(rider: rider = Depends(get_current_user)):
     now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     deliveries = await get_deliveries_count(rider, month_start, now + timedelta(days=1))
-    rating = await get_monthly_rating(rider, month_start, now + timedelta(days=1))
+    # rating = await get_monthly_rating(rider, month_start, now + timedelta(days=1))
     acceptance = await get_acceptance_rate(rider, month_start, now + timedelta(days=1))
     on_time = await get_on_time_rate(rider, month_start, now + timedelta(days=1))
     return {
         "total_deliveries": deliveries,
-        "customer_rating": f"{rating:.1f}/5.0",
+        # "customer_rating": f"{rating:.1f}/5.0",
         "acceptance_rate": f"{acceptance:.0f}%",
         "on_time_rate": f"{on_time:.0f}%"
     }
 
 # Leaderboard
 @router.get("/leaderboard/")
-async def get_leaderboard(rider: rider = Depends(get_current_user)):
+async def get_leaderboard(user: User = Depends(get_current_user)):
+    rider = await Rider.get(user=user)
+    if not rider:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rider not found")
     now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     month_end = month_start + relativedelta(months=1)
-    all_riders = await rider.all()
+    all_riders = await Rider.all()
     scores = []
     for p in all_riders:
         deliveries = await get_deliveries_count(p, month_start, month_end)
-        rating = await get_monthly_rating(p, month_start, month_end)
+        rating = 0            #await get_monthly_rating(p, month_start, month_end)
         on_time = await get_on_time_rate(p, month_start, month_end)
         score = (deliveries * 0.5) + (rating * 50) + (on_time * 2)
         scores.append((p.id, score, deliveries, rating, on_time))

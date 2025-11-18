@@ -99,14 +99,8 @@ async def get_earnings(rider: rider, start: datetime, end: datetime) -> float:
     orders = await Order.filter(
         rider=rider, status="accepted", accepted_at__gte=start, accepted_at__lt=end
     ).all()
-    earnings = 0.0
-    for offer in orders:
-        order = await CustomerOrder.get(id=order.order_id)
-        if not order:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No order found with ID {order.id}")
-        earnings += order.delivery_fee
     
-    return earnings
+    return sum([order.base_rate + order.distance_bonus for order in orders])
 
 async def get_monthly_rating(rider: rider, start: datetime, end: datetime) -> float:
     ratings = await Rating.filter(order__rider=rider, created_at__gte=start, created_at__lt=end).all()
@@ -136,12 +130,13 @@ async def get_serious_complaints(rider: rider, start: datetime, end: datetime) -
 
 async def get_excellence_bonus(rider: rider, start: datetime, end: datetime) -> float:
     deliveries = await get_deliveries_count(rider, start, end)
-    rated_count = await get_monthly_rated_count(rider, start, end)
-    rating = await get_monthly_rating(rider, start, end) if rated_count >= 20 else 4.0  # Waived if <20
+    #rated_count = await get_monthly_rated_count(rider, start, end)
+    #rating = await get_monthly_rating(rider, start, end) if rated_count >= 20 else 4.0  # Waived if <20
     acceptance = await get_acceptance_rate(rider, start, end)
     on_time = await get_on_time_rate(rider, start, end)
-    complaints = await get_serious_complaints(rider, start, end)
-    if (deliveries >= 170 and rating >= 4.0 and acceptance >= 90 and on_time >= 92 and complaints == 0):
+    # complaints = await get_serious_complaints(rider, start, end)
+    #if (deliveries >= 170 and rating >= 4.0 and acceptance >= 90 and on_time >= 92 and complaints == 0):
+    if (deliveries >= 170 and acceptance >= 90 and on_time >= 92):
         return 2000.0
     return 0.0
 

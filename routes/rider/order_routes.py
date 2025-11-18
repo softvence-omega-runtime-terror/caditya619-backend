@@ -949,3 +949,23 @@ async def websocket_endpoint(
 
 
 
+
+
+
+
+
+@router.websocket("/ws/")
+async def ws_endpoint(ws: WebSocket):
+    client_type = ws.query_params.get("client_type")  # "riders" / "customers" / "vendors"
+    user_id = ws.query_params.get("user_id")          # e.g. "123"
+    if not client_type or not user_id:
+        await ws.close(code=4001)
+        return
+
+    await manager.connect(ws, client_type, user_id)
+    try:
+        while True:
+            await ws.receive_text()  # keep connection alive; ignore inbound payloads for test
+    except WebSocketDisconnect:
+        manager.disconnect(client_type, user_id)
+
