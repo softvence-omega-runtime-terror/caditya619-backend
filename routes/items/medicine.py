@@ -126,7 +126,65 @@ async def get_all_items(
     offset: int = 0,
     limit: int = 20
 ):
-    query = Item.filter(category__type='medicine').prefetch_related("category", "subcategory", "sub_subcategory")
+    query = Item.filter(category__type='medicine', isOTC=False).prefetch_related("category", "subcategory", "sub_subcategory")
+
+    if category:
+        query = query.filter(category_id=category)
+    if subcategory:
+        query = query.filter(subcategory_id=subcategory)
+    if vendor_id:
+        query = query.filter(vendor_id=vendor_id)
+    if min_price is not None:
+        query = query.filter(price__gte=min_price)
+    if max_price is not None:
+        query = query.filter(price__lte=max_price)
+    if new_arrival is not None:
+        query = query.filter(new_arrival=new_arrival)
+    if today_deals is not None:
+        query = query.filter(today_deals=today_deals)
+    if popular is not None:
+        query = query.filter(popular=popular)
+    if free_delivery is not None:
+        query = query.filter(free_delivery=free_delivery)
+    if hot_deals is not None:
+        query = query.filter(hot_deals=hot_deals)
+    if flash_sale is not None:
+        query = query.filter(flash_sale=flash_sale)
+    if name:
+        query = query.filter(name__icontains=name)
+
+    total_count = await query.count()
+    items = await query.offset(offset).limit(limit)
+    data = [await serialize_item(item) for item in items]
+
+    return {
+        "status": "success",
+        "count": len(data),
+        "total": total_count,
+        "offset": offset,
+        "limit": limit,
+        "data": data
+    }
+
+# ----------------------- GET ALL -----------------------
+@router.get("/is_otc/", response_model=dict)
+async def get_otc_items(
+    category: Optional[int] = None,
+    subcategory: Optional[int] = None,
+    vendor_id: Optional[int] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    new_arrival: Optional[bool] = None,
+    today_deals: Optional[bool] = None,
+    popular: Optional[bool] = None,
+    free_delivery: Optional[bool] = None,
+    hot_deals: Optional[bool] = None,
+    flash_sale: Optional[bool] = None,
+    name: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 20
+):
+    query = Item.filter(category__type='medicine', isOTC=True).prefetch_related("category", "subcategory", "sub_subcategory")
 
     if category:
         query = query.filter(category_id=category)
@@ -167,7 +225,7 @@ async def get_all_items(
     }
 
 
-# ----------------------- GET SINGLE -----------------------
+# ----------------------- GET SINGLE Route-----------------------
 @router.get("/{item_id}", response_model=dict)
 async def get_item(item_id: int):
     item = await Item.get_or_none(id=item_id).prefetch_related("category", "subcategory", "sub_subcategory")
