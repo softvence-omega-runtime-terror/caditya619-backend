@@ -210,7 +210,6 @@ async def get_performance(rider: rider = Depends(get_current_user)):
         "on_time_rate": f"{on_time:.0f}%"
     }
 
-# Leaderboard 
 @router.get("/leaderboard/")
 async def get_leaderboard(user: User = Depends(get_current_user)):
     rider = await Rider.get(user=user)
