@@ -89,7 +89,7 @@ async def update_kyc(
         raise HTTPException(status_code=403, detail="You are not a vendor.")
     if fassai_file and current_user.type != 'food':
         raise HTTPException(status_code=403, detail="You are not a Food vendor.")
-    if drug_license_file and current_user.type != 'medecine':
+    if drug_license_file and current_user.type != 'medicine':
         raise HTTPException(status_code=403, detail="You are not a Food vendor.")
 
     async with in_transaction() as connection:

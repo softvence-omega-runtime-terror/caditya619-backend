@@ -223,7 +223,6 @@ async def update_item(
         item.description = description
         item.category = category
         item.subcategory = subcategory
-        item.sub_subcategory = sub_subcategory
         item.price = price
         item.discount = discount
         item.stock = stock
