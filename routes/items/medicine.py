@@ -30,7 +30,6 @@ async def serialize_item(item: Item):
         "description": item.description,
         "category_id": item.category_id,
         "subcategory_id": item.subcategory_id,
-        "sub_subcategory_id": item.sub_subcategory_id,
         "price": format_float(item.price),
         "discount": item.discount,
         "discounted_price": format_float(item.discounted_price),
@@ -61,7 +60,6 @@ async def create_item(
         description: Optional[str] = Form(None),
         category_id: int = Form(...),
         subcategory_id: Optional[int] = Form(None),
-        sub_subcategory_id: Optional[int] = Form(None),
         price: float = Form(0.0),
         discount: int = Form(0),
         stock: int = Form(0),
@@ -82,7 +80,6 @@ async def create_item(
             raise HTTPException(status_code=403, detail="Vendor type mismatch")
 
         subcategory = await SubCategory.get_or_none(id=subcategory_id, using_db=conn) if subcategory_id else None
-        sub_subcategory = await SubSubCategory.get_or_none(id=sub_subcategory_id, using_db=conn) if sub_subcategory_id else None
 
         img_path = None
         if image:
@@ -93,7 +90,6 @@ async def create_item(
             description=description,
             category=category,
             subcategory=subcategory,
-            sub_subcategory=sub_subcategory,
             price=price,
             discount=discount,
             stock=stock,
@@ -137,8 +133,6 @@ async def get_all_items(
         query = query.filter(category_id=category)
     if subcategory:
         query = query.filter(subcategory_id=subcategory)
-    if sub_subcategory:
-        query = query.filter(sub_subcategory_id=sub_subcategory)
     if vendor_id:
         query = query.filter(vendor_id=vendor_id)
     if min_price is not None:
@@ -192,7 +186,6 @@ async def update_item(
         description: Optional[str] = Form(None),
         category_id: int = Form(...),
         subcategory_id: Optional[int] = Form(None),
-        sub_subcategory_id: Optional[int] = Form(None),
         price: float = Form(0.0),
         discount: int = Form(0),
         stock: int = Form(0),
@@ -215,7 +208,6 @@ async def update_item(
             raise HTTPException(status_code=404, detail="Category not found")
 
         subcategory = await SubCategory.get_or_none(id=subcategory_id, using_db=conn) if subcategory_id else None
-        sub_subcategory = await SubSubCategory.get_or_none(id=sub_subcategory_id, using_db=conn) if sub_subcategory_id else None
 
         img_path = item.image
         if image:
@@ -252,7 +244,6 @@ async def patch_item(
         description: Optional[str] = Form(None),
         category_id: Optional[int] = Form(None),
         subcategory_id: Optional[int] = Form(None),
-        sub_subcategory_id: Optional[int] = Form(None),
         price: Optional[float] = Form(None),
         discount: Optional[int] = Form(None),
         stock: Optional[int] = Form(None),
@@ -282,12 +273,6 @@ async def patch_item(
             if not subcategory:
                 raise HTTPException(status_code=404, detail="SubCategory not found")
             item.subcategory = subcategory
-
-        if sub_subcategory_id:
-            sub_subcategory = await SubSubCategory.get_or_none(id=sub_subcategory_id, using_db=conn)
-            if not sub_subcategory:
-                raise HTTPException(status_code=404, detail="SubSubCategory not found")
-            item.sub_subcategory = sub_subcategory
 
         if image:
             item.image = await update_file(image, "item_images", old_file=item.image)
