@@ -113,7 +113,6 @@ async def create_item(
 async def get_all_items(
     category: Optional[int] = None,
     subcategory: Optional[int] = None,
-    sub_subcategory: Optional[int] = None,
     vendor_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
