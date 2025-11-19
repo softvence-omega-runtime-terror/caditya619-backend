@@ -93,8 +93,7 @@ async def update_kyc(
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
     if not vendor_profile:
         raise HTTPException(status_code=404, detail="Vendor profile not found.")
-
-    # Validate required files based on vendor type
+    
     if vendor_profile.type == "food" and not fassai_file:
         raise HTTPException(status_code=403, detail="FASSAI document is required for Food vendors.")
     if vendor_profile.type == "medicine" and not drug_license_file:
@@ -104,13 +103,13 @@ async def update_kyc(
         # Update fields
         vendor_profile.nid = nid
 
-        if fassai_file:
+        if fassai_file and vendor_profile.type == "food":
             if vendor_profile.fassai:
                 vendor_profile.fassai = await update_file(fassai_file, vendor_profile.fassai, 'vendors_fassai')
             else:
                 vendor_profile.fassai = await save_file(fassai_file, 'vendors_fassai')
 
-        if drug_license_file:
+        if drug_license_file and vendor_profile.type == "medicine":
             if vendor_profile.drug_license:
                 vendor_profile.drug_license = await update_file(drug_license_file, vendor_profile.drug_license, 'vendors_drug_license')
             else:
