@@ -9,7 +9,7 @@ from applications.customer.schemas import *
 from app.token import get_current_user
 from decimal import Decimal
 import re
-
+from enum import Enum
 
 # Cart Schemas
 Cart_Pydantic = pydantic_model_creator(Cart, name="Cart")
@@ -86,6 +86,64 @@ class CartResponseSchema(BaseModel):
 class CartItemsCreateSchema(BaseModel):
     """Order Item Schema"""
     cart_id: str
+
+class AddressTypeEnum(str, Enum):
+    HOME = "HOME"
+    OFFICE = "Office"
+    OTHERS = "OTHERS"
+
+
+class CustomerShippingAddressCreate(BaseModel):
+    full_name: Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = "India"
+    postal_code: Optional[str] = None
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+    addressType: AddressTypeEnum = AddressTypeEnum.HOME
+    make_default: Optional[bool] = False
+
+    class Config:
+        use_enum_values = True
+
+
+class CustomerShippingAddressUpdate(BaseModel):
+    full_name: Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+    addressType: Optional[AddressTypeEnum] = None
+    make_default: Optional[bool] = None
+
+    class Config:
+        use_enum_values = True
+
+
+class CustomerShippingAddressOut(BaseModel):
+    id: str
+    full_name: str
+    address_line1: str
+    address_line2: str
+    city: Optional[str]
+    state: Optional[str]
+    country: Optional[str]
+    postal_code: Optional[str]
+    phone_number: str
+    email: str
+    addressType: str
+    is_default: bool
+
+    class Config:
+        from_attributes = True
+        orm_mode = True
 
 class ShippingAddressSchema(BaseModel):
     """Shipping Address Input Schema (ID will be auto-generated)"""
