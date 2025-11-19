@@ -516,6 +516,118 @@ async def accept_order(order_id: str, user: User = Depends(get_current_user), re
 
 
 
+@router.post("/orders/shipped/{order_id}/")
+async def mark_order_shipped(order_id: str, user: User = Depends(get_current_user), redis = Depends(get_redis)):
+
+    if not user.is_vendor:
+        raise HTTPException(403, "User is not a vendor")
+    order = await Order.get_or_none(id=order_id)
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order.status != OrderStatus.CONFIRMED:
+        raise HTTPException(400, "Order not in confirmed status")
+    order.status = OrderStatus.SHIPPED
+    await order.save()
+    offer = await OrderOffer.filter(order_id=order_id).first()
+    notify_payload = {
+        "type": "order_shipped",
+        "order_id": order_id,
+        "rider_id": offer.rider_id,
+        "shipped_at": datetime.utcnow().isoformat()
+    }
+    await redis.publish("order_updates", json.dumps(notify_payload))
+    try:
+        await manager.send_to(notify_payload, "customers", str(order.user_id))
+    except:
+        pass
+    return {"status": "shipped", "order_id": order_id, "rider_id": offer.rider_id}
+
+
+
+
+
+
+@router.post("/orders/out-for-delivery/{order_id}/")
+async def mark_order_out_for_delivery(order_id: str, user: User = Depends(get_current_user), redis = Depends(get_redis)):
+    if not user.is_rider:
+        raise HTTPException(403, "User is not a valid rider")
+    order = await Order.get_or_none(id=order_id)
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order.status != OrderStatus.SHIPPED:
+        raise HTTPException(400, "Order not in shipped status")
+    order.status = OrderStatus.OUT_FOR_DELIVERY
+    await order.save()
+    offer = await OrderOffer.filter(order_id=order_id).first()
+    notify_payload = {
+        "type": "order_out_for_delivery",
+        "order_id": order_id,
+        "rider_id": offer.rider_id,
+        "out_for_delivery_at": datetime.utcnow().isoformat()
+    }
+    await redis.publish("order_updates", json.dumps(notify_payload))
+    try:
+        await manager.send_to(notify_payload, "customers", str(order.user_id))
+    except:
+        pass
+    return {"status": "out_for_delivery", "order_id": order_id, "rider_id": offer.rider_id}
+
+
+
+
+@router.post("/orders/delivered/{order_id}/")
+async def mark_order_delivered(order_id: str, user: User = Depends(get_current_user), redis = Depends(get_redis)):
+    if not user.is_rider:
+        raise HTTPException(403, "User is not a valid rider")
+    
+    order = await Order.get_or_none(id=order_id)
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order.status != OrderStatus.OUT_FOR_DELIVERY:
+        raise HTTPException(400, "Order not in out for delivery status")
+    order.status = OrderStatus.DELIVERED
+    order.delivered_at = datetime.utcnow()
+    await order.save()
+    offer = await OrderOffer.filter(order_id=order_id).first()
+    notify_payload = {
+        "type": "order_delivered",
+        "order_id": order_id,
+        "rider_id": offer.rider_id,
+        "delivered_at": datetime.utcnow().isoformat()
+    }
+    await redis.publish("order_updates", json.dumps(notify_payload))
+    try:
+        await manager.send_to(notify_payload, "customers", str(order.user_id))
+    except:
+        pass
+    return {"status": "delivered", "order_id": order_id, "rider_id": offer.rider_id}
+
+
+
+
+@router.post("/orders/cancel/{order_id}/")
+async def cancel_order(order_id: str, user: User = Depends(get_current_user), redis = Depends(get_redis)):
+    order = await Order.get_or_none(id=order_id)
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order.status in [OrderStatus.DELIVERED, OrderStatus.CANCELLED]:
+        raise HTTPException(400, "Order cannot be cancelled")
+    order.status = OrderStatus.CANCELLED
+    await order.save()
+    notify_payload = {
+        "type": "order_cancelled",
+        "order_id": order_id,
+        "cancelled_at": datetime.utcnow().isoformat()
+    }
+    await redis.publish("order_updates", json.dumps(notify_payload))
+    try:
+        await manager.send_to(notify_payload, "customers", str(order.user_id))
+    except:
+        pass
+    return {"status": "cancelled", "order_id": order_id}
+
+
+
 
 
 
@@ -852,27 +964,27 @@ async def track_order(
 
 
 
-@router.post("/orders/{order_id}/complete")
-async def complete_order(order_id: int, rider_id: int):
-    order = await Order.get(id=order_id)
-    if order.rider_id != rider_id:
-        raise HTTPException(403, "Not your order")
+# @router.post("/orders/{order_id}/complete")
+# async def complete_order(order_id: int, rider_id: int):
+#     order = await Order.get(id=order_id)
+#     if order.rider_id != rider_id:
+#         raise HTTPException(403, "Not your order")
 
-    order.status = "delivered"
-    await order.save()
+#     order.status = "delivered"
+#     await order.save()
 
-    # NOTIFY CUSTOMER
-    await manager.send_to({
-        "type": "order_delivered",
-        "order_id": order_id,
-        "message": "Your order has been delivered!"
-    }, "customers", str(order.customer_id))
+#     # NOTIFY CUSTOMER
+#     await manager.send_to({
+#         "type": "order_delivered",
+#         "order_id": order_id,
+#         "message": "Your order has been delivered!"
+#     }, "customers", str(order.customer_id))
 
-    # CRITICAL: Remove customer from rider's tracking list
-    manager.rider_to_customers[str(rider_id)].discard(str(order.customer_id))
-    manager.customer_to_rider.pop(str(order.customer_id), None)
+#     # CRITICAL: Remove customer from rider's tracking list
+#     manager.rider_to_customers[str(rider_id)].discard(str(order.customer_id))
+#     manager.customer_to_rider.pop(str(order.customer_id), None)
 
-    return {"status": "delivered"}
+#     return {"status": "delivered"}
 
 
 

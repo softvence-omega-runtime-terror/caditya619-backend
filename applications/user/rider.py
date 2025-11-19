@@ -11,6 +11,7 @@ class RiderProfile(models.Model):
     driving_license_document = fields.CharField(max_length=255, null=True)
     vehicle_registration_document = fields.CharField(max_length=255, null=True)
     vehicle_insurance_document = fields.CharField(max_length=255, null=True)
+    current_balance = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     is_available = fields.BooleanField(default=False)
     is_verified = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -245,3 +246,17 @@ class Withdrawal(models.Model):
 
     class Meta:
         table = "withdrawals"
+
+
+
+class HelpAndSupport(models.Model):
+    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="help_support_requests")
+    subject = fields.CharField(max_length=255)
+    description = fields.TextField(max_length=2000)
+    attachment = fields.CharField(max_length=255, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    resolved_at = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "help_and_support"
