@@ -5,26 +5,43 @@ from applications.user.customer import CustomerShippingAddress, CustomerProfile
 from applications.items.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *
-from app.token import get_current_user
 from decimal import Decimal, InvalidOperation
 import uuid
 import time
-from fastapi import Depends
 from tortoise.models import Model
+from fastapi import Depends
+from app.token import get_current_user
 current_user = Depends(get_current_user)
 
 
-async def create_shipping_address(current_user: int, data: dict):
-    user = await User.get(id=current_user)
+
+
+
+async def create_shipping_address(current_user_id: int, data: dict):
+    """
+    Create a new shipping address for a user.
+    """
+    user = await User.get(id=current_user_id)
     profile = await CustomerProfile.create_for_user(user)
     address = await CustomerShippingAddress.create_for_profile(profile, **data)
     return address
 
-async def update_shipping_address(address_id: str, data: dict):
-    address = await CustomerShippingAddress.get(id=address_id)
+
+async def update_shipping_address(address_id: str, current_user_id: int, data: dict):
+    """
+    Update an existing shipping address.
+    Only the owner can update their address.
+    """
+    address = await CustomerShippingAddress.get(id=address_id, user_id=current_user_id)
+    
     make_default = data.pop("make_default", None)
+    
+    # Update address fields
     for key, value in data.items():
-        setattr(address, key, value)
+        if hasattr(address, key):
+            setattr(address, key, value)
+    
+    # Handle make_default logic
     if make_default is not None:
         if make_default:
             await address.set_as_default()
@@ -33,18 +50,73 @@ async def update_shipping_address(address_id: str, data: dict):
             await address.save()
     else:
         await address.save()
+    
     return address
 
-async def get_shipping_addresses(current_user):
-    return await CustomerShippingAddress.filter(user_id=current_user).all()
 
-async def get_shipping_addresses(addressType: int):
-    return await CustomerShippingAddress.filter(addressType=addressType).all()
-
-async def get_default_shipping_address(user_id: int):
-    return await CustomerShippingAddress.filter(user_id=current_user, is_default=True).first()
+async def get_shipping_addresses(current_user_id: int) -> List[CustomerShippingAddress]:
+    """
+    Get all shipping addresses for the current user.
+    """
+    return await CustomerShippingAddress.filter(user_id=current_user_id).all()
 
 
+async def get_shipping_addresses_by_type(
+    current_user_id: int, 
+    address_type: str
+) -> List[CustomerShippingAddress]:
+    """
+    Get all shipping addresses of a specific type for the current user.
+    """
+    return await CustomerShippingAddress.filter(
+        user_id=current_user_id,
+        addressType=address_type
+    ).all()
+
+
+async def get_default_shipping_address(
+    current_user_id: int, 
+    address_type: Optional[str] = None
+) -> Optional[CustomerShippingAddress]:
+    """
+    Get the default shipping address for the current user.
+    If address_type is provided, get the default for that type.
+    """
+    filter_params = {
+        "user_id": current_user_id,
+        "is_default": True
+    }
+    
+    if address_type:
+        filter_params["addressType"] = address_type
+    
+    return await CustomerShippingAddress.filter(**filter_params).first()
+
+
+async def delete_shipping_address(address_id: str, current_user_id: int) -> bool:
+    """
+    Delete a shipping address.
+    Only the owner can delete their address.
+    """
+    address = await CustomerShippingAddress.filter(
+        id=address_id, 
+        user_id=current_user_id
+    ).first()
+    
+    if not address:
+        return False
+    
+    await address.delete()
+    return True
+
+
+async def set_default_address(address_id: str, current_user_id: int) -> CustomerShippingAddress:
+    """
+    Set a specific address as default for its type.
+    """
+    address = await CustomerShippingAddress.get(id=address_id, user_id=current_user_id)
+    await address.set_as_default()
+    return address
 
 class OrderService:
     
