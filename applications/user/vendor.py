@@ -18,8 +18,13 @@ class VendorProfile(models.Model):
     user = fields.OneToOneField("models.User", related_name="vendor_profile", on_delete=fields.CASCADE)
     type = fields.CharField(max_length=20, choices=TYPE_CHOICES, defaults='grocery')
     nid = fields.CharField(max_length=60)
-    status = fields.CharField(max_length=20, choices=STATUS_CHOICES, default=None, blank=True, null=True)
     
+    latitude = fields.FloatField(null=True)
+    longitude = fields.FloatField(null=True)
+    
+    fassai = fields.CharField(max_length=100, null=True, blank=True)
+    drug_license = fields.CharField(max_length=100, null=True, blank=True)
+    status = fields.CharField(max_length=20, choices=STATUS_CHOICES, default=None, blank=True, null=True)
     
     class Meta:
         table = "vendor_profile"
