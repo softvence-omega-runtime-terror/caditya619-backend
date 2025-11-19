@@ -260,3 +260,8 @@ class HelpAndSupport(models.Model):
 
     class Meta:
         table = "help_and_support"
+
+
+#*********************************************************************#
+#              End of Rider State Related Models
+#*********************************************************************#
