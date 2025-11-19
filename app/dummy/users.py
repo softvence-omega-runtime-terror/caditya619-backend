@@ -3,7 +3,7 @@ from tortoise.transactions import in_transaction
 from applications.user.models import User
 from applications.user.rider import RiderProfile
 from applications.user.vendor import VendorProfile
-from applications.customer.models import *
+from applications.user.customer import CustomerProfile
 
 USERS_DATA = [
     {
@@ -21,7 +21,7 @@ USERS_DATA = [
         "name": "Rider One",
         "is_rider": True,
     },
-    # 10 vendor users with different types
+    # Vendor users
     {"phone": "+919876543212", "email": "vendor1@gmail.com", "name": "Vendor One", "is_vendor": True, "vendor_type": "food"},
     {"phone": "+919876543213", "email": "vendor2@gmail.com", "name": "Vendor Two", "is_vendor": True, "vendor_type": "grocery"},
     {"phone": "+919876543214", "email": "vendor3@gmail.com", "name": "Vendor Three", "is_vendor": True, "vendor_type": "medicine"},
@@ -32,7 +32,7 @@ USERS_DATA = [
     {"phone": "+919876543219", "email": "vendor8@gmail.com", "name": "Vendor Eight", "is_vendor": True, "vendor_type": "grocery"},
     {"phone": "+919876543220", "email": "vendor9@gmail.com", "name": "Vendor Nine", "is_vendor": True, "vendor_type": "medicine"},
     {"phone": "+919876543221", "email": "vendor10@gmail.com", "name": "Vendor Ten", "is_vendor": True, "vendor_type": "food"},
-    # Riders or mix users
+    # Riders or mixed users
     {"phone": "+919876543222", "email": "rider2@gmail.com", "name": "Rider Two", "is_rider": True},
     {"phone": "+919876543223", "email": "mix1@gmail.com", "name": "Mix One", "is_rider": True, "is_vendor": True, "vendor_type": "grocery"},
 ]
@@ -40,28 +40,28 @@ USERS_DATA = [
 async def create_test_users():
     for data in USERS_DATA:
         phone = data["phone"]
-        vendor_type = data.pop("vendor_type", "grocery")  # default type if not specified
+        vendor_type = data.pop("vendor_type", "grocery")  # default type
 
         try:
             async with in_transaction() as conn:
-                # Create or get the user
+                # Create or get user
                 user, created = await User.get_or_create(
                     phone=phone, defaults=data, using_db=conn
                 )
 
-                # Update flags if user exists
-                update_needed = False
+                # Update flags if needed
+                updated = False
                 for flag in ["is_rider", "is_vendor", "is_staff", "is_superuser"]:
                     if getattr(user, flag) != data.get(flag, False):
                         setattr(user, flag, data.get(flag, False))
-                        update_needed = True
-                if update_needed:
+                        updated = True
+                if updated:
                     await user.save(using_db=conn)
 
                 if created:
                     print(f"✅ Created user: {user.name} ({user.phone})")
                 else:
-                    print(f"⚠️ User with phone {user.phone} already exists — updated flags if needed.")
+                    print(f"⚠️ User with phone {user.phone} already exists — flags updated if needed.")
 
                 # Ensure CustomerProfile
                 await CustomerProfile.get_or_create(user=user, using_db=conn)
@@ -86,6 +86,7 @@ async def create_test_users():
                         defaults={
                             "nid": f"VNID-{user.phone[-6:]}",
                             "type": vendor_type,
+                            "status": None,  # align with your model default
                         },
                         using_db=conn,
                     )
