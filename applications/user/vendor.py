@@ -11,6 +11,7 @@ class VendorProfile(models.Model):
     STATUS_CHOICES = (
         ("submitted", "Submitted"),
         ("verified", "Verified"),
+        ("rejected", "Rejected"),
     )
     
     id = fields.IntField(pk=True)
@@ -23,3 +24,5 @@ class VendorProfile(models.Model):
     class Meta:
         table = "vendor_profile"
         
+        
+    

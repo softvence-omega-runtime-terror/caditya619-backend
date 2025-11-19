@@ -7,6 +7,7 @@ from tortoise.transactions import in_transaction
 from app.utils.phone_number import phone_number
 from app.utils.file_manager import save_file, update_file, delete_file
 from app.token import get_current_user
+from app.auth import permission_required
 
 router = APIRouter(prefix='/vendor', tags=['Vendor Signup'])
 
@@ -85,28 +86,32 @@ async def update_kyc(
     longitude: float | None = Form(None),
     current_user: User = Depends(get_current_user)
 ):
+    # Ensure user is a vendor
     if not current_user.is_vendor:
         raise HTTPException(status_code=403, detail="You are not a vendor.")
-    if fassai_file and current_user.type != 'food':
-        raise HTTPException(status_code=403, detail="You are not a Food vendor.")
-    if drug_license_file and current_user.type != 'medicine':
-        raise HTTPException(status_code=403, detail="You are not a Food vendor.")
 
-    async with in_transaction() as connection:
-        vendor_profile = await VendorProfile.get_or_none(user=current_user, using_db=connection)
+    # Restrict file uploads by vendor type
+    if fassai_file and current_user.vendor_profile.type != 'food':
+        raise HTTPException(status_code=403, detail="You are not a Food vendor.")
+    if drug_license_file and current_user.vendor_profile.type != 'medicine':
+        raise HTTPException(status_code=403, detail="You are not a Medicine vendor.")
+
+    async with in_transaction() as conn:
+        vendor_profile = await VendorProfile.get_or_none(user=current_user, using_db=conn)
         if not vendor_profile:
             raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
+        # Update fields
         vendor_profile.nid = nid
 
         if fassai_file:
-            if vendor_profile.fassai:
+            if getattr(vendor_profile, "fassai", None):
                 vendor_profile.fassai = await update_file(fassai_file, vendor_profile.fassai, 'vendors_fassai')
             else:
                 vendor_profile.fassai = await save_file(fassai_file, 'vendors_fassai')
 
         if drug_license_file:
-            if vendor_profile.drug_license:
+            if getattr(vendor_profile, "drug_license", None):
                 vendor_profile.drug_license = await update_file(drug_license_file, vendor_profile.drug_license, 'vendors_drug_license')
             else:
                 vendor_profile.drug_license = await save_file(drug_license_file, 'vendors_drug_license')
@@ -116,18 +121,45 @@ async def update_kyc(
         if longitude is not None:
             vendor_profile.longitude = longitude
 
-        vendor_profile.is_varified = False
+        # Reset status to submitted whenever KYC is updated
+        vendor_profile.status = "submitted"
 
-        await vendor_profile.save(using_db=connection)
+        await vendor_profile.save(using_db=conn)
 
     return {
         "message": "KYC updated successfully",
         "vendor_profile": {
             "nid": vendor_profile.nid,
-            "fassai": vendor_profile.fassai,
-            "drug_license": vendor_profile.drug_license,
-            "latitude": vendor_profile.latitude,
-            "longitude": vendor_profile.longitude,
-            "is_varified": vendor_profile.is_varified,
+            "fassai": getattr(vendor_profile, "fassai", None),
+            "drug_license": getattr(vendor_profile, "drug_license", None),
+            "latitude": getattr(vendor_profile, "latitude", None),
+            "longitude": getattr(vendor_profile, "longitude", None),
+            "status": vendor_profile.status,
+        }
+    }
+    
+
+
+@router.put("/update-vendor-status/", response_model=dict, dependencies=[Depends(permission_required("update_vendorprofile"))])
+async def update_vendor_status(
+    vendor_id: int = Form(...),
+    new_status: str = Form(..., regex="^(submitted|verified|rejected)$"),
+):
+    async with in_transaction() as conn:
+        vendor_profile = await VendorProfile.get_or_none(id=vendor_id, using_db=conn)
+        if not vendor_profile:
+            raise HTTPException(status_code=404, detail="Vendor profile not found.")
+
+        vendor_profile.status = new_status
+        await vendor_profile.save(using_db=conn)
+
+    return {
+        "message": f"Vendor profile status updated to '{new_status}' successfully.",
+        "vendor_profile": {
+            "id": vendor_profile.id,
+            "user_id": vendor_profile.user_id,
+            "status": vendor_profile.status,
+            "type": vendor_profile.type,
+            "nid": vendor_profile.nid,
         }
     }

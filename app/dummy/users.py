@@ -16,6 +16,15 @@ USERS_DATA = [
         "is_superuser": True,
     },
     {
+        "phone": "+919876543510",
+        "email": "staff@gmail.com",
+        "name": "Staff User",
+        "is_rider": False,
+        "is_vendor": False,
+        "is_staff": True,
+        "is_superuser": False,
+    },
+    {
         "phone": "+919876543211",
         "email": "rider1@gmail.com",
         "name": "Rider One",
