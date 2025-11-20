@@ -126,6 +126,7 @@ async def get_all_items(
     category: Optional[int] = None,
     subcategory: Optional[int] = None,
     sub_subcategory: Optional[int] = None,
+    category_type: Optional[int] = None,
     vendor_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -139,8 +140,10 @@ async def get_all_items(
     offset: int = 0,
     limit: int = 20
 ):
-    query = Item.filter(category__type='groceries').prefetch_related("category", "subcategory", "sub_subcategory")
+    query = Item.all().prefetch_related("category", "subcategory", "sub_subcategory")
 
+    if category_type:
+        query = Item.filter(category__type=category_type)
     if category:
         query = query.filter(category_id=category)
     if subcategory:
