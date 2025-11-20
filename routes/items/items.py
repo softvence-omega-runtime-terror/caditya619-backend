@@ -24,6 +24,8 @@ def format_float(value):
 # ----------------------- SERIALIZE ITEM -----------------------
 async def serialize_item(item: Item):
     await item.fetch_related("category", "subcategory", "sub_subcategory")
+    vendor = await item.vendor.fetch_related("vendor_profile")
+    vendor_profile = await vendor.vendor_profile if hasattr(vendor, 'vendor_profile') else None
     return {
         "id": item.id,
         "title": item.title,
@@ -44,7 +46,15 @@ async def serialize_item(item: Item):
         "hot_deals": item.hot_deals,
         "flash_sale": item.flash_sale,
         "weight": item.weight,
-        "vendor_id": item.vendor_id,
+        "vendor": {
+            "id": vendor.id,
+            "name": vendor.name,
+            "email": vendor.email,
+            "phone": vendor.phone,
+            "photo": vendor_profile.photo,
+            "shop_name": vendor_profile.shop_name,
+            "type": vendor_profile.type,
+        } if vendor_profile else None,
         "image": item.image,
         "is_in_stock": item.is_in_stock,
         "new_arrival": item.new_arrival,
