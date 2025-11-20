@@ -122,31 +122,6 @@ async def update_kyc(
         }
     }
 
-@router.put("/update-vendor-status/", response_model=dict, dependencies=[Depends(permission_required("update_vendorprofile"))])
-async def update_vendor_status(
-    vendor_id: int = Form(...),
-    new_status: str = Form(..., regex="^(submitted|verified|rejected)$"),
-):
-    async with in_transaction() as conn:
-        vendor_profile = await VendorProfile.get_or_none(user_id=vendor_id, using_db=conn)
-        if not vendor_profile:
-            raise HTTPException(status_code=404, detail="Vendor profile not found.")
-
-        vendor_profile.kyc_status = new_status
-        await vendor_profile.save(using_db=conn)
-
-    return {
-        "message": f"Vendor profile status updated to '{new_status}' successfully.",
-        "vendor_profile": {
-            "id": vendor_profile.id,
-            "user_id": vendor_profile.user_id,
-            "kyc_status": vendor_profile.kyc_status,
-            "type": vendor_profile.type,
-            "nid": vendor_profile.nid,
-        }
-    }
-
-
 @router.put("/toggle-active-status/", response_model=dict)
 async def active_status(
     current_user: User = Depends(vendor_required),
@@ -156,7 +131,6 @@ async def active_status(
         if not vendor_profile:
             raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
-        # Toggle the value
         vendor_profile.is_active = not vendor_profile.is_active
         await vendor_profile.save(using_db=conn)
 
