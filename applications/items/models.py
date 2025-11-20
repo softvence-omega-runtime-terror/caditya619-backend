@@ -101,6 +101,11 @@ class Item(models.Model):
         self.ratings = avg
         await self.save(update_fields=["ratings"])
 
+    @property
+    def total_reviews(self):
+        from applications.items.review import ItemReview
+        return ItemReview.filter(item=self, parent__isnull=True).count()
+
 
     @property
     def is_in_stock(self):
