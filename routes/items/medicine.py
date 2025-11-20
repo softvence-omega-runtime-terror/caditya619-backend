@@ -226,7 +226,7 @@ async def get_otc_items(
     }
 
 
-# ----------------------- GET SINGLE -----------------------
+# ----------------------- GET SINGLE Route-----------------------
 @router.get("/{item_id}", response_model=dict)
 async def get_item(item_id: int):
     item = await Item.get_or_none(id=item_id).prefetch_related("category", "subcategory", "sub_subcategory")
