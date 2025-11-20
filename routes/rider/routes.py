@@ -6,7 +6,7 @@ from tortoise import fields, models
 from applications.user.models import User
 from enum import Enum
 from app.token import get_current_user
-from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus, RiderCurrentLocation
+from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus, HelpAndSupport
 from app.utils.file_manager import save_file, update_file, delete_file
 from tortoise.exceptions import IntegrityError
 from fastapi import Body
@@ -40,6 +40,7 @@ RiderProfileIn_Pydantic = pydantic_model_creator(RiderProfile, name="RiderProfil
 VehicleOut = pydantic_model_creator(Vehicle, name="VehicleOut")
 ZoneOut = pydantic_model_creator(Zone, name="ZoneOut")
 AvailabilityStatusOut = pydantic_model_creator(RiderAvailabilityStatus, name="AvailabilityStatusOut")
+HelpAndSupportOut = pydantic_model_creator(HelpAndSupport, name="HelpAndSupportOut")
 
 
 class RiderProfileUpdateModel(BaseModel):
@@ -136,23 +137,6 @@ async def update_rider_documents_me(
 
 
 
-@router.put("/admin-verify-rider/{rider_id}/", response_model=RiderProfile_Pydantic)
-async def admin_verify_rider(
-    rider_id: int = Path(..., description="The ID of the rider to verify"),
-    is_verified: bool = Body(..., embed=True, description="Verification status to set"),
-    user: User = Depends(get_current_user)
-):
-    if not user.is_superuser:
-        raise HTTPException(status_code=403, detail="Not authorized to verify riders")
-    
-    rider_profile = await RiderProfile.get_or_none(id=rider_id)
-    if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-    
-    rider_profile.is_verified = is_verified
-    await rider_profile.save()
-    return await RiderProfile_Pydantic.from_tortoise_orm(rider_profile)
-
 
 
 
@@ -182,21 +166,6 @@ async def update_rider_profile_me(
     return {"name": user.name, "email": user.email, "phone": user.phone,
             "driving_license": rider_profile.driving_license, "nid": rider_profile.nid,
             "profile_image": rider_profile.profile_image,}
-
-
-
-@router.put("/rider-online-offline/")
-async def go_online_offline(is_available: bool, user: User=Depends(get_current_user)):
-    rider_profile = await RiderProfile.get_or_none(user=user)
-    if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-    
-    rider_profile.is_available = is_available
-
-    await rider_profile.save()
-    await user.save()
-
-    return {"is_available":rider_profile.is_available}
 
 
 
@@ -366,27 +335,6 @@ async def delete_zone(
 
 
 
-@router.post("/rider-current-location")
-async def rider_current_location(lat:float, lng:float, user:User = Depends(get_current_user)):
-    if not user.is_rider:
-        raise HTTPException(status_code=204, detail="Must be rider to set the location")
-    
-    rider_profile = await RiderProfile.get_or_none(user=user)
-
-    
-    current_location = await RiderCurrentLocation.create(
-        rider_profile = rider_profile,
-        latitude = lat, 
-        longitude = lng
-    )
-
-    await current_location.save()
-
-    return {"rider":rider_profile.id, "lat":current_location.latitude, "long":current_location.longitude}
-
-
-
-
 #*****************************************************
 #            Availablity Status endpoints
 #*****************************************************
@@ -412,6 +360,38 @@ async def set_availability_status(
 
 
 
+
+
+#*****************************************************
+#            Help and Support endpoints 
+#*****************************************************
+
+@router.post("/help-and-support/me/", response_model=HelpAndSupportOut, status_code=status.HTTP_201_CREATED)
+async def submit_help_and_support_request(
+    subject: str = Form(...),
+    description: str = Form(...),
+    attachments: Optional[UploadFile] = File(None),
+    user: User = Depends(get_current_user)
+):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    
+    if attachments:
+        attachments_path = await save_file(
+            attachments, upload_to="HelpAndSupport", allowed_extensions=['png', 'jpg', 'svg', 'jpeg', 'pdf']
+        )
+        print("Attachments saved at:", attachments_path)
+    else:
+        attachments_path = None
+
+    help_request = await HelpAndSupport.create(
+        rider_id=rider_profile.id,
+        subject=subject,
+        description=description,
+        attachment=attachments_path
+    )
+    return await HelpAndSupportOut.from_tortoise_orm(help_request)
 
 
 

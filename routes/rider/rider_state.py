@@ -22,19 +22,6 @@ router = APIRouter(tags=['Rider State'])
 
 
 
-@router.post("/orders/{order_id}/complete/")
-async def complete_order(order_id: uuid.UUID, is_on_time: bool, rider: rider = Depends(get_current_user)):
-    order = await Order.get_or_none(id=order_id, rider=rider, status="accepted")
-    if not order:
-        raise HTTPException(404, "Order not found")
-    order.status = "completed"
-    order.completed_at = datetime.utcnow()
-    order.is_on_time = is_on_time
-    await order.save()
-    rider.current_balance += order.payout
-    await rider.save()
-    return {"status": "completed"}
-
 # Wallet
 @router.get("/wallet/")
 async def get_wallet(period: str = "month", user: User = Depends(get_current_user)):
@@ -176,10 +163,22 @@ async def get_wallet(period: str = "month", user: User = Depends(get_current_use
         }
     else:
         raise HTTPException(400, "Invalid period")
+    
+
+@router.get("/current_balance/")
+async def get_current_balance(user: User = Depends(get_current_user)):
+    rider = await Rider.get(user=user)
+    if not rider:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rider not found")
+    return {"current_balance": rider.current_balance}
+
 
 # Withdrawal
 @router.post("/wallet/withdraw/")
-async def withdraw(amount: float, rider: rider = Depends(get_current_user)):
+async def withdraw(amount: float, user: User = Depends(get_current_user)):
+    rider = await Rider.get(user=user)
+    if not rider:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rider not found")
     if amount > rider.current_balance or amount <= 0:
         raise HTTPException(400, "Invalid amount")
     withdrawal = Withdrawal(rider=rider, amount=amount)
@@ -210,7 +209,6 @@ async def get_performance(rider: rider = Depends(get_current_user)):
         "on_time_rate": f"{on_time:.0f}%"
     }
 
-# Leaderboard
 @router.get("/leaderboard/")
 async def get_leaderboard(user: User = Depends(get_current_user)):
     rider = await Rider.get(user=user)
