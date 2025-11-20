@@ -165,6 +165,13 @@ async def vendor_details(
     if not vendor_profile:
         raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
+    location_name = None
+    if vendor_profile.latitude and vendor_profile.longitude:
+        location_name = get_location_name(
+            vendor_profile.latitude,
+            vendor_profile.longitude
+        )
+
     return {
         "message": "Vendor profile fetched successfully",
         "vendor_profile": {
@@ -176,12 +183,13 @@ async def vendor_details(
             "owner_name": vendor_profile.owner_name,
             "type": vendor_profile.type,
             "is_active": vendor_profile.is_active,
-            "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
-            "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
+            "open_time": vendor_profile.open_time.strftime("%I:%M %p") if vendor_profile.open_time else None,
+            "close_time": vendor_profile.close_time.strftime("%I:%M %p") if vendor_profile.close_time else None,
             "is_completed": vendor_profile.is_completed,
 
             "latitude": vendor_profile.latitude,
             "longitude": vendor_profile.longitude,
+            "location_name": location_name,
             "nid": vendor_profile.nid,
             "fassai": vendor_profile.fassai,
             "drug_license": vendor_profile.drug_license,
@@ -195,8 +203,8 @@ async def update_vendor_profile(
     owner_name: str = Form(...),
     email: str = Form(None),
     photo: UploadFile | None = File(None),
-    open_time: time | None = Form(None),
-    close_time: time | None = Form(None),
+    open_time: time | None = Form(default=time(9, 0)),
+    close_time: time | None = Form(default=time(22, 0)),
     current_user: User = Depends(vendor_required),
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
