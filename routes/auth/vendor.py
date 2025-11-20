@@ -8,7 +8,7 @@ from app.utils.phone_number import phone_number
 from app.utils.file_manager import save_file, update_file, delete_file
 from app.auth import permission_required, vendor_required
 from datetime import time
-
+from app.utils.get_location import get_location_name
 router = APIRouter(prefix='/vendor', tags=['Vendor Signup'])
 
 
