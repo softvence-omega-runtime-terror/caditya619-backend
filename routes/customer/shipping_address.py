@@ -1,150 +1,217 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
-from applications.customer import services
+from fastapi import APIRouter, Depends, status, HTTPException
+from typing import Optional
 from applications.customer.schemas import (
-    CustomerShippingAddressCreate,
-    CustomerShippingAddressUpdate,
-    CustomerShippingAddressOut,
-    AddressTypeEnum
+    ShippingAddressCreate,
+    ShippingAddressUpdate,
+    ShippingAddressResponse,
+    ShippingAddressListResponse,
+    SetDefaultRequest,
+    ErrorResponse
 )
+from applications.user.models import User
+from applications.customer.services import ShippingAddressService
 from app.token import get_current_user
-current_user = Depends(get_current_user)
-
-router = APIRouter(prefix="/shipping-address", tags=["Shipping Address"])
 
 
-@router.post("/", response_model=CustomerShippingAddressOut, status_code=status.HTTP_201_CREATED)
-async def create_address(
-    payload: CustomerShippingAddressCreate,
-    current_user = Depends(get_current_user)
+router = APIRouter(
+    prefix="/shipping-addresses",
+    tags=["Shipping Addresses"]
+)
+
+@router.post(
+    "/",
+    response_model=ShippingAddressResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"model": ErrorResponse, "description": "Address limit exceeded"},
+        401: {"description": "Unauthorized"}
+    }
+)
+async def create_shipping_address(
+    address_data: ShippingAddressCreate,
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Create a new shipping address for the current user.
+    Create a new shipping address for the authenticated user.
+    
+    - Maximum 3 addresses total
+    - Each address type (HOME, OFFICE, OTHERS) can only be added once
+    - If make_default is True, it becomes the default for its type
     """
-    try:
-        address = await services.create_shipping_address(
-            current_user.id,
-            payload.dict(exclude_none=True)
-        )
-        return address
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create address: {str(e)}"
-        )
+    # Convert to dict and exclude unset values
+    data_dict = address_data.dict(exclude_unset=True)
+    
+    address = await ShippingAddressService.create_address(
+        current_user=current_user,
+        address_data=data_dict
+    )
+    return address
 
+@router.get(
+    "/",
+    response_model=ShippingAddressListResponse,
+    responses={401: {"description": "Unauthorized"}}
+)
+async def get_shipping_addresses(
+    address_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all shipping addresses for the authenticated user.
+    
+    - Optional filter by address_type (HOME, OFFICE, OTHERS)
+    """
+    addresses = await ShippingAddressService.get_user_addresses(
+        current_user=current_user,
+        address_type=address_type
+    )
+    
+    return ShippingAddressListResponse(
+        addresses=addresses,
+        total=len(addresses)
+    )
 
-@router.put("/{address_id}", response_model=CustomerShippingAddressOut)
-async def update_address(
+@router.get(
+    "/{address_id}",
+    response_model=ShippingAddressResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Address not found"},
+        401: {"description": "Unauthorized"}
+    }
+)
+async def get_shipping_address(
     address_id: str,
-    payload: CustomerShippingAddressUpdate,
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get a specific shipping address by ID.
+    """
+    address = await ShippingAddressService.get_address_by_id(
+        address_id=address_id,
+        current_user=current_user
+    )
+    return address
+
+@router.get(
+    "/{address_type}",
+    response_model=ShippingAddressResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Address not found"},
+        401: {"description": "Unauthorized"}
+    }
+)
+# async def get_shipping_address_by_type(
+#     address_type: str,
+#     current_user: User = Depends(get_current_user)
+# ):
+#     """
+#     Get a specific shipping address by ID.
+#     """
+#     address = await ShippingAddressService.get_address_by_type(
+#         address_type=address_type,
+#         current_user=current_user
+#     )
+#     return address
+
+@router.put(
+    "/{address_id}",
+    response_model=ShippingAddressResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Address not found"},
+        401: {"description": "Unauthorized"}
+    }
+)
+async def update_shipping_address(
+    address_id: str,
+    address_data: ShippingAddressUpdate,
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update an existing shipping address.
+    
+    - Cannot change addressType (delete and create new instead)
+    - Setting is_default=True will unset other defaults for that type
     """
-    try:
-        address = await services.update_shipping_address(
-            address_id,
-            current_user.id,
-            payload.dict(exclude_none=True)
-        )
-        return address
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Address not found or update failed: {str(e)}"
-        )
-
-
-@router.get("/", response_model=List[CustomerShippingAddressOut])
-async def list_all_addresses(current_user = Depends(get_current_user)):
-    """
-    Get all shipping addresses for the current user.
-    """
-    addresses = await services.get_shipping_addresses(current_user.id)
-    return addresses
-
-
-@router.get("/type/{address_type}", response_model=List[CustomerShippingAddressOut])
-async def list_addresses_by_type(
-    address_type: AddressTypeEnum,
-    current_user = Depends(get_current_user)
-):
-    """
-    Get all shipping addresses of a specific type (HOME, Office, OTHERS).
-    """
-    addresses = await services.get_shipping_addresses_by_type(
-        current_user.id,
-        address_type.value
+    address = await ShippingAddressService.update_address(
+        address_id=address_id,
+        current_user=current_user,
+        update_data=address_data.dict(exclude_unset=True)
     )
-    return addresses
-
-
-@router.get("/default", response_model=CustomerShippingAddressOut)
-async def get_default_address(current_user = Depends(get_current_user)):
-    """
-    Get the first default address found for the current user.
-    """
-    address = await services.get_default_shipping_address(current_user.id)
-    if not address:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No default address found"
-        )
     return address
 
-
-@router.get("/default/{address_type}", response_model=CustomerShippingAddressOut)
-async def get_default_address_by_type(
-    address_type: AddressTypeEnum,
-    current_user = Depends(get_current_user)
-):
-    """
-    Get the default address for a specific type (HOME, Office, OTHERS).
-    """
-    address = await services.get_default_shipping_address(
-        current_user.id,
-        address_type.value
-    )
-    if not address:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No default {address_type.value} address found"
-        )
-    return address
-
-
-@router.patch("/{address_id}/set-default", response_model=CustomerShippingAddressOut)
-async def set_address_as_default(
+@router.delete(
+    "/{address_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        404: {"model": ErrorResponse, "description": "Address not found"},
+        401: {"description": "Unauthorized"}
+    }
+)
+async def delete_shipping_address(
     address_id: str,
-    current_user = Depends(get_current_user)
-):
-    """
-    Set a specific address as the default for its type.
-    """
-    try:
-        address = await services.set_default_address(address_id, current_user.id)
-        return address
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Address not found: {str(e)}"
-        )
-
-
-@router.delete("/{address_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_address(
-    address_id: str,
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Delete a shipping address.
+    
+    - If the deleted address was default, another address of the same type (if any) becomes default
     """
-    deleted = await services.delete_shipping_address(address_id, current_user.id)
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Address not found"
-        )
+    await ShippingAddressService.delete_address(
+        address_id=address_id,
+        current_user=current_user
+    )
     return None
+
+@router.post(
+    "/{address_id}/set-default",
+    response_model=ShippingAddressResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Address not found"},
+        401: {"description": "Unauthorized"}
+    }
+)
+async def set_default_address(
+    address_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Set a shipping address as the default for its address type.
+    
+    - Only one address per type can be default
+    - Other addresses of the same type will have is_default set to False
+    """
+    address = await ShippingAddressService.set_default_address(
+        address_id=address_id,
+        current_user=current_user
+    )
+    return address
+
+@router.get(
+    "/default/{address_type}",
+    response_model=ShippingAddressResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "No default address found"},
+        401: {"description": "Unauthorized"}
+    }
+)
+async def get_default_address(
+    address_type: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the default shipping address for a specific type.
+    
+    - address_type must be one of: HOME, OFFICE, OTHERS
+    """
+    if address_type not in ["HOME", "OFFICE", "OTHERS"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid address type. Must be HOME, OFFICE, or OTHERS"
+        )
+    
+    address = await ShippingAddressService.get_default_address(
+        current_user=current_user,
+        address_type=address_type
+    )
+    return address
+
