@@ -24,34 +24,50 @@ def format_float(value):
 
 # ----------------------- SERIALIZE ITEM -----------------------
 async def serialize_item(item: Item):
-    await item.fetch_related("category", "subcategory", "sub_subcategory")
+    await item.fetch_related("category", "subcategory", "sub_subcategory", "vendor__vendor_profile")
+
+    vendor = item.vendor
+    vendor_profile = vendor.vendor_profile if hasattr(vendor, "vendor_profile") else None
+
     return {
         "id": item.id,
         "title": item.title,
         "description": item.description,
         "category_id": item.category_id,
         "subcategory_id": item.subcategory_id,
+        "sub_subcategory_id": item.sub_subcategory_id,
         "price": format_float(item.price),
         "discount": item.discount,
         "discounted_price": format_float(item.discounted_price),
         "sell_price": format_float(item.sell_price),
         "ratings": item.ratings,
+        "total_reviews": await item.get_total_reviews(),
         "stock": item.stock,
         "total_sale": item.total_sale,
         "popular": item.popular,
         "free_delivery": item.free_delivery,
         "hot_deals": item.hot_deals,
         "flash_sale": item.flash_sale,
-        "isOTC": item.isOTC,
         "weight": item.weight,
-        "vendor_id": item.vendor_id,
+        "vendor": {
+            "id": vendor.id,
+            "name": vendor.name,
+            "email": vendor.email,
+            "phone": vendor.phone,
+            "photo": vendor_profile.photo if vendor_profile else None,
+            "shop_name": vendor.name,
+            "owner_name": vendor_profile.owner_name if vendor_profile else None,
+            "type": vendor_profile.type if vendor_profile else None,
+        } if vendor else None,
         "image": item.image,
+        "isOTC": item.isOTC,
         "is_in_stock": item.is_in_stock,
         "new_arrival": item.new_arrival,
         "today_deals": item.today_deals,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
     }
+
 
 
 # ----------------------- CREATE -----------------------

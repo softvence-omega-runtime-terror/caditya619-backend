@@ -3,6 +3,8 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.transactions import in_transaction
 from typing import Optional, List
 
+from watchfiles import awatch
+
 from app.token import get_current_user
 from applications.items.models import Item, Category, SubCategory, SubSubCategory
 from app.utils.file_manager import save_file, update_file, delete_file
@@ -23,9 +25,11 @@ def format_float(value):
 
 # ----------------------- SERIALIZE ITEM -----------------------
 async def serialize_item(item: Item):
-    await item.fetch_related("category", "subcategory", "sub_subcategory")
-    vendor = await item.vendor.fetch_related("vendor_profile")
-    vendor_profile = await vendor.vendor_profile if hasattr(vendor, 'vendor_profile') else None
+    await item.fetch_related("category", "subcategory", "sub_subcategory", "vendor__vendor_profile")
+
+    vendor = item.vendor
+    vendor_profile = vendor.vendor_profile if hasattr(vendor, "vendor_profile") else None
+
     return {
         "id": item.id,
         "title": item.title,
@@ -38,7 +42,7 @@ async def serialize_item(item: Item):
         "discounted_price": format_float(item.discounted_price),
         "sell_price": format_float(item.sell_price),
         "ratings": item.ratings,
-        "total_reviews": item.total_reviews,
+        "total_reviews": await item.get_total_reviews(),
         "stock": item.stock,
         "total_sale": item.total_sale,
         "popular": item.popular,
@@ -51,10 +55,11 @@ async def serialize_item(item: Item):
             "name": vendor.name,
             "email": vendor.email,
             "phone": vendor.phone,
-            "photo": vendor_profile.photo,
-            "shop_name": vendor_profile.shop_name,
-            "type": vendor_profile.type,
-        } if vendor_profile else None,
+            "photo": vendor_profile.photo if vendor_profile else None,
+            "shop_name": vendor.name,
+            "owner_name": vendor_profile.owner_name if vendor_profile else None,
+            "type": vendor_profile.type if vendor_profile else None,
+        } if vendor else None,
         "image": item.image,
         "is_in_stock": item.is_in_stock,
         "new_arrival": item.new_arrival,
