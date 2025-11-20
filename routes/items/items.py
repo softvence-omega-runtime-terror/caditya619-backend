@@ -11,7 +11,7 @@ import json
 
 from applications.user.models import User
 
-router = APIRouter(prefix="/items", tags=["Items"])
+router = APIRouter(prefix="/items", tags=["All Items"])
 
 ItemOut = pydantic_model_creator(Item, name="ItemOut")
 

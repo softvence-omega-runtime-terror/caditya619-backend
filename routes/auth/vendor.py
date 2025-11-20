@@ -172,9 +172,9 @@ async def vendor_details(
             "shop_name": current_user.name,
             "email": current_user.email,
             "phone": current_user.phone,
+            "photo": vendor_profile.photo,
             "owner_name": vendor_profile.owner_name,
             "type": vendor_profile.type,
-            "photo": vendor_profile.photo,
             "is_active": vendor_profile.is_active,
             "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
             "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
@@ -217,7 +217,6 @@ async def update_vendor_profile(
                 if vendor_profile.photo
                 else await save_file(photo, "vendor_photos")
             )
-
         await vendor_profile.save(using_db=conn)
 
     return {
