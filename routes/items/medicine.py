@@ -49,6 +49,7 @@ async def serialize_item(item: Item):
         "hot_deals": item.hot_deals,
         "flash_sale": item.flash_sale,
         "weight": item.weight,
+        "vendor_id": vendor.id,
         "shop_image": vendor_profile.photo if vendor and vendor_profile else None,
         "shop_name": vendor.name,
         "image": item.image,
