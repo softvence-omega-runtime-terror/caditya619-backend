@@ -24,7 +24,7 @@ class VendorProfile(models.Model):
     latitude = fields.FloatField(null=True)
     longitude = fields.FloatField(null=True)
 
-    nid = fields.CharField(max_length=60)
+    nid = fields.CharField(max_length=60, null=True, blank=True)
     fassai = fields.CharField(max_length=100, null=True, blank=True)
     drug_license = fields.CharField(max_length=100, null=True, blank=True)
     kyc_status = fields.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default=None, blank=True, null=True)

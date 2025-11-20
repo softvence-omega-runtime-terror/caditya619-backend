@@ -7,6 +7,7 @@ from tortoise.transactions import in_transaction
 from app.utils.phone_number import phone_number
 from app.utils.file_manager import save_file, update_file, delete_file
 from app.auth import permission_required, vendor_required
+from datetime import time
 
 router = APIRouter(prefix='/vendor', tags=['Vendor Signup'])
 
@@ -68,23 +69,27 @@ async def signup(
 @router.put("/update-kyc/", response_model=dict)
 async def update_kyc(
     nid: str = Form(...),
-    file: UploadFile | None = File(None),
+    vendor_type: str = Form(..., description='food/grocery/medicine'),
     latitude: float | None = Form(None),
     longitude: float | None = Form(None),
-    vendor_type: str = Form(..., description='food/grocery/medicine'),
-    current_user: User = Depends(vendor_required)
+    file: UploadFile | None = File(None),   # dynamic (fassai/drug/photo)
+    current_user: User = Depends(vendor_required),
 ):
     # Ensure user is a vendor
     if not current_user.is_vendor:
         raise HTTPException(status_code=403, detail="You are not a vendor.")
 
+    valid_types = ["food", "grocery", "medicine"]
+    if vendor_type not in valid_types:
+        raise HTTPException(status_code=400, detail="Invalid vendor type.")
+
     # Create or fetch vendor profile
-    vendor_profile, created = await VendorProfile.get_or_create(user=current_user)
+    vendor_profile, created = await VendorProfile.get_or_create(user=current_user, defaults={"type": vendor_type})
 
     async with in_transaction() as conn:
         vendor_profile.nid = nid
-        vendor_profile.type = vendor_type
 
+        # File handling (depends on type)
         if file:
             if vendor_type == "food":
                 vendor_profile.fassai = (
@@ -100,9 +105,18 @@ async def update_kyc(
                     else await save_file(file, "vendors_drug_license")
                 )
 
-        # Update location fields if provided
+            else:
+                # grocery → assume photo file
+                vendor_profile.photo = (
+                    await update_file(file, vendor_profile.photo, "vendors_photo")
+                    if vendor_profile.photo
+                    else await save_file(file, "vendors_photo")
+                )
+
+        # Update location if provided
         if latitude is not None:
             vendor_profile.latitude = latitude
+
         if longitude is not None:
             vendor_profile.longitude = longitude
 
@@ -114,11 +128,13 @@ async def update_kyc(
         "vendor_profile": {
             "type": vendor_profile.type,
             "nid": vendor_profile.nid,
+            "photo": vendor_profile.photo,
             "fassai": vendor_profile.fassai,
             "drug_license": vendor_profile.drug_license,
             "latitude": vendor_profile.latitude,
             "longitude": vendor_profile.longitude,
-            "kyc_status": vendor_profile.kyc_status
+            "kyc_status": vendor_profile.kyc_status,
+            "is_completed": vendor_profile.is_completed
         }
     }
 
@@ -179,8 +195,8 @@ async def update_vendor_profile(
     owner_name: str = Form(...),
     email: str = Form(None),
     photo: UploadFile | None = File(None),
-    open_time: str = Form(None),
-    close_time: str = Form(None),
+    open_time: time | None = Form(None),
+    close_time: time | None = Form(None),
     current_user: User = Depends(vendor_required),
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
@@ -213,5 +229,7 @@ async def update_vendor_profile(
             "photo": vendor_profile.photo,
             "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
             "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
+            "is_completed": vendor_profile.is_completed,
+            "kyc_status": vendor_profile.kyc_status,
         }
     }

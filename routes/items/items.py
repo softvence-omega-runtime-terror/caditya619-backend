@@ -36,6 +36,7 @@ async def serialize_item(item: Item):
         "discounted_price": format_float(item.discounted_price),
         "sell_price": format_float(item.sell_price),
         "ratings": item.ratings,
+        "total_reviews": item.total_reviews,
         "stock": item.stock,
         "total_sale": item.total_sale,
         "popular": item.popular,
