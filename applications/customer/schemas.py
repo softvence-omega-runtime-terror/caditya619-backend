@@ -375,7 +375,7 @@ class CustomerProfileSchema(BaseModel):
     """Customer Profile Input Schema"""
     name: Optional[str] = Field(None, max_length=50)
     email: Optional[EmailStr] = None
-    photo: Optional[str] = Field(None, max_length=255)
+    # photo: Optional[str] = Field(None, max_length=255)
     address_1: Optional[str] = Field(None, max_length=100, alias="address1")
     address_2: Optional[str] = Field(None, max_length=100, alias="address2")
     postal_code: Optional[str] = Field(None, max_length=20, alias="postalCode")
