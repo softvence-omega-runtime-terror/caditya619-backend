@@ -17,7 +17,7 @@ __pycache__/
 */__pycache__/
 
 # Migration cache/models
-migrations/models/
+#migrations/models/
 
 # Environment filesgit add
 .env/
