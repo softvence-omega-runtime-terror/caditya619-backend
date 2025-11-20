@@ -89,12 +89,7 @@ class Order(models.Model):
     """Order Model"""
     id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
-    # rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_rider", on_delete=fields.CASCADE, null=True )
-    # rider_lat=fields.FloatField()
-    # rider_lng=fields.FloatField()
-    # # vendor_lat=fields.FloatField()
-    # vendor_lat=fields.FloatField()
-    # vendor = fields.ForeignKeyField("models.VendorProfile", related_name="assigned_vendor", on_delete=fields.CASCADE, null=True)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_rider", on_delete=fields.CASCADE, null=True)
     cart = fields.ForeignKeyField("models.Cart", related_name="cart_orders", on_delete=fields.SET_NULL, null=True)
     # Relationships
     shipping_address = fields.ForeignKeyField(

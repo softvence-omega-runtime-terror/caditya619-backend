@@ -10,6 +10,11 @@ from app.token import get_current_user
 from decimal import Decimal
 import re
 from enum import Enum
+from pydantic import BaseModel, Field, validator
+from typing import Optional, Literal
+from datetime import datetime
+
+
 
 # Cart Schemas
 Cart_Pydantic = pydantic_model_creator(Cart, name="Cart")
@@ -93,57 +98,130 @@ class AddressTypeEnum(str, Enum):
     OTHERS = "OTHERS"
 
 
-class CustomerShippingAddressCreate(BaseModel):
-    full_name: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = "India"
-    postal_code: Optional[str] = None
-    phone_number: Optional[str] = None
-    email: Optional[str] = None
-    addressType: AddressTypeEnum = AddressTypeEnum.HOME
-    make_default: Optional[bool] = False
+# Enums for address types
+AddressType = Literal["HOME", "OFFICE", "OTHERS"]
 
-    class Config:
-        use_enum_values = True
+class ShippingAddressBase(BaseModel):
+    full_name: str = Field(..., max_length=255, description="Full name of the recipient")
+    address_line1: str = Field(..., max_length=500, description="Primary address line")
+    address_line2: Optional[str] = Field(None, max_length=500, description="Secondary address line")
+    city: Optional[str] = Field(None, max_length=255)
+    state: Optional[str] = Field(None, max_length=255)
+    country: Optional[str] = Field(None, max_length=255)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    phone_number: str = Field(..., max_length=50)
+    email: str = Field(..., max_length=100)
+    addressType: AddressType = Field(default="HOME")
 
+    @validator('addressType')
+    def validate_address_type(cls, v):
+        if v not in ["HOME", "OFFICE", "OTHERS"]:
+            raise ValueError('addressType must be one of HOME, OFFICE, or OTHERS')
+        return v
 
-class CustomerShippingAddressUpdate(BaseModel):
-    full_name: Optional[str] = None
-    address_line1: Optional[str] = None
+class ShippingAddressCreate(ShippingAddressBase):
+    """Schema for creating a new shipping address"""
+    make_default: Optional[bool] = Field(default=False, description="Set as default for this address type")
+
+class ShippingAddressUpdate(BaseModel):
+    """Schema for updating an existing shipping address"""
+    full_name: Optional[str] = Field(None, max_length=255)
+    address_line1: Optional[str] = Field(None, max_length=500)
+    address_line2: Optional[str] = Field(None, max_length=500)
+    city: Optional[str] = Field(None, max_length=255)
+    state: Optional[str] = Field(None, max_length=255)
+    country: Optional[str] = Field(None, max_length=255)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    phone_number: Optional[str] = Field(None, max_length=50)
+    email: Optional[str] = Field(None, max_length=100)
+    is_default: Optional[bool] = None
+
+class ShippingAddressResponse(BaseModel):
+    """Schema for shipping address response"""
+    id: str
+    user_id: int
+    full_name: str
+    address_line1: str
     address_line2: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
     postal_code: Optional[str] = None
-    phone_number: Optional[str] = None
-    email: Optional[str] = None
-    addressType: Optional[AddressTypeEnum] = None
-    make_default: Optional[bool] = None
-
-    class Config:
-        use_enum_values = True
-
-
-class CustomerShippingAddressOut(BaseModel):
-    id: str
-    full_name: str
-    address_line1: str
-    address_line2: str
-    city: Optional[str]
-    state: Optional[str]
-    country: Optional[str]
-    postal_code: Optional[str]
     phone_number: str
     email: str
     addressType: str
     is_default: bool
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
-        orm_mode = True
+
+class ShippingAddressListResponse(BaseModel):
+    """Schema for list of shipping addresses"""
+    addresses: list[ShippingAddressResponse]
+    total: int
+
+class SetDefaultRequest(BaseModel):
+    """Schema for setting an address as default"""
+    address_id: str
+
+class ErrorResponse(BaseModel):
+    """Schema for error responses"""
+    detail: str
+    error_code: Optional[str] = None
+
+# class CustomerShippingAddressCreate(BaseModel):
+#     full_name: Optional[str] = None
+#     address_line1: Optional[str] = None
+#     address_line2: Optional[str] = None
+#     city: Optional[str] = None
+#     state: Optional[str] = None
+#     country: Optional[str] = "India"
+#     postal_code: Optional[str] = None
+#     phone_number: Optional[str] = None
+#     email: Optional[str] = None
+#     addressType: AddressTypeEnum = AddressTypeEnum.HOME
+#     make_default: Optional[bool] = False
+
+#     class Config:
+#         use_enum_values = True
+
+
+# class CustomerShippingAddressUpdate(BaseModel):
+#     full_name: Optional[str] = None
+#     address_line1: Optional[str] = None
+#     address_line2: Optional[str] = None
+#     city: Optional[str] = None
+#     state: Optional[str] = None
+#     country: Optional[str] = None
+#     postal_code: Optional[str] = None
+#     phone_number: Optional[str] = None
+#     email: Optional[str] = None
+#     addressType: Optional[AddressTypeEnum] = None
+#     make_default: Optional[bool] = None
+
+#     class Config:
+#         use_enum_values = True
+
+
+# class CustomerShippingAddressOut(BaseModel):
+#     id: str
+#     full_name: str
+#     address_line1: str
+#     address_line2: str
+#     city: Optional[str]
+#     state: Optional[str]
+#     country: Optional[str]
+#     postal_code: Optional[str]
+#     phone_number: str
+#     email: str
+#     addressType: str
+#     is_default: bool
+
+#     class Config:
+#         from_attributes = True
+#         orm_mode = True
 
 class ShippingAddressSchema(BaseModel):
     """Shipping Address Input Schema (ID will be auto-generated)"""

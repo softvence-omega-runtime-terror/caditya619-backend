@@ -9,114 +9,181 @@ from decimal import Decimal, InvalidOperation
 import uuid
 import time
 from tortoise.models import Model
-from fastapi import Depends
-from app.token import get_current_user
-current_user = Depends(get_current_user)
+from fastapi import Depends, HTTPException, status
+from tortoise.exceptions import DoesNotExist
+# from app.token import get_current_user
+# current_user = Depends(get_current_user)
 
-
-
-
-
-async def create_shipping_address(current_user_id: int, data: dict):
-    """
-    Create a new shipping address for a user.
-    """
-    user = await User.get(id=current_user_id)
-    profile = await CustomerProfile.create_for_user(user)
-    address = await CustomerShippingAddress.create_for_profile(profile, **data)
-    return address
-
-
-async def update_shipping_address(address_id: str, current_user_id: int, data: dict):
-    """
-    Update an existing shipping address.
-    Only the owner can update their address.
-    """
-    address = await CustomerShippingAddress.get(id=address_id, user_id=current_user_id)
+class ShippingAddressService:
+    """Service layer for managing customer shipping addresses"""
     
-    make_default = data.pop("make_default", None)
+    MAX_ADDRESSES_PER_TYPE = 1  # Only one address per type allowed
+    MAX_TOTAL_ADDRESSES = 3  # Maximum 3 addresses total
     
-    # Update address fields
-    for key, value in data.items():
-        if hasattr(address, key):
-            setattr(address, key, value)
+    @staticmethod
+    async def validate_address_limit(current_user: int, address_type: str, exclude_id: Optional[str] = None):
+        # ... (Validation logic remains the same)
+        query = CustomerShippingAddress.filter(user=current_user, addressType=address_type)
+        if exclude_id:
+            query = query.exclude(id=exclude_id)
+        
+        existing_type_count = await query.count()
+        if existing_type_count >= ShippingAddressService.MAX_ADDRESSES_PER_TYPE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You already have a {address_type} address. Each address type can only be added once."
+            )
+
+        total_query = CustomerShippingAddress.filter(user=current_user)
+        if exclude_id:
+            total_query = total_query.exclude(id=exclude_id)
+        
+        total_count = await total_query.count()
+        if total_count >= ShippingAddressService.MAX_TOTAL_ADDRESSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You can only have a maximum of {ShippingAddressService.MAX_TOTAL_ADDRESSES} shipping addresses."
+            )
     
-    # Handle make_default logic
-    if make_default is not None:
-        if make_default:
-            await address.set_as_default()
-        else:
-            address.is_default = False
-            await address.save()
-    else:
+    @staticmethod
+    async def create_address(current_user: int, address_data: dict):
+        # ... (Creation logic remains the same)
+        address_type = address_data.get("addressType", "HOME")
+        
+        await ShippingAddressService.validate_address_limit(current_user, address_type)
+        address_id = f"{current_user}_addr_{int(time.time() * 1000)}"
+        
+        address = await CustomerShippingAddress.create(
+            id=address_id,
+            user=current_user,
+            **address_data
+        )
+        
+        return address
+    
+    @staticmethod
+    async def get_user_addresses(current_user: str, address_type: Optional[str] = None):
+        """Get all addresses for a user, optionally filtered by type"""
+        
+        
+        query = CustomerShippingAddress.filter(user=current_user)
+        
+        if address_type:
+            query = query.filter(addressType=address_type)
+        
+        addresses = await query.all()
+        return addresses
+    
+    @staticmethod
+    async def get_address_by_id(address_id: str, current_user: str):
+        """Get a specific address by ID"""
+        
+        try:
+            address = await CustomerShippingAddress.get(id=address_id, user=current_user)
+            return address
+        except DoesNotExist:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Shipping address not found"
+            )
+    # @staticmethod
+    # async def get_address_by_type(address_type: str, current_user: str):
+    #     """Get a specific address by type"""
+    #     print("rrrrrrrrrrrrrrrrr ",address_type)
+
+
+
+    #     try:
+    #         address = await CustomerShippingAddress.get(addressType=address_type, user=current_user)
+    #         return address
+    #     except DoesNotExist:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_404_NOT_FOUND,
+    #             detail="Shipping address not found"
+    #         )
+        
+    @staticmethod
+    async def update_address(address_id: str, current_user: str, update_data: dict):
+
+        address = await ShippingAddressService.get_address_by_id(address_id, current_user)
+        
+        if "is_default" in update_data and update_data["is_default"]:
+            # FIX: Remove addressType filter to unset all other defaults
+            await CustomerShippingAddress.filter( 
+                user=current_user,
+                is_default=True
+            ).exclude(id=address_id).update(is_default=False)
+        
+        for field, value in update_data.items():
+            if value is not None:
+                setattr(address, field, value)
+        
         await address.save()
+        return address
     
-    return address
-
-
-async def get_shipping_addresses(current_user_id: int) -> List[CustomerShippingAddress]:
-    """
-    Get all shipping addresses for the current user.
-    """
-    return await CustomerShippingAddress.filter(user_id=current_user_id).all()
-
-
-async def get_shipping_addresses_by_type(
-    current_user_id: int, 
-    address_type: str
-) -> List[CustomerShippingAddress]:
-    """
-    Get all shipping addresses of a specific type for the current user.
-    """
-    return await CustomerShippingAddress.filter(
-        user_id=current_user_id,
-        addressType=address_type
-    ).all()
-
-
-async def get_default_shipping_address(
-    current_user_id: int, 
-    address_type: Optional[str] = None
-) -> Optional[CustomerShippingAddress]:
-    """
-    Get the default shipping address for the current user.
-    If address_type is provided, get the default for that type.
-    """
-    filter_params = {
-        "user_id": current_user_id,
-        "is_default": True
-    }
+    @staticmethod
+    async def delete_address(address_id: str, current_user: str):
+        """Delete a shipping address"""
+        
+        
+        address = await ShippingAddressService.get_address_by_id(address_id, current_user)
+        
+        was_default = address.is_default
+        address_type = address.addressType
+        
+        await address.delete()
+        
+        # If deleted address was default, set another as default
+        if was_default:
+            remaining = await CustomerShippingAddress.filter(
+                user=current_user,
+                addressType=address_type
+            ).first()
+            
+            if remaining:
+                remaining.is_default = True
+                await remaining.save()
+        
+        return {"message": "Address deleted successfully"}
     
-    if address_type:
-        filter_params["addressType"] = address_type
+    @staticmethod
+    async def set_default_address(address_id: str, current_user: str):
+        
+        address = await ShippingAddressService.get_address_by_id(address_id, current_user)
+        
+        # FIX: Remove addressType filter to unset all other defaults
+        # Unset other defaults for this user (regardless of address type)
+        await CustomerShippingAddress.filter(
+            user=current_user,
+            is_default=True
+        ).exclude(id=address_id).update(is_default=False)
+        
+        # Set this as default
+        address.is_default = True
+        await address.save()
+        
+        return address
     
-    return await CustomerShippingAddress.filter(**filter_params).first()
+    @staticmethod
+    async def get_default_address(current_user: str, address_type: str):
+        """Get the default address for a specific type"""
+        
+        
+        address = await CustomerShippingAddress.filter(
+            user=current_user,
+            addressType=address_type,
+            is_default=True
+        ).first()
+        
+        if not address:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No default {address_type} address found"
+            )
+        
+        return address
 
 
-async def delete_shipping_address(address_id: str, current_user_id: int) -> bool:
-    """
-    Delete a shipping address.
-    Only the owner can delete their address.
-    """
-    address = await CustomerShippingAddress.filter(
-        id=address_id, 
-        user_id=current_user_id
-    ).first()
-    
-    if not address:
-        return False
-    
-    await address.delete()
-    return True
-
-
-async def set_default_address(address_id: str, current_user_id: int) -> CustomerShippingAddress:
-    """
-    Set a specific address as default for its type.
-    """
-    address = await CustomerShippingAddress.get(id=address_id, user_id=current_user_id)
-    await address.set_as_default()
-    return address
 
 class OrderService:
     
