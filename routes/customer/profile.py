@@ -28,7 +28,7 @@ async def get_profile(current_user: User = Depends(get_current_user)):
             "name": profile.user.name,
             "email": profile.user.email,
             "phone": profile.user.phone,
-            "photo": profile.user.photo,
+            # "photo": profile.user.photo,
             "address_1": profile.add1,
             "address_2": profile.add2,
             "postal_code": profile.postal_code
@@ -67,8 +67,8 @@ async def create_or_update_profile(
         current_user.name = profile_data.name
     if profile_data.email:
         current_user.email = profile_data.email
-    if profile_data.photo:
-        current_user.photo = profile_data.photo
+    # if profile_data.photo:
+    #     current_user.photo = profile_data.photo
     
     await current_user.save()
     await profile.fetch_related("user")
@@ -82,7 +82,7 @@ async def create_or_update_profile(
             "name": profile.user.name,
             "email": profile.user.email,
             "phone": profile.user.phone,
-            "photo": profile.user.photo,
+            # "photo": profile.user.photo,
             "address_1": profile.add1,
             "address_2": profile.add2,
             "postal_code": profile.postal_code
@@ -119,7 +119,7 @@ async def delete_profile(current_user: User = Depends(get_current_user)):
     # Optionally clear user data
     current_user.name = None
     current_user.email = None
-    current_user.photo = None
+    # current_user.photo = None
     await current_user.save()
     
     return {
