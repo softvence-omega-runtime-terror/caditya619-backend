@@ -101,10 +101,9 @@ class Item(models.Model):
         self.ratings = avg
         await self.save(update_fields=["ratings"])
 
-    @property
-    def total_reviews(self):
+    async def get_total_reviews(self) -> int:
         from applications.items.review import ItemReview
-        return ItemReview.filter(item=self, parent__isnull=True).count()
+        return await ItemReview.filter(item=self, parent=None).count()
 
 
     @property

@@ -1,3 +1,4 @@
+geopy
 aerich==0.9.1
 aiofiles==24.1.0
 aiomysql==0.2.0
