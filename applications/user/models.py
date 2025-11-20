@@ -31,7 +31,6 @@ class User(Model):
     email = fields.CharField(max_length=100, null=True, unique=True)
     phone = fields.CharField(max_length=20, unique=True)
     name = fields.CharField(max_length=50, null=True, blank=True)
-    photo = fields.CharField(max_length=255, null=True, blank=True)
 
     is_rider = fields.BooleanField(default=False)
     is_vendor = fields.BooleanField(default=False)

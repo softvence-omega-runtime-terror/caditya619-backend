@@ -6,8 +6,7 @@ from app.utils.otp_manager import verify_otp
 from tortoise.transactions import in_transaction
 from app.utils.phone_number import phone_number
 from app.utils.file_manager import save_file, update_file, delete_file
-from app.token import get_current_user
-from app.auth import permission_required
+from app.auth import permission_required, vendor_required
 
 router = APIRouter(prefix='/vendor', tags=['Vendor Signup'])
 
@@ -17,8 +16,6 @@ async def signup(
     phone: str = Form(..., description="Enter a valid phone number +91XXXXXXXXXX"),
     name: str = Form(...),
     otp: str = Form(...),
-    nid: str = Form(...),
-    type: str = Form(..., description='food/groceries/medicine')
 ):
     phone = await phone_number(phone)
     if not phone:
@@ -35,14 +32,6 @@ async def signup(
 
         if not user:
             user = await User.create(phone=phone, name=name, is_vendor=True, using_db=connection)
-            await VendorProfile.get_or_create(
-                user=user,
-                defaults={
-                    "type": type,
-                    "nid": nid
-                },
-                using_db=connection,
-            )
 
     token_data = {
         "sub": str(user.id),
@@ -79,61 +68,57 @@ async def signup(
 @router.put("/update-kyc/", response_model=dict)
 async def update_kyc(
     nid: str = Form(...),
-    fassai_file: UploadFile | None = File(None),
-    drug_license_file: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
     latitude: float | None = Form(None),
     longitude: float | None = Form(None),
-    current_user: User = Depends(get_current_user)
+    vendor_type: str = Form(..., description='food/grocery/medicine'),
+    current_user: User = Depends(vendor_required)
 ):
     # Ensure user is a vendor
     if not current_user.is_vendor:
         raise HTTPException(status_code=403, detail="You are not a vendor.")
 
-    # Fetch the actual VendorProfile
-    vendor_profile = await VendorProfile.get_or_none(user=current_user)
-    if not vendor_profile:
-        raise HTTPException(status_code=404, detail="Vendor profile not found.")
-    
-    if vendor_profile.type == "food" and not fassai_file:
-        raise HTTPException(status_code=403, detail="FASSAI document is required for Food vendors.")
-    if vendor_profile.type == "medicine" and not drug_license_file:
-        raise HTTPException(status_code=403, detail="Drug License document is required for Medicine vendors.")
+    # Create or fetch vendor profile
+    vendor_profile, created = await VendorProfile.get_or_create(user=current_user)
 
     async with in_transaction() as conn:
-        # Update fields
         vendor_profile.nid = nid
+        vendor_profile.type = vendor_type
 
-        if fassai_file and vendor_profile.type == "food":
-            if vendor_profile.fassai:
-                vendor_profile.fassai = await update_file(fassai_file, vendor_profile.fassai, 'vendors_fassai')
-            else:
-                vendor_profile.fassai = await save_file(fassai_file, 'vendors_fassai')
+        if file:
+            if vendor_type == "food":
+                vendor_profile.fassai = (
+                    await update_file(file, vendor_profile.fassai, "vendors_fassai")
+                    if vendor_profile.fassai
+                    else await save_file(file, "vendors_fassai")
+                )
 
-        if drug_license_file and vendor_profile.type == "medicine":
-            if vendor_profile.drug_license:
-                vendor_profile.drug_license = await update_file(drug_license_file, vendor_profile.drug_license, 'vendors_drug_license')
-            else:
-                vendor_profile.drug_license = await save_file(drug_license_file, 'vendors_drug_license')
+            elif vendor_type == "medicine":
+                vendor_profile.drug_license = (
+                    await update_file(file, vendor_profile.drug_license, "vendors_drug_license")
+                    if vendor_profile.drug_license
+                    else await save_file(file, "vendors_drug_license")
+                )
 
+        # Update location fields if provided
         if latitude is not None:
             vendor_profile.latitude = latitude
         if longitude is not None:
             vendor_profile.longitude = longitude
 
-        # Reset status to submitted whenever KYC is updated
-        vendor_profile.status = "submitted"
-
+        vendor_profile.kyc_status = "submitted"
         await vendor_profile.save(using_db=conn)
 
     return {
         "message": "KYC updated successfully",
         "vendor_profile": {
+            "type": vendor_profile.type,
             "nid": vendor_profile.nid,
             "fassai": vendor_profile.fassai,
             "drug_license": vendor_profile.drug_license,
             "latitude": vendor_profile.latitude,
             "longitude": vendor_profile.longitude,
-            "status": vendor_profile.status,
+            "kyc_status": vendor_profile.kyc_status
         }
     }
 
@@ -143,11 +128,11 @@ async def update_vendor_status(
     new_status: str = Form(..., regex="^(submitted|verified|rejected)$"),
 ):
     async with in_transaction() as conn:
-        vendor_profile = await VendorProfile.get_or_none(id=vendor_id, using_db=conn)
+        vendor_profile = await VendorProfile.get_or_none(user_id=vendor_id, using_db=conn)
         if not vendor_profile:
             raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
-        vendor_profile.status = new_status
+        vendor_profile.kyc_status = new_status
         await vendor_profile.save(using_db=conn)
 
     return {
@@ -155,8 +140,104 @@ async def update_vendor_status(
         "vendor_profile": {
             "id": vendor_profile.id,
             "user_id": vendor_profile.user_id,
-            "status": vendor_profile.status,
+            "kyc_status": vendor_profile.kyc_status,
             "type": vendor_profile.type,
             "nid": vendor_profile.nid,
+        }
+    }
+
+
+@router.put("/toggle-active-status/", response_model=dict)
+async def active_status(
+    current_user: User = Depends(vendor_required),
+):
+    async with in_transaction() as conn:
+        vendor_profile = await VendorProfile.get_or_none(user=current_user, using_db=conn)
+        if not vendor_profile:
+            raise HTTPException(status_code=404, detail="Vendor profile not found.")
+
+        # Toggle the value
+        vendor_profile.is_active = not vendor_profile.is_active
+        await vendor_profile.save(using_db=conn)
+
+    return {
+        "message": f"Vendor status updated successfully.",
+        "status": vendor_profile.is_active,
+    }
+
+
+
+@router.get("/vendor-details/", response_model=dict)
+async def vendor_details(
+    current_user: User = Depends(vendor_required),
+):
+    vendor_profile = await VendorProfile.get_or_none(user=current_user)
+    if not vendor_profile:
+        raise HTTPException(status_code=404, detail="Vendor profile not found.")
+
+    return {
+        "message": "Vendor profile fetched successfully",
+        "vendor_profile": {
+            "id": current_user.id,
+            "shop_name": current_user.name,
+            "email": current_user.email,
+            "phone": current_user.phone,
+            "owner_name": vendor_profile.owner_name,
+            "type": vendor_profile.type,
+            "photo": vendor_profile.photo,
+            "is_active": vendor_profile.is_active,
+            "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
+            "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
+            "is_completed": vendor_profile.is_completed,
+
+            "latitude": vendor_profile.latitude,
+            "longitude": vendor_profile.longitude,
+            "nid": vendor_profile.nid,
+            "fassai": vendor_profile.fassai,
+            "drug_license": vendor_profile.drug_license,
+            "kyc_status": vendor_profile.kyc_status,
+        }
+    }
+
+
+@router.put("/update-vendor-profile/", response_model=dict)
+async def update_vendor_profile(
+    owner_name: str = Form(...),
+    email: str = Form(None),
+    photo: UploadFile | None = File(None),
+    open_time: str = Form(None),
+    close_time: str = Form(None),
+    current_user: User = Depends(vendor_required),
+):
+    vendor_profile = await VendorProfile.get_or_none(user=current_user)
+    if not vendor_profile:
+        raise HTTPException(status_code=404, detail="Vendor profile not found.")
+
+    async with in_transaction() as conn:
+        current_user.email = email
+        await current_user.save(using_db=conn)
+
+        vendor_profile.owner_name = owner_name
+        vendor_profile.open_time = open_time
+        vendor_profile.close_time = close_time
+
+        if photo:
+            vendor_profile.photo = (
+                await update_file(photo, vendor_profile.photo, "vendor_photos")
+                if vendor_profile.photo
+                else await save_file(photo, "vendor_photos")
+            )
+
+        await vendor_profile.save(using_db=conn)
+
+    return {
+        "message": "Vendor profile updated successfully",
+        "vendor_profile": {
+            "owner_name": vendor_profile.owner_name,
+            "shop_name": current_user.name,
+            "email": current_user.email,
+            "photo": vendor_profile.photo,
+            "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
+            "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
         }
     }
