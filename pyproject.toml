@@ -2,3 +2,7 @@
 tortoise_orm = "app.config.TORTOISE_ORM"
 location = "./migrations"
 src_folder = "./."
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

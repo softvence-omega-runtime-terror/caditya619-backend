@@ -6,7 +6,7 @@ from tortoise import fields, models
 from applications.user.models import User
 from enum import Enum
 from app.token import get_current_user
-from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus
+from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus, HelpAndSupport
 from app.utils.file_manager import save_file, update_file, delete_file
 from tortoise.exceptions import IntegrityError
 from fastapi import Body
@@ -40,6 +40,7 @@ RiderProfileIn_Pydantic = pydantic_model_creator(RiderProfile, name="RiderProfil
 VehicleOut = pydantic_model_creator(Vehicle, name="VehicleOut")
 ZoneOut = pydantic_model_creator(Zone, name="ZoneOut")
 AvailabilityStatusOut = pydantic_model_creator(RiderAvailabilityStatus, name="AvailabilityStatusOut")
+HelpAndSupportOut = pydantic_model_creator(HelpAndSupport, name="HelpAndSupportOut")
 
 
 class RiderProfileUpdateModel(BaseModel):
@@ -359,6 +360,38 @@ async def set_availability_status(
 
 
 
+
+
+#*****************************************************
+#            Help and Support endpoints 
+#*****************************************************
+
+@router.post("/help-and-support/me/", response_model=HelpAndSupportOut, status_code=status.HTTP_201_CREATED)
+async def submit_help_and_support_request(
+    subject: str = Form(...),
+    description: str = Form(...),
+    attachments: Optional[UploadFile] = File(None),
+    user: User = Depends(get_current_user)
+):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    
+    if attachments:
+        attachments_path = await save_file(
+            attachments, upload_to="HelpAndSupport", allowed_extensions=['png', 'jpg', 'svg', 'jpeg', 'pdf']
+        )
+        print("Attachments saved at:", attachments_path)
+    else:
+        attachments_path = None
+
+    help_request = await HelpAndSupport.create(
+        rider_id=rider_profile.id,
+        subject=subject,
+        description=description,
+        attachment=attachments_path
+    )
+    return await HelpAndSupportOut.from_tortoise_orm(help_request)
 
 
 

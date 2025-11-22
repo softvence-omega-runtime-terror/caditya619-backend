@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from applications.user.models import User
-from applications.user.customer import CustomerShippingAddress, CustomerProfile
+from applications.user.customer import CustomerShippingAddress
 from applications.items.models import *
 from applications.customer.models import *
 from applications.customer.schemas import *

@@ -1,3 +1,4 @@
+from decouple import config
 from typing import Optional
 from pydantic_settings import BaseSettings
 from tortoise import Tortoise
@@ -15,7 +16,8 @@ class Settings(BaseSettings):
     SECRET_KEY: Optional[str] = None
     BASE_URL: str = "http://localhost:8000/"
     RADIS_URL: str = "redis://localhost:6379/0"
-
+    RAZORPAY_KEY_ID: str = config("RAZORPAY_KEY_ID")
+    RAZORPAY_KEY_SECRET: str = config("RAZORPAY_KEY_SECRET")
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

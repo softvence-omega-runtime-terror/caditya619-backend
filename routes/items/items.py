@@ -3,6 +3,8 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.transactions import in_transaction
 from typing import Optional, List
 
+from watchfiles import awatch
+
 from app.token import get_current_user
 from applications.items.models import Item, Category, SubCategory, SubSubCategory
 from app.utils.file_manager import save_file, update_file, delete_file
@@ -11,7 +13,7 @@ import json
 
 from applications.user.models import User
 
-router = APIRouter(prefix="/groceries", tags=["Groceries"])
+router = APIRouter(prefix="/items", tags=["All Items"])
 
 ItemOut = pydantic_model_creator(Item, name="ItemOut")
 
@@ -48,9 +50,16 @@ async def serialize_item(item: Item):
         "hot_deals": item.hot_deals,
         "flash_sale": item.flash_sale,
         "weight": item.weight,
-        "vendor_id": vendor.id,
-        "shop_image": vendor_profile.photo if vendor and vendor_profile else None,
-        "shop_name": vendor.name,
+        "vendor": {
+            "id": vendor.id,
+            "name": vendor.name,
+            "email": vendor.email,
+            "phone": vendor.phone,
+            "photo": vendor_profile.photo if vendor_profile else None,
+            "shop_name": vendor.name,
+            "owner_name": vendor_profile.owner_name if vendor_profile else None,
+            "type": vendor_profile.type if vendor_profile else None,
+        } if vendor else None,
         "image": item.image,
         "is_in_stock": item.is_in_stock,
         "new_arrival": item.new_arrival,
@@ -58,7 +67,6 @@ async def serialize_item(item: Item):
         "created_at": item.created_at,
         "updated_at": item.updated_at,
     }
-
 
 
 # ----------------------- CREATE -----------------------
@@ -123,6 +131,7 @@ async def get_all_items(
     category: Optional[int] = None,
     subcategory: Optional[int] = None,
     sub_subcategory: Optional[int] = None,
+    category_type: Optional[int] = None,
     vendor_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -136,8 +145,10 @@ async def get_all_items(
     offset: int = 0,
     limit: int = 20
 ):
-    query = Item.filter(category__type='groceries').prefetch_related("category", "subcategory", "sub_subcategory")
+    query = Item.all().prefetch_related("category", "subcategory", "sub_subcategory")
 
+    if category_type:
+        query = Item.filter(category__type=category_type)
     if category:
         query = query.filter(category_id=category)
     if subcategory:

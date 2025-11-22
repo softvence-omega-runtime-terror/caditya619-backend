@@ -67,15 +67,20 @@ async def login_auth2(form_data: OAuth2EmailPasswordForm = Depends()):
 @router.post("/send_otp/", description="""
 ### Test User Accounts:
 - **Admin User** — `+919876543210` — Admin / Rider / Vendor / Staff / Superuser  
+- **Staff User** — `+919876543510` — Staff  
 - **Rider One** — `+919876543211` — Rider  
-- **Vendor One** — `+919876543212` — Vendor  
-- **Mix One** — `+919876543213` — Rider / Vendor  
-- **Staff One** — `+919876543214` — Staff  
-- **Rider Two** — `+919876543215` — Rider  
-- **Vendor Two** — `+919876543216` — Vendor  
-- **Mix Two** — `+919876543217` — Rider / Vendor  
-- **Staff Two** — `+919876543218` — Staff  
-- **Test Ten** — `+919876543219` — Rider  
+- **Vendor One** — `+919876543212` — Vendor (Food)  
+- **Vendor Two** — `+919876543213` — Vendor (Grocery)  
+- **Vendor Three** — `+919876543214` — Vendor (Medicine)  
+- **Vendor Four** — `+919876543215` — Vendor (Food)  
+- **Vendor Five** — `+919876543216` — Vendor (Grocery)  
+- **Vendor Six** — `+919876543217` — Vendor (Medicine)  
+- **Vendor Seven** — `+919876543218` — Vendor (Food)  
+- **Vendor Eight** — `+919876543219` — Vendor (Grocery)  
+- **Vendor Nine** — `+919876543220` — Vendor (Medicine)  
+- **Vendor Ten** — `+919876543221` — Vendor (Food)  
+- **Rider Two** — `+919876543222` — Rider  
+- **Mix One** — `+919876543223` — Rider / Vendor (Grocery)  
 """)
 async def send_otp(
         phone: str = Form('', description="Enter a valid phone number +91XXXXXXXXXX"),
