@@ -194,6 +194,10 @@ async def update_vendor_profile(
     if not vendor_profile:
         raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
+    # Remove timezone if exists
+    open_time = open_time.replace(tzinfo=None) if open_time else None
+    close_time = close_time.replace(tzinfo=None) if close_time else None
+
     async with in_transaction() as conn:
         current_user.email = email
         await current_user.save(using_db=conn)
@@ -205,8 +209,7 @@ async def update_vendor_profile(
         if photo:
             vendor_profile.photo = (
                 await update_file(photo, vendor_profile.photo, "vendor_photos")
-                if vendor_profile.photo
-                else await save_file(photo, "vendor_photos")
+                if vendor_profile.photo else await save_file(photo, "vendor_photos")
             )
         await vendor_profile.save(using_db=conn)
 
