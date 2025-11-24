@@ -17,7 +17,7 @@ class VendorProfile(models.Model):
     
     id = fields.IntField(pk=True)
     user = fields.OneToOneField("models.User", related_name="vendor_profile", on_delete=fields.CASCADE)
-    owner_name = fields.CharField(max_length=200, null=True, blank=True)
+    owner_name = fields.CharField(max_length=255, null=True, blank=True)
     photo = fields.CharField(max_length=255, null=True, blank=True)
     type = fields.CharField(max_length=50, choices=TYPE_CHOICES, defaults='grocery')
     is_active = fields.BooleanField(default=True)
