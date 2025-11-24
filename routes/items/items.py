@@ -50,16 +50,20 @@ async def serialize_item(item: Item):
         "hot_deals": item.hot_deals,
         "flash_sale": item.flash_sale,
         "weight": item.weight,
-        "vendor": {
-            "id": vendor.id,
-            "name": vendor.name,
-            "email": vendor.email,
-            "phone": vendor.phone,
-            "photo": vendor_profile.photo if vendor_profile else None,
-            "shop_name": vendor.name,
-            "owner_name": vendor_profile.owner_name if vendor_profile else None,
-            "type": vendor_profile.type if vendor_profile else None,
-        } if vendor else None,
+        # "vendor": {
+        #     "id": vendor.id,
+        #     "name": vendor.name,
+        #     "email": vendor.email,
+        #     "phone": vendor.phone,
+        #     "photo": vendor_profile.photo if vendor_profile else None,
+        #     "shop_name": vendor.name,
+        #     "owner_name": vendor_profile.owner_name if vendor_profile else None,
+        #     "type": vendor_profile.type if vendor_profile else None,
+        # } if vendor else None,
+
+        "vendor_id": vendor.id,
+        "shop_image": vendor_profile.photo if vendor and vendor_profile else None,
+        "shop_name": vendor.name,
         "image": item.image,
         "is_in_stock": item.is_in_stock,
         "new_arrival": item.new_arrival,
@@ -174,7 +178,7 @@ async def get_all_items(
     if flash_sale is not None:
         query = query.filter(flash_sale=flash_sale)
     if name:
-        query = query.filter(name__icontains=name)
+        query = query.filter(title__icontains=name)
 
     total_count = await query.count()
     items = await query.offset(offset).limit(limit)

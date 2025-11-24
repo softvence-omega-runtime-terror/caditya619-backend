@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Form, UploadFile, Depends, File
 from applications.user.models import User
-from applications.user.vendor import VendorProfile
+from applications.user.vendor import VendorProfile, RestaurantProfile
 from app.token import  create_access_token, create_refresh_token
 from app.utils.otp_manager import verify_otp
 from tortoise.transactions import in_transaction
@@ -240,3 +240,5 @@ async def update_vendor_profile(
             "kyc_status": vendor_profile.kyc_status,
         }
     }
+
+

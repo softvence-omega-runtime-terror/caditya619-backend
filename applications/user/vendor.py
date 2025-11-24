@@ -1,4 +1,5 @@
 from tortoise import fields, models
+from tortoise.exceptions import ValidationError
 
 
 class VendorProfile(models.Model):
@@ -54,3 +55,20 @@ class VendorProfile(models.Model):
         return True
         
         
+
+class RestaurantProfile(models.Model):
+    vendor = fields.OneToOneField("models.VendorProfile", related_name="restaurants", on_delete=fields.CASCADE)
+    cuisines = fields.ManyToManyField("models.SubCategory", related_name="restaurants", blank=True, null=True)
+    specialities = fields.CharField(max_length=100, null=True, blank=True)
+    signature_dish = fields.ManyToManyField("models.Item", related_name="restaurants", blank=True, null=True)
+
+    # async def save(self, *args, **kwargs):
+    #     vendor_instance = await self.vendor
+    #     if vendor_instance.type.lower() != "food":
+    #         raise ValidationError(
+    #             "Vendor type must be 'food' to create a RestaurantProfile."
+    #         )
+    #     await super().save(*args, **kwargs)
+
+    class Meta:
+        table = "restaurant_profiles"
