@@ -88,6 +88,7 @@ async def update_kyc(
 
     async with in_transaction() as conn:
         vendor_profile.nid = nid
+        vendor_profile.type = vendor_type
 
         # File handling (depends on type)
         if file:
