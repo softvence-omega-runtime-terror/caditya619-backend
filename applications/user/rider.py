@@ -13,6 +13,7 @@ class RiderProfile(models.Model):
     vehicle_insurance_document = fields.CharField(max_length=255, null=True)
     current_balance = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     is_available = fields.BooleanField(default=False)
+    online_start_time = fields.DatetimeField(null=True, default=None)
     is_verified = fields.BooleanField(default=False)
     bank_account_number = fields.CharField(max_length=20, null=True, blank=True)
     bank_ifsc = fields.CharField(max_length=11, null=True, blank=True)
