@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Form, Depends, Query
-from applications.user.vendor import VendorProfile
+from applications.user.vendor import VendorProfile, RestaurantProfile
 from tortoise.transactions import in_transaction
 from app.auth import permission_required
 
@@ -14,6 +14,11 @@ async def update_vendor_status(
         vendor_profile = await VendorProfile.get_or_none(user_id=vendor_id, using_db=conn)
         if not vendor_profile:
             raise HTTPException(status_code=404, detail="Vendor profile not found.")
+
+        if vendor_profile.type.lower() == "food" and new_status == "verified":
+            restaurant_profile = await RestaurantProfile.get_or_none(vendor_id=vendor_profile.id)
+            if not restaurant_profile:
+                await RestaurantProfile.create(vendor=vendor_profile)
 
         vendor_profile.kyc_status = new_status
         await vendor_profile.save(using_db=conn)
