@@ -14,6 +14,11 @@ class RiderProfile(models.Model):
     current_balance = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     is_available = fields.BooleanField(default=False)
     is_verified = fields.BooleanField(default=False)
+    bank_account_number = fields.CharField(max_length=20, null=True, blank=True)
+    bank_ifsc = fields.CharField(max_length=11, null=True, blank=True)
+    bank_holder_name = fields.CharField(max_length=100, null=True, blank=True)
+    is_bank_verified = fields.BooleanField(default=False)
+    fcm_token = fields.CharField(max_length=255, null=True, blank=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
