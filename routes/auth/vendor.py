@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Form, UploadFile, Depends, File
 from applications.user.models import User
-from applications.user.vendor import VendorProfile
+from applications.user.vendor import VendorProfile, RestaurantProfile
 from app.token import  create_access_token, create_refresh_token
 from app.utils.otp_manager import verify_otp
 from tortoise.transactions import in_transaction
@@ -72,7 +72,7 @@ async def update_kyc(
     vendor_type: str = Form(..., description='food/grocery/medicine'),
     latitude: float | None = Form(None),
     longitude: float | None = Form(None),
-    file: UploadFile | None = File(None),   # dynamic (fassai/drug/photo)
+    file: UploadFile | None = File(None),
     current_user: User = Depends(vendor_required),
 ):
     # Ensure user is a vendor
@@ -88,32 +88,17 @@ async def update_kyc(
 
     async with in_transaction() as conn:
         vendor_profile.nid = nid
+        vendor_profile.type = vendor_type
 
         # File handling (depends on type)
         if file:
-            if vendor_type == "food":
-                vendor_profile.fassai = (
-                    await update_file(file, vendor_profile.fassai, "vendors_fassai")
-                    if vendor_profile.fassai
-                    else await save_file(file, "vendors_fassai")
+            if vendor_type == "food" or vendor_type == "medicine":
+                vendor_profile.kyc_document = (
+                    await update_file(file, vendor_profile.kyc_document, "kyc_document")
+                    if vendor_profile.kyc_document
+                    else await save_file(file, "kyc_document")
                 )
 
-            elif vendor_type == "medicine":
-                vendor_profile.drug_license = (
-                    await update_file(file, vendor_profile.drug_license, "vendors_drug_license")
-                    if vendor_profile.drug_license
-                    else await save_file(file, "vendors_drug_license")
-                )
-
-            else:
-                # grocery → assume photo file
-                vendor_profile.photo = (
-                    await update_file(file, vendor_profile.photo, "vendors_photo")
-                    if vendor_profile.photo
-                    else await save_file(file, "vendors_photo")
-                )
-
-        # Update location if provided
         if latitude is not None:
             vendor_profile.latitude = latitude
 
@@ -129,8 +114,7 @@ async def update_kyc(
             "type": vendor_profile.type,
             "nid": vendor_profile.nid,
             "photo": vendor_profile.photo,
-            "fassai": vendor_profile.fassai,
-            "drug_license": vendor_profile.drug_license,
+            "kyc_document": vendor_profile.kyc_document,
             "latitude": vendor_profile.latitude,
             "longitude": vendor_profile.longitude,
             "kyc_status": vendor_profile.kyc_status,
@@ -191,8 +175,7 @@ async def vendor_details(
             "longitude": vendor_profile.longitude,
             "location_name": location_name,
             "nid": vendor_profile.nid,
-            "fassai": vendor_profile.fassai,
-            "drug_license": vendor_profile.drug_license,
+            "kyc_document": vendor_profile.kyc_document,
             "kyc_status": vendor_profile.kyc_status,
         }
     }
@@ -240,3 +223,5 @@ async def update_vendor_profile(
             "kyc_status": vendor_profile.kyc_status,
         }
     }
+
+
