@@ -1,12 +1,10 @@
+from __future__ import annotations
+
 from tortoise.contrib.pydantic import pydantic_model_creator
 from pydantic import BaseModel, Field, EmailStr, validator, condecimal
 from typing import List, Optional
 from datetime import datetime
-from applications.user.models import *
-from applications.items.models import *
-from applications.customer.models import *
-from applications.customer.schemas import *
-from app.token import get_current_user
+from applications.customer.models import Cart, CartItem, Order, OrderItem, DeliveryOption, PaymentMethod
 from decimal import Decimal
 import re
 from enum import Enum
@@ -170,58 +168,6 @@ class ErrorResponse(BaseModel):
     """Schema for error responses"""
     detail: str
     error_code: Optional[str] = None
-
-# class CustomerShippingAddressCreate(BaseModel):
-#     full_name: Optional[str] = None
-#     address_line1: Optional[str] = None
-#     address_line2: Optional[str] = None
-#     city: Optional[str] = None
-#     state: Optional[str] = None
-#     country: Optional[str] = "India"
-#     postal_code: Optional[str] = None
-#     phone_number: Optional[str] = None
-#     email: Optional[str] = None
-#     addressType: AddressTypeEnum = AddressTypeEnum.HOME
-#     make_default: Optional[bool] = False
-
-#     class Config:
-#         use_enum_values = True
-
-
-# class CustomerShippingAddressUpdate(BaseModel):
-#     full_name: Optional[str] = None
-#     address_line1: Optional[str] = None
-#     address_line2: Optional[str] = None
-#     city: Optional[str] = None
-#     state: Optional[str] = None
-#     country: Optional[str] = None
-#     postal_code: Optional[str] = None
-#     phone_number: Optional[str] = None
-#     email: Optional[str] = None
-#     addressType: Optional[AddressTypeEnum] = None
-#     make_default: Optional[bool] = None
-
-#     class Config:
-#         use_enum_values = True
-
-
-# class CustomerShippingAddressOut(BaseModel):
-#     id: str
-#     full_name: str
-#     address_line1: str
-#     address_line2: str
-#     city: Optional[str]
-#     state: Optional[str]
-#     country: Optional[str]
-#     postal_code: Optional[str]
-#     phone_number: str
-#     email: str
-#     addressType: str
-#     is_default: bool
-
-#     class Config:
-#         from_attributes = True
-#         orm_mode = True
 
 class ShippingAddressSchema(BaseModel):
     """Shipping Address Input Schema (ID will be auto-generated)"""
@@ -393,38 +339,6 @@ class CustomerProfileResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
-"""
-# # ==================== Dashboard Schemas ====================
-
-# class DashboardStatsSchema(BaseModel):
-#     Dashboard Statistics Schema
-#     total_users: int
-#     total_orders: int
-#     total_products: int
-#     total_revenue: Decimal = 0.0
-
-
-# # ==================== API Response Schemas ====================
-
-# class ApiResponseSchema(BaseModel):
-#     Standard API Response
-#     success: bool
-#     message: str
-#     data: Optional[dict] = None
-
-
-# class PaginatedResponseSchema(BaseModel):
-#     Paginated Response
-#     success: bool
-#     message: str
-#     data: List[dict]
-#     total: int
-#     page: int
-#     page_size: int
-
-
-
-"""
 
 
 
