@@ -58,7 +58,6 @@ class SubSubCategory(models.Model):
 
 class Item(models.Model):
     id = fields.IntField(pk=True)
-    
     category = fields.ForeignKeyField("models.Category", related_name="item", on_delete=fields.CASCADE)
     subcategory = fields.ForeignKeyField("models.SubCategory", related_name="item", null=True, blank=True, on_delete=fields.SET_NULL)
     sub_subcategory = fields.ForeignKeyField("models.SubSubCategory", related_name="item", null=True, blank=True, on_delete=fields.SET_NULL)
@@ -72,7 +71,7 @@ class Item(models.Model):
     ratings = fields.FloatField(default=0.0)
     stock = fields.IntField(default=0)
     total_sale = fields.IntField(default=0)
-
+    
     popular = fields.BooleanField(default=False)
     free_delivery = fields.BooleanField(default=False)
     hot_deals = fields.BooleanField(default=False)
@@ -82,6 +81,7 @@ class Item(models.Model):
     vendor = fields.ForeignKeyField("models.User", related_name='item', on_delete=fields.CASCADE)
     
     isOTC = fields.BooleanField(default=False)
+    isSignature = fields.BooleanField(default=False)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)

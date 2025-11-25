@@ -54,6 +54,7 @@ async def create_dummy_items():
                     hot_deals = random.choice([True, False])
                     flash_sale = random.choice([True, False])
                     isOTC = random.choice([True, False])
+                    isSignature = random.choice([True, False])
                     image = sub_subcat_data.get("avatar", None)
                     vendor = random.choice(vendors)
 
@@ -74,6 +75,7 @@ async def create_dummy_items():
                             hot_deals=hot_deals,
                             flash_sale=flash_sale,
                             isOTC=isOTC,
+                            isSignature=isSignature,
                             image=image,
                             vendor=vendor,
                         )
