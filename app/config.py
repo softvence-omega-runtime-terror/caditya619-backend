@@ -41,3 +41,7 @@ async def init_db():
         await Tortoise.generate_schemas()
     else:
         print("Skipping schema generation in production.")
+
+
+async def close_db():
+    await Tortoise.close_connections()
