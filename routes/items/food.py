@@ -10,6 +10,7 @@ from app.auth import permission_required, vendor_required
 import json
 
 from applications.user.models import User
+from routes.items import sub_subcategory
 
 router = APIRouter(prefix="/food", tags=["Foods"])
 
@@ -52,6 +53,7 @@ async def serialize_item(item: Item):
         "shop_image": vendor_profile.photo if vendor and vendor_profile else None,
         "shop_name": vendor.name,
         "image": item.image,
+        "isSignature": item.isSignature,
         "is_in_stock": item.is_in_stock,
         "new_arrival": item.new_arrival,
         "today_deals": item.today_deals,
@@ -77,6 +79,7 @@ async def create_item(
         flash_sale: bool = Form(False),
         weight: Optional[float] = Form(None),
         image: Optional[UploadFile] = None,
+        isSignature: bool = Form(False),
         vendor: User = Depends(get_current_user)
 ):
     async with in_transaction() as conn:
@@ -108,6 +111,7 @@ async def create_item(
             weight=weight,
             vendor=vendor,
             image=img_path,
+            isSignature=isSignature,
             using_db=conn,
         )
 
@@ -135,6 +139,7 @@ async def get_all_items(
     free_delivery: Optional[bool] = None,
     hot_deals: Optional[bool] = None,
     flash_sale: Optional[bool] = None,
+    isSignature: Optional[bool] = None,
     name: Optional[str] = None,
     offset: int = 0,
     limit: int = 20
@@ -163,6 +168,8 @@ async def get_all_items(
         query = query.filter(hot_deals=hot_deals)
     if flash_sale is not None:
         query = query.filter(flash_sale=flash_sale)
+    if isSignature is not None:
+        query = query.filter(isSignature=isSignature)
     if name:
         query = query.filter(name__icontains=name)
 
@@ -207,7 +214,8 @@ async def update_item(
         flash_sale: bool = Form(False),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
-        image: Optional[UploadFile] = None
+        image: Optional[UploadFile] = None,
+        isSignature: bool = Form(False),
 ):
     item = await Item.get_or_none(id=item_id)
     if not item:
@@ -237,7 +245,8 @@ async def update_item(
         item.flash_sale = flash_sale
         item.weight = weight
         item.vendor_id = vendor_id
-        item.image = img_path
+        item.image = img_path,
+        item.isSignature = isSignature
 
         await item.save(using_db=conn)
 
@@ -262,7 +271,8 @@ async def patch_item(
         flash_sale: Optional[bool] = Form(None),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
-        image: Optional[UploadFile] = None
+        image: Optional[UploadFile] = None,
+        isSignature: bool = Form(False),
 ):
     item = await Item.get_or_none(id=item_id)
     if not item:
@@ -290,7 +300,7 @@ async def patch_item(
             "title": title, "description": description, "price": price, "discount": discount,
             "stock": stock, "popular": popular, "free_delivery": free_delivery,
             "hot_deals": hot_deals, "flash_sale": flash_sale,
-            "weight": weight, "vendor_id": vendor_id
+            "weight": weight, "vendor_id": vendor_id, "isSignature": isSignature
         }
         for k, v in updates.items():
             if v is not None:
