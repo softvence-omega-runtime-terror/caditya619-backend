@@ -82,6 +82,7 @@ class Item(models.Model):
     vendor = fields.ForeignKeyField("models.User", related_name='item', on_delete=fields.CASCADE)
     
     isOTC = fields.BooleanField(default=False)
+    isSignature = fields.BooleanField(default=False)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
