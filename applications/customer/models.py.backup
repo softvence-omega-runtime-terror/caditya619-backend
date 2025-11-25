@@ -1,6 +1,9 @@
 
 from tortoise import fields, models
 from enum import Enum
+
+
+
 # ==================== Enums ====================
 
 class OrderStatus(str, Enum):
@@ -21,7 +24,7 @@ class DeliveryTypeEnum(str, Enum):
 
 # Create a proper Tortoise Model for delivery options
 # In models.py
-class DeliveryOption(models.Model):
+class DeliveryOption(Model):
     id = fields.IntField(pk=True)  # Auto-incrementing integer
     type = fields.CharEnumField(DeliveryTypeEnum, max_length=20)
     title = fields.CharField(max_length=100)
@@ -40,7 +43,7 @@ class PaymentMethodType(str, Enum):
     COD = "cod"
     
 
-class PaymentMethod(models.Model):
+class PaymentMethod(Model):
     id = fields.IntField(pk=True)  # Auto-incrementing integer
     type = fields.CharEnumField(PaymentMethodType, max_length=20)
     title = fields.CharField(max_length=100)
@@ -84,38 +87,53 @@ class Order(models.Model):
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
     rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_rider", on_delete=fields.CASCADE, null=True)
     cart = fields.ForeignKeyField("models.Cart", related_name="cart_orders", on_delete=fields.SET_NULL, null=True)
-    
+    # Relationships
     shipping_address = fields.ForeignKeyField(
-        "models.CustomerShippingAddress",
+        "models.CustomerShippingAddress", 
         related_name="orders",
         null=True
     )
-    
     delivery_type = fields.CharEnumField(
         DeliveryTypeEnum,
-        max_length=20,
+        max_length=20,  # should be at least as long as your longest enum value
         null=True
     )
-    
+    # In applications/customer/models.py - Order class
+
+    payment_status = fields.CharEnumField(
+        PaymentStatus,
+        max_length=20,
+        default=PaymentStatus.PENDING,
+        null=True
+    )
+    last_payment_attempt = fields.DatetimeField(null=True)
+    # In applications/customer/models.py - Order class
+
     payment_method = fields.CharEnumField(
         PaymentMethodType,
         max_length=20,
+        default=PaymentMethodType.PENDING,
         null=True
     )
-    
+    last_payment_attempt = fields.DatetimeField(null=True)
+    # Pricing
     subtotal = fields.DecimalField(max_digits=10, decimal_places=2)
     delivery_fee = fields.DecimalField(max_digits=10, decimal_places=2)
     total = fields.DecimalField(max_digits=10, decimal_places=2)
     coupon_code = fields.CharField(max_length=100, null=True)
     discount = fields.DecimalField(max_digits=10, decimal_places=2, default=0)
     
+    # Order tracking
     order_date = fields.DatetimeField(auto_now_add=True)
     status = fields.CharEnumField(OrderStatus, max_length=50, default=OrderStatus.PENDING, index=True)
     transaction_id = fields.CharField(max_length=255, null=True)
     tracking_number = fields.CharField(max_length=255, null=True, index=True)
     estimated_delivery = fields.DatetimeField(null=True)
     
+    # Metadata
     metadata = fields.JSONField(null=True)
+    
+    # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
     
