@@ -271,3 +271,12 @@ class HelpAndSupport(models.Model):
 #*********************************************************************#
 #              End of Rider State Related Models
 #*********************************************************************#
+
+
+
+class DeviceToken(models.Model):
+    id = fields.IntField(pk=True)
+    user_id = fields.IntField()
+    token = fields.CharField(max_length=256)
+    platform = fields.CharField(max_length=32)
+    created_at = fields.DatetimeField(auto_now_add=True)
