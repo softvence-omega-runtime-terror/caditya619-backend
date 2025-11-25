@@ -65,6 +65,8 @@ async def serialize_item(item: Item):
         "shop_image": vendor_profile.photo if vendor and vendor_profile else None,
         "shop_name": vendor.name,
         "image": item.image,
+        "isOTC": item.isOTC,
+        "isSignature": item.isSignature,
         "is_in_stock": item.is_in_stock,
         "new_arrival": item.new_arrival,
         "today_deals": item.today_deals,
@@ -90,6 +92,8 @@ async def create_item(
         flash_sale: bool = Form(False),
         weight: Optional[float] = Form(None),
         image: Optional[UploadFile] = None,
+        isOTC: bool = Form(False),
+        isSignature: bool = Form(False),
         vendor: User = Depends(get_current_user)
 ):
     async with in_transaction() as conn:
@@ -120,6 +124,8 @@ async def create_item(
             hot_deals=hot_deals,
             flash_sale=flash_sale,
             weight=weight,
+            isOtc=isOTC,
+            isSignature=isSignature,
             vendor_id=vendor,
             image=img_path,
             using_db=conn,
@@ -145,6 +151,8 @@ async def get_all_items(
     free_delivery: Optional[bool] = None,
     hot_deals: Optional[bool] = None,
     flash_sale: Optional[bool] = None,
+    isSignature: Optional[bool] = None,
+    isOtc: Optional[bool] = None,
     name: Optional[str] = None,
     offset: int = 0,
     limit: int = 20
@@ -177,6 +185,10 @@ async def get_all_items(
         query = query.filter(hot_deals=hot_deals)
     if flash_sale is not None:
         query = query.filter(flash_sale=flash_sale)
+    if isSignature is not None:
+        query = query.filter(isSignature=isSignature)
+    if isOtc is not None:
+        query = query.filter(isOtc=isOtc)
     if name:
         query = query.filter(title__icontains=name)
 
@@ -222,7 +234,9 @@ async def update_item(
         flash_sale: bool = Form(False),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
-        image: Optional[UploadFile] = None
+        image: Optional[UploadFile] = None,
+        isOTC: bool = Form(False),
+        isSignature: bool = Form(False),
 ):
     item = await Item.get_or_none(id=item_id)
     if not item:
@@ -254,7 +268,9 @@ async def update_item(
         item.flash_sale = flash_sale
         item.weight = weight
         item.vendor_id = vendor_id
-        item.image = img_path
+        item.image = img_path,
+        item.isOTC = isOTC,
+        item.isSignature = isSignature
 
         await item.save(using_db=conn)
 
@@ -280,7 +296,9 @@ async def patch_item(
         flash_sale: Optional[bool] = Form(None),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
-        image: Optional[UploadFile] = None
+        image: Optional[UploadFile] = None,
+        isOTC: bool = Form(False),
+        isSignature: bool = Form(False),
 ):
     item = await Item.get_or_none(id=item_id)
     if not item:
@@ -314,7 +332,7 @@ async def patch_item(
             "title": title, "description": description, "price": price, "discount": discount,
             "stock": stock, "popular": popular, "free_delivery": free_delivery,
             "hot_deals": hot_deals, "flash_sale": flash_sale,
-            "weight": weight, "vendor_id": vendor_id
+            "weight": weight, "vendor_id": vendor_id, "isOtc": isOTC, "isSignature": isSignature,
         }
         for k, v in updates.items():
             if v is not None:
