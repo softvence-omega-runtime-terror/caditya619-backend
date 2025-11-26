@@ -23,3 +23,20 @@ from app.utils.task_decorators import every
 @every(seconds=5)
 def check_every_schedule():
     print("Running every 5 seconds")
+
+
+@every(seconds=1)
+def check_every_schedule1sec():
+    print("Running every 1 seconds")
+
+@every(seconds=2)
+def check_every_schedule2sec():
+    print("Running every 2 seconds")
+
+@every(seconds=3)
+def check_every_schedule3sec():
+    print("Running every 3 seconds")
+
+@every(seconds=4)
+def check_every_schedule4sec():
+    print("Running every 4 seconds")
