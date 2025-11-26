@@ -1,7 +1,7 @@
 import os
 import importlib
-from pathlib import Path
 from contextlib import asynccontextmanager
+from app.task_config import scheduler
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,9 +12,7 @@ from app.config import settings, init_db
 from app.redis import init_redis, redis_client
 from app.routes import register_routes
 from app.utils.sync_permissions import sync_permissions
-from applications.user.models import User
 from app.utils.auto_routing import get_module
-from app.config import settings
 from app.dummy.users import create_test_users
 from app.dummy.categories import create_test_categories
 from app.dummy.sub_categories import create_test_subcategories
