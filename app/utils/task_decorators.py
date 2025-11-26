@@ -1,6 +1,5 @@
-# app/utils/task_decorators.py
 def every(**kwargs):
     def decorator(func):
-        func._schedule = kwargs  # attach schedule info
+        func._schedule = kwargs
         return func
     return decorator
