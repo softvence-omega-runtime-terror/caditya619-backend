@@ -1,7 +1,7 @@
 from app.utils.websocket_manager import manager
 from fastapi import Depends, HTTPException, status
 from jose import JWTError, jwt
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 from dateutil.relativedelta import relativedelta
 from typing import List, Optional, Dict
 import uuid
@@ -182,3 +182,29 @@ async def get_weekly_bonuses(rider: rider, month_start: date, month_end: date) -
         i += 1
     total_bonus = qualified_weeks * 400
     return {"total": total_bonus, "statuses": week_statuses}
+
+
+
+
+def to_time(value) -> time | None:
+    """Coerce DB value (time / timedelta / str) to datetime.time or None."""
+    if value is None:
+        return None
+    if isinstance(value, time):
+        return value
+    if isinstance(value, timedelta):
+        total_seconds = int(value.total_seconds()) % 86400
+        h = total_seconds // 3600
+        m = (total_seconds % 3600) // 60
+        s = total_seconds % 60
+        return time(hour=h, minute=m, second=s)
+    if isinstance(value, str):
+        for fmt in ("%H:%M:%S.%f", "%H:%M:%S"):
+            try:
+                return datetime.strptime(value, fmt).time()
+            except ValueError:
+                continue
+        # fallback
+        parts = value.split(".")[0]
+        return datetime.strptime(parts, "%H:%M:%S").time()
+    raise TypeError(f"Unsupported time type: {type(value)}")
