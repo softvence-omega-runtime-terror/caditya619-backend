@@ -6,7 +6,7 @@ from tortoise import fields, models
 from applications.user.models import User
 from enum import Enum
 from app.token import get_current_user
-from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus, HelpAndSupport, WorkDay
+from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus, HelpAndSupport, WorkDay, RiderCurrentLocation
 from app.utils.file_manager import save_file, update_file, delete_file
 from tortoise.exceptions import IntegrityError
 from fastapi import Body
@@ -75,7 +75,7 @@ class VehicleCreate(BaseModel):
 
 
 ###############################################
-#           endpoints
+#          Profile endpoints
 ##############################################
 
 
@@ -324,6 +324,48 @@ async def remove_vehicle_me(
 
 
 
+#*****************************************************
+#           current location endpoints
+#*****************************************************
+
+@router.post("/rider-location/me/", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def update_rider_location_me(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    user: User = Depends(get_current_user)
+):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    
+    current_location = await RiderCurrentLocation.get_or_none(rider_profile=rider_profile)
+    if not current_location:     
+        new_location = await RiderCurrentLocation.create(
+            rider_profile=rider_profile,
+            latitude=latitude,
+            longitude=longitude
+        )
+        await new_location.save()
+        return {"message": "Location created successfully"}
+    else:
+        current_location.latitude = latitude
+        current_location.longitude = longitude
+        await current_location.save()
+   
+    return {"message": "Location updated successfully"}
+    
+
+
+@router.get("/rider-location/me/", response_model=dict)
+async def get_rider_location_me(user: User = Depends(get_current_user)):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    current_location = await RiderCurrentLocation.get_or_none(rider_profile=rider_profile)
+    if not current_location:
+        raise HTTPException(status_code=404, detail="Current location not found")
+    return {"latitude": current_location.latitude, "longitude": current_location.longitude}
+
 
 #*****************************************************
 #            Zone endpoints
@@ -331,77 +373,77 @@ async def remove_vehicle_me(
 
 
 
-@router.get("/zones/{zone_id}/me/")
-async def list_assigned_zones_me(zone_id:int, user: User = Depends(get_current_user)):
-    rider_profile = await RiderProfile.get_or_none(user=user)
-    if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-    zones = await Zone.filter(id=zone_id).first()
-    if not zones:
-        raise HTTPException(status_code=404, detail="Zone not found")
+# @router.get("/zones/{zone_id}/me/")
+# async def list_assigned_zones_me(zone_id:int, user: User = Depends(get_current_user)):
+#     rider_profile = await RiderProfile.get_or_none(user=user)
+#     if not rider_profile:
+#         raise HTTPException(status_code=404, detail="Rider profile not found")
+#     zones = await Zone.filter(id=zone_id).first()
+#     if not zones:
+#         raise HTTPException(status_code=404, detail="Zone not found")
     
-    zone_assignments = await RiderZoneAssignment.create(rider_profile=rider_profile, zone=zones)
+#     zone_assignments = await RiderZoneAssignment.create(rider_profile=rider_profile, zone=zones)
 
-    await zone_assignments.save()
+#     await zone_assignments.save()
     
-    return zone_assignments
+#     return zone_assignments
 
 
-@router.post("/create-zone/", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def create_zone(
-    name: str = Form(...),
-    description: Optional[str] = Form(None),
-    user: User = Depends(get_current_user)
-):
-    # In a real application, you would check if the user has admin privileges here
-    existing_zone = await Zone.get_or_none(name=name)
-    if existing_zone:
-        raise HTTPException(status_code=400, detail="Zone with this name already exists")
-    new_zone = await Zone.create(name=name, description=description)
-    return {"message": f"Zone '{new_zone.name}' created successfully.", "zone_id": new_zone.id}
+# @router.post("/create-zone/", response_model=dict, status_code=status.HTTP_201_CREATED)
+# async def create_zone(
+#     name: str = Form(...),
+#     description: Optional[str] = Form(None),
+#     user: User = Depends(get_current_user)
+# ):
+#     # In a real application, you would check if the user has admin privileges here
+#     existing_zone = await Zone.get_or_none(name=name)
+#     if existing_zone:
+#         raise HTTPException(status_code=400, detail="Zone with this name already exists")
+#     new_zone = await Zone.create(name=name, description=description)
+#     return {"message": f"Zone '{new_zone.name}' created successfully.", "zone_id": new_zone.id}
 
 
 
-@router.get("/zones-list/")
-async def list_all_zones(user: User = Depends(get_current_user)):
-    if not user.is_superuser:
-        raise HTTPException(status_code=403, detail="Not authorized to view all zones")
-    zones = await Zone.all()
-    return zones
+# @router.get("/zones-list/")
+# async def list_all_zones(user: User = Depends(get_current_user)):
+#     if not user.is_superuser:
+#         raise HTTPException(status_code=403, detail="Not authorized to view all zones")
+#     zones = await Zone.all()
+#     return zones
 
 
-@router.put("/zones/{zone_id}/update/", response_model=ZoneOut, status_code=status.HTTP_200_OK)
-async def update_zone(
-    zone_id: int,
-    name: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    user: User = Depends(get_current_user)
-):
-    # In a real application, you would check if the user has admin privileges here
-    zone = await Zone.get_or_none(id=zone_id)
-    if not zone:
-        raise HTTPException(status_code=404, detail="Zone not found")
-    if name is not None:
-        zone.name = name
-    if description is not None:
-        zone.description = description
-    await zone.save()
-    return await ZoneOut.from_tortoise_orm(zone)
+# @router.put("/zones/{zone_id}/update/", response_model=ZoneOut, status_code=status.HTTP_200_OK)
+# async def update_zone(
+#     zone_id: int,
+#     name: Optional[str] = Form(None),
+#     description: Optional[str] = Form(None),
+#     user: User = Depends(get_current_user)
+# ):
+#     # In a real application, you would check if the user has admin privileges here
+#     zone = await Zone.get_or_none(id=zone_id)
+#     if not zone:
+#         raise HTTPException(status_code=404, detail="Zone not found")
+#     if name is not None:
+#         zone.name = name
+#     if description is not None:
+#         zone.description = description
+#     await zone.save()
+#     return await ZoneOut.from_tortoise_orm(zone)
 
 
-@router.delete("/zones/{zone_id}/delete/", response_model=dict)
-async def delete_zone(
-    zone_id: int,
-    user: User = Depends(get_current_user)
-):
-    if not user.is_superuser:
-        raise HTTPException(status_code=403, detail="Not authorized to delete zones")
-    # In a real application, you would check if the user has admin privileges here
-    zone = await Zone.get_or_none(id=zone_id)
-    if not zone:
-        raise HTTPException(status_code=404, detail="Zone not found")
-    await zone.delete()
-    return {"message": f"Zone with ID {zone_id} has been deleted."}
+# @router.delete("/zones/{zone_id}/delete/", response_model=dict)
+# async def delete_zone(
+#     zone_id: int,
+#     user: User = Depends(get_current_user)
+# ):
+#     if not user.is_superuser:
+#         raise HTTPException(status_code=403, detail="Not authorized to delete zones")
+#     # In a real application, you would check if the user has admin privileges here
+#     zone = await Zone.get_or_none(id=zone_id)
+#     if not zone:
+#         raise HTTPException(status_code=404, detail="Zone not found")
+#     await zone.delete()
+#     return {"message": f"Zone with ID {zone_id} has been deleted."}
 
 
 
@@ -454,26 +496,7 @@ async def get_availability_status(user: User = Depends(get_current_user)):
     }
 
     return AvailabilityStatusOut(**data)
-
-
-
-
-
-
-# @router.get("/rider-availability/me/", response_model=AvailabilityStatusOut)
-# async def get_availability_status(
-#     user: User = Depends(get_current_user)
-# ):
-#     rider_profile = await RiderProfile.get_or_none(user=user)
-#     if not rider_profile:
-#         raise HTTPException(status_code=404, detail="Rider profile not found")
-
-#     availability_status = await RiderAvailabilityStatus.get_or_none(rider_profile_id=rider_profile.id)
-#     if not availability_status:
-#         raise HTTPException(status_code=404, detail="Availability status not set")
-#     return await AvailabilityStatusOut.from_tortoise_orm(availability_status)
-    
-
+ 
 
 
 
@@ -527,8 +550,9 @@ async def list_help_and_support_requests_me(
 
 
 
-# Add this field to RiderProfile model (one-time)
-#online_start_time = fields.DatetimeField(null=True, default=None)
+#*****************************************************
+#            Go Online / Offline endpoints
+#*****************************************************
 
 LOCAL_TZ = datetime.now().astimezone().tzinfo
 
@@ -622,6 +646,20 @@ async def go_online_offline(
             "success": "Using system local time for all timestamps"
         }
 
+
+
+
+@router.get("/is-online-status/")
+async def is_online_status(
+    user: User = Depends(get_current_user)
+):
+    rider = await RiderProfile.get(user=user)
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    return {
+        "is_online": rider.is_available,
+        "online_start_time": rider.online_start_time.isoformat() if rider.online_start_time else None
+    }
 
 
 #*****************************************************
