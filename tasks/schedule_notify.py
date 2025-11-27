@@ -20,6 +20,6 @@ from app.utils.task_decorators import every
 # def weekly_task():
 #     print("Runs every Monday at 10:00 AM")
 
-# @every(seconds=5)
-# def check_every_schedule():
-#     print("Running every 5 seconds")
+@every(seconds=5)
+def check_every_schedule():
+    print("Running every 5 seconds")
