@@ -53,9 +53,9 @@ async def send_push_notification(user_id: int, title: str, body: str, data: dict
 # Initialize Tortoise ORM for Celery tasks
 
 
-@every(minutes=1)
-def check_every_schedule():
-    print("Running every 5 seconds")
+# @every(minutes=1)
+# def check_every_schedule():
+#     print("Running every 5 seconds")
 
 
 
