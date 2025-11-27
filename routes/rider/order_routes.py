@@ -70,9 +70,11 @@ async def notify_rider(rider_id: int, offer: OrderOffer, order: "Order"):
         "distance_bonus": float(offer.distance_bonus),
         "expires_at": offer.expires_at.isoformat()
     }
+    rider = await RiderProfile.get_or_none(id=rider_id)
     redis = get_redis()  # Assume this works; in prod, consider pooling or injecting
     await redis.publish("order_offers", json.dumps(payload))
-    await manager.send_to(payload, "riders", str(rider_id))
+    print(f"user id is {rider.user_id}")
+    await manager.send_to(payload, "riders", str(rider.user_id))
 
 async def offer_sequential(order_id: str, customer_lat: float, customer_lng: float, vendor_lat: float, vendor_lng: float):
     try:
@@ -938,10 +940,15 @@ async def track_order(
 
     # CONNECT & ADD TO TRACKING
     await manager.connect(websocket, "customers" if client_type == "customer" else "vendors", user_id)
+
+    rider = await RiderProfile.get(id=offer.rider_id)
+    if not rider:
+        await websocket.close(code=4001, reason="Rider not found")
+        return
     
     # ADD CUSTOMER TO RIDER'S TRACKING LIST
     if client_type == "customer":
-        manager.add_tracking(str(offer.rider_id), user_id)
+        manager.add_tracking(str(rider.user_id), user_id)
 
     try:
         # Send initial state
