@@ -1,9 +1,9 @@
 # routes/customer/profile.py
 from fastapi import APIRouter, HTTPException, Depends, status
-from applications.user.customer import *
-from applications.customer.models import *
-from applications.customer.schemas import *
+from applications.user.customer import CustomerProfile
+from applications.customer.schemas import CustomerProfileResponseSchema, CustomerProfileSchema
 from app.token import get_current_user
+from applications.user.models import User
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
