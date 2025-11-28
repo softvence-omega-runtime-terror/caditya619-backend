@@ -1,8 +1,7 @@
 import os
 import importlib
 from contextlib import asynccontextmanager
-from app.task_config import scheduler
-
+from app.task_config import start
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -25,6 +24,7 @@ from app.dummy.items import create_dummy_items
 async def lifespan(routerAPI: FastAPI):
     await init_db()
     init_redis()
+    start()
     await sync_permissions()
 
     if settings.DEBUG:

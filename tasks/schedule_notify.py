@@ -1,4 +1,3 @@
-# tasks/my_tasks.py
 from app.utils.task_decorators import every
 
 # @every(seconds=1)
@@ -17,7 +16,10 @@ from app.utils.task_decorators import every
 # def monthly_excellence_reminder():
 #     print("Running monthly excellence reminder")
 
+# @every(day_of_week='mon', hour=10, minute=0)
+# def weekly_task():
+#     print("Runs every Monday at 10:00 AM")
 
-@every(seconds=5)
-def check_every():
-    print("Running every 5 seconds")
+# @every(seconds=5)
+# def check_every_schedule():
+#     print("Running every 5 seconds")

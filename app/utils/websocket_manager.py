@@ -25,6 +25,8 @@ class ConnectionManager:
         if client_type not in self.connections:
             raise ValueError("Invalid client_type")
         self.connections[client_type][user_id] = websocket
+        print(f"Connected {client_type} {user_id}")
+        print(f"Current connections: {self.connections}")
 
     def disconnect(self, client_type: str, user_id: str):
         if client_type in self.connections and user_id in self.connections[client_type]:
@@ -45,12 +47,18 @@ class ConnectionManager:
                 self.customer_to_rider.pop(cid, None)
 
     def get_socket(self, client_type: str, user_id: str) -> Optional[WebSocket]:
-        return self.connections.get(client_type, {}).get(user_id)
+        print(f"Getting socket for {client_type} {user_id}")
+        connetions = self.connections.get(client_type, {}).get(user_id)
+        print(f"Connections found: {connetions}")
+        return connetions                  #self.connections.get(client_type, {}).get(user_id)
 
     async def send_to(self, message: dict, client_type: str, user_id: str):
+        print(f"Attempting to send to {client_type} {user_id}")
         ws = self.get_socket(client_type, user_id)
         if ws:
+            print(f"Found websocket for {client_type} {user_id}, sending message.")
             try:
+                print(f"Sending message to {client_type} {user_id}: {message}")
                 await ws.send_json(message)
             except:
                 self.disconnect(client_type, user_id)
@@ -64,6 +72,7 @@ class ConnectionManager:
 
     # NEW: Add customer to rider's tracking list
     def add_tracking(self, rider_id: str, customer_id: str):
+        print(f"Customer {customer_id} is now tracking Rider {rider_id}")
         self.rider_to_customers[rider_id].add(customer_id)
         self.customer_to_rider[customer_id] = rider_id
 
