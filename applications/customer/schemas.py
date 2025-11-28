@@ -222,20 +222,18 @@ class ShippingAddressResponseSchema(BaseModel):
         }
 
 
+class OrderItemInputSchema(BaseModel):
+    item_id: int
+    quantity: int
+
 class OrderCreateSchema(BaseModel):
-    """Order Creation Schema"""
-    # user_id: Optional[int] = None
-    carts: List[CartItemsCreateSchema]
-    # items: List[OrderItemCreateSchema]
+    items: List[OrderItemInputSchema]
     shipping_address: ShippingAddressSchema
     delivery_option: DeliveryOption_Pydantic_In
     payment_method: PaymentMethod_Pydantic_In
-    # subtotal: condecimal(max_digits=10, decimal_places=2)
     coupon_code: Optional[str] = None
 
-
 class OrderUpdateSchema(BaseModel):
-    """Order Update Schema"""
     status: Optional[str] = None
     tracking_number: Optional[str] = None
     transaction_id: Optional[str] = None
@@ -243,9 +241,8 @@ class OrderUpdateSchema(BaseModel):
 
 
 class OrderItemResponseSchema(BaseModel):
-    """Order Item Response Schema"""
     id: int
-    item_id: str
+    item_id: int
     title: str
     price: str
     quantity: int
@@ -253,24 +250,31 @@ class OrderItemResponseSchema(BaseModel):
     
     @validator('item_id', pre=True)
     def convert_item_id(cls, v):
-        """Convert ForeignKey to string ID"""
         if hasattr(v, 'id'):
-            return str(v.id)
-        return str(v)
+            return int(v.id)
+        return int(v)
     
     class Config:
         from_attributes = True
-        # orm_mode = True
 
+
+class DeliveryOptionResponseSchema(BaseModel):
+    type: str
+    title: str
+    description: str
+    price: float
+
+class PaymentMethodResponseSchema(BaseModel):
+    type: str
+    name: str
 
 class OrderResponseSchema(BaseModel):
-    """Order Response Schema"""
     order_id: str = Field(..., alias="id")
     user_id: str
     items: List[OrderItemResponseSchema] = []
     shipping_address: Optional[ShippingAddressResponseSchema] = None
-    delivery_option: str = Field(..., alias="delivery_type")
-    payment_method: str
+    delivery_option: DeliveryOptionResponseSchema
+    payment_method: PaymentMethodResponseSchema
     subtotal: Decimal
     delivery_fee: Decimal
     total: Decimal
@@ -285,27 +289,18 @@ class OrderResponseSchema(BaseModel):
 
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):
-        """Convert user_id to string"""
+        if hasattr(v, 'id'):
+            return str(v.id)
         return str(v)
-    
-    @validator('delivery_option', pre=True)
-    def convert_delivery_enum(cls, v):
-        """Convert enum to string value"""
-        return v.value if hasattr(v, 'value') else v
-    
-    @validator('payment_method', pre=True)
-    def convert_payment_enum(cls, v):
-        """Convert enum to string value"""
-        return v.value if hasattr(v, 'value') else v
     
     @validator('status', pre=True)
     def convert_status_enum(cls, v):
-        """Convert enum to string value"""
         return v.value if hasattr(v, 'value') else v
 
     class Config:
         from_attributes = True
         populate_by_name = True
+
 
         
 # User Profile Update Schema
