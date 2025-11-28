@@ -14,6 +14,7 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from datetime import datetime, date, timezone
 from pytz import utc
 import logging
+from .helper_functions import to_time
 
 
 # from datetime import time as _time
@@ -175,12 +176,75 @@ async def update_rider_profile_me(
 
 
 
+
+
+@router.get("/profile/completion")
+async def get_profile_completion(current_user: User = Depends(get_current_user)):
+    """
+    Returns profile completion percentage and list of missing fields
+    Only counts the 10 fields specified in requirements
+    """
+    rider = await RiderProfile.get_or_none(user=current_user)
+    if not rider:
+        raise HTTPException(404, "Rider profile not found")
+
+    # List of fields that count toward completion
+    completion_fields = {
+        "Full Name": current_user.name,
+        "Phone": current_user.phone,
+        "Email": current_user.email,
+        "Driving License": rider.driving_license,
+        "National ID (NID)": rider.nid,
+        "Profile Image": rider.profile_image,
+        "National ID Document": rider.national_id_document,
+        "Driving License Document": rider.driving_license_document,
+        "Vehicle Registration Document": rider.vehicle_registration_document,
+        "Vehicle Insurance Document": rider.vehicle_insurance_document,
+    }
+
+    total_fields = len(completion_fields)  # 10
+    filled_count = 0
+    missing_fields = []
+
+    for field_name, value in completion_fields.items():
+        # Consider field filled if it's not None, not empty string, and not just whitespace
+        if value and str(value).strip():
+            filled_count += 1
+        else:
+            missing_fields.append(field_name)
+
+    percentage = int((filled_count / total_fields) * 100)
+
+    return {
+        "completion_percentage": percentage,
+        "total_fields": total_fields,
+        "filled_fields": filled_count,
+        "missing_fields": missing_fields,
+        "is_complete": percentage == 100,
+        "message": f"Profile is {percentage}% complete"
+    }
+
+
+
 #*****************************************************
 #            Vehicle related endpoints
 #*****************************************************
 
+@router.get("/list/vehicles/", response_model=List[VehicleOut])
+async def list_vehicles_me(user: User = Depends(get_current_user)):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    vehicles = await Vehicle.filter(rider_profile=rider_profile)
+    print("Vehicles fetched:", vehicles)
+    if not vehicles:
+        raise HTTPException(status_code=404, detail="No vehicles found")
+    return [await VehicleOut.from_tortoise_orm(vehicle) for vehicle in vehicles]
 
-@router.get("/vehicles/{vehicle_id}/", response_model=VehicleOut)
+
+
+
+@router.get("/vehicles/id/{vehicle_id}/", response_model=VehicleOut)
 async def list_vehicles_me(vehicle_id: int, user: User = Depends(get_current_user)):
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
@@ -190,6 +254,7 @@ async def list_vehicles_me(vehicle_id: int, user: User = Depends(get_current_use
         raise HTTPException(status_code=404, detail="Vehicle not found")
     vehicle_payload = await VehicleOut.from_tortoise_orm(vehicle)
     return vehicle_payload
+
     
 
 
@@ -366,19 +431,47 @@ async def set_availability_status(
 
 
 
-@router.get("/rider-availability/me/", response_model=List[AvailabilityStatusOut])
-async def get_availability_status(
-    user: User = Depends(get_current_user)
-):
+
+@router.get("/rider-availability/me/", response_model=AvailabilityStatusOut)
+async def get_availability_status(user: User = Depends(get_current_user)):
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail="Rider profile not found")
 
-    availability_status = await RiderAvailabilityStatus.get_or_none(rider_profile=rider_profile)
+    availability_status = await RiderAvailabilityStatus.get_or_none(rider_profile_id=rider_profile.id)
     if not availability_status:
         raise HTTPException(status_code=404, detail="Availability status not set")
-    #return await AvailabilityStatusOut.from_tortoise_orm(availability_status)
-    return [await AvailabilityStatusOut.from_tortoise_orm(availability_status) for availability_status in [availability_status]]
+
+    # Build response dict matching the Pydantic model field names
+    data = {
+        "id": availability_status.id,                         # required
+        "is_available": availability_status.is_available,
+        # use the actual ORM attribute name (you used 'strat_at' in the model)
+        "strat_at": to_time(availability_status.strat_at),    # note: 'strat_at' not 'start_at'
+        "end_at":   to_time(availability_status.end_at),
+        "updated_at": availability_status.updated_at,         # required
+        # include any other fields AvailabilityStatusOut expects (e.g., rider_profile_id)
+    }
+
+    return AvailabilityStatusOut(**data)
+
+
+
+
+
+
+# @router.get("/rider-availability/me/", response_model=AvailabilityStatusOut)
+# async def get_availability_status(
+#     user: User = Depends(get_current_user)
+# ):
+#     rider_profile = await RiderProfile.get_or_none(user=user)
+#     if not rider_profile:
+#         raise HTTPException(status_code=404, detail="Rider profile not found")
+
+#     availability_status = await RiderAvailabilityStatus.get_or_none(rider_profile_id=rider_profile.id)
+#     if not availability_status:
+#         raise HTTPException(status_code=404, detail="Availability status not set")
+#     return await AvailabilityStatusOut.from_tortoise_orm(availability_status)
     
 
 

@@ -15,15 +15,14 @@ class Settings(BaseSettings):
     SECRET_KEY: Optional[str] = None
     BASE_URL: str = "http://localhost:8000/"
     RADIS_URL: str = "redis://localhost:6379/0"
-    RAZORPAY_KEY_ID: str
-    RAZORPAY_KEY_SECRET: str
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
 
 
 settings = Settings()
-
 
 TORTOISE_ORM = {
     "connections": {
@@ -42,3 +41,7 @@ async def init_db():
         await Tortoise.generate_schemas()
     else:
         print("Skipping schema generation in production.")
+
+
+async def close_db():
+    await Tortoise.close_connections()
