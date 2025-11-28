@@ -10,9 +10,8 @@ class OrderStatus(str, Enum):
     SHIPPED = "shipped"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
-    REFUNDED = "refunded"  # Add this
+    REFUNDED = "refunded"
 
-# Keep the Enum separate
 class DeliveryTypeEnum(str, Enum):
     STANDARD = "standard"
     EXPRESS = "express"
@@ -79,11 +78,9 @@ class CartItem(models.Model):
 # ==================== Order Models ====================
 
 class Order(models.Model):
-    """Order Model"""
     id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
-    rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_rider", on_delete=fields.CASCADE, null=True)
-    cart = fields.ForeignKeyField("models.Cart", related_name="cart_orders", on_delete=fields.SET_NULL, null=True)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_orders", on_delete=fields.CASCADE, null=True)
     
     shipping_address = fields.ForeignKeyField(
         "models.CustomerShippingAddress",
@@ -125,10 +122,9 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    """Order Item Model"""
     id = fields.IntField(pk=True, generated=True)
     order = fields.ForeignKeyField("models.Order", related_name="items", on_delete=fields.CASCADE)
-    item_id = fields.ForeignKeyField("models.Item",          related_name="order_items")
+    item = fields.ForeignKeyField("models.Item", related_name="order_items", on_delete=fields.CASCADE)
     title = fields.CharField(max_length=500)
     price = fields.CharField(max_length=50)
     quantity = fields.IntField()
@@ -136,6 +132,3 @@ class OrderItem(models.Model):
     
     class Meta:
         table = "order_item"
-
-
-
