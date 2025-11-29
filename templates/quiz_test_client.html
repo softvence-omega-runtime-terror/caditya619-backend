@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Quiz Test Client — FastAPI</title>
+  <style>
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;margin:18px;color:#0b1320}
+    header{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+    input[type=text], input[type=url]{padding:8px;border:1px solid #cbd5e1;border-radius:6px;width:360px}
+    .btn{background:#0369a1;color:#fff;padding:8px 12px;border-radius:8px;border:none;cursor:pointer}
+    .btn.ghost{background:#e2e8f0;color:#0b1320}
+    .card{border:1px solid #e6eef6;padding:12px;border-radius:10px;margin:10px 0}
+    .question{margin:12px 0;padding:8px;border-radius:8px}
+    .option{display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px}
+    .option:hover{background:#f1f8ff}
+    pre{background:#0f1724;color:#e6eef6;padding:8px;border-radius:8px;overflow:auto}
+    .muted{color:#64748b;font-size:13px}
+  </style>
+</head>
+<body>
+  <header>
+    <h2>Quiz Test Client</h2>
+    <div class="muted">Use this page to exercise /start, /submit, and /attempts endpoints</div>
+  </header>
+
+  <section class="card">
+    <label>API Base URL
+      <input id="apiBase" type="url" placeholder="" />
+    </label>
+    <div style="margin-top:8px">
+      <label>Bearer Token (paste your JWT here)
+        <input id="token" type="text" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzIiwiaXNfYWN0aXZlIjp0cnVlLCJpc19yaWRlciI6dHJ1ZSwiaXNfdmVuZG9yIjpmYWxzZSwiaXNfc3RhZmYiOmZhbHNlLCJpc19zdXBlcnVzZXIiOmZhbHNlLCJleHAiOjE4MjM4Njk4MDAsInR5cGUiOiJhY2Nlc3MifQ.nyAN5z7AO5ukphJDiG5eMSO-mbn1TiHRA63aXWHMhsU" />
+      </label>
+    </div>
+    <div style="margin-top:8px">
+      <button class="btn" id="loadBtn">Load /start</button>
+      <button class="btn ghost" id="attemptsBtn">Get /attempts</button>
+      <button class="btn ghost" id="clearBtn">Clear</button>
+    </div>
+    <div class="muted" style="margin-top:6px">If you serve this page from FastAPI use: <code>/quiz-test</code> and leave API Base empty.</div>
+  </section>
+
+  <section id="quizArea"></section>
+
+  <section id="resultArea"></section>
+
+  <section id="attemptsArea"></section>
+
+<script>
+const $ = id => document.getElementById(id);
+let currentQuestions = [];
+
+function headers(token){
+  const h = { 'Content-Type': 'application/json' };
+  if(token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+
+function stripTrailingSlashes(s){
+  while(s.endsWith('/')) s = s.slice(0, -1);
+  return s;
+}
+
+function getBase() {
+  const raw = $('apiBase').value || '';
+  const val = raw.trim();
+  if (val) return stripTrailingSlashes(val);
+  return window.location.origin + '/rider';
+}
+
+async function fetchStart(){
+  const base = getBase();
+  const token = $('token').value.trim();
+  const url = base + '/start';
+  $('quizArea').innerHTML = '<div class="card">Loading questions…</div>';
+  try{
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: headers(token),
+      credentials: 'include'
+    });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>res.statusText||'');
+      throw {status:res.status, text: txt};
+    }
+    const data = await res.json();
+    renderQuestions(data.questions);
+  }catch(err){
+    console.error('fetchStart error', err);
+    $('quizArea').innerHTML = '<div class="card" style="color:#b91c1c">Error loading questions: '+(err.status||'')+' '+(err.text||err.message||JSON.stringify(err))+'</div>';
+  }
+}
+
+function renderQuestions(questions){
+  currentQuestions = questions;
+  const container = document.createElement('div');
+  container.className = 'card';
+  container.innerHTML = `
+    <h3>Quiz — ${questions.length} question(s)</h3>
+    <div id="qList"></div>
+    <div style="margin-top:12px"><button class="btn" id="submitBtn">Submit Answers</button></div>
+  `;
+  $('quizArea').innerHTML = '';
+  $('quizArea').appendChild(container);
+
+  const qList = $('qList');
+  questions.forEach((q, idx) => {
+    const qDiv = document.createElement('div');
+    qDiv.className = 'question card';
+    qDiv.innerHTML = '<b>Q' + (idx+1) + '.</b> ' + escapeHtml(q.question) + ' <div class="muted">(id: ' + q.id + ')</div>';
+
+    const opts = document.createElement('div');
+    q.options.forEach(opt => {
+      const id = 'q_' + q.id + '_opt_' + opt.key;
+      const optDiv = document.createElement('label');
+      optDiv.className = 'option';
+      optDiv.innerHTML = '<input type="radio" name="q_' + q.id + '" value="' + opt.key + '" id="' + id + '" /> <span><strong>' + escapeHtml(opt.key) + '</strong>. ' + escapeHtml(opt.text) + '</span>';
+      opts.appendChild(optDiv);
+    });
+
+    const expl = document.createElement('div');
+    expl.className = 'muted';
+    expl.style.display = 'none';
+    expl.id = 'expl_' + q.id;
+    expl.innerText = 'Explanation: ' + (q.explanation || '—');
+
+    qDiv.appendChild(opts);
+    qDiv.appendChild(expl);
+    qList.appendChild(qDiv);
+  });
+
+  // attach submit handler
+  document.getElementById('submitBtn').addEventListener('click', submitAnswers);
+}
+
+async function submitAnswers(){
+  const base = getBase();
+  const token = $('token').value.trim();
+  const url = base + '/submit';
+
+  // collect answers (only include answered questions)
+  const answers = {};
+  currentQuestions.forEach(q => {
+    const radios = document.getElementsByName('q_' + q.id);
+    let val = null;
+    for(const r of radios){ if(r.checked){ val = r.value; break; } }
+    if(val !== null && val !== undefined){
+      answers[String(q.id)] = val;
+    }
+  });
+
+  $('resultArea').innerHTML = '<div class="card">Submitting…</div>';
+
+  try{
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: headers(token),
+      body: JSON.stringify(answers),
+      credentials: 'include'
+    });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>res.statusText||'');
+      throw {status:res.status, text: txt};
+    }
+    const data = await res.json();
+    renderResult(data);
+  }catch(err){
+    console.error('submitAnswers error', err);
+    $('resultArea').innerHTML = '<div class="card" style="color:#b91c1c">Submit error: '+(err.status||'')+' '+(err.text||err.message||JSON.stringify(err))+'</div>';
+  }
+}
+
+function renderResult(data){
+  const container = document.createElement('div');
+  container.className = 'card';
+  container.innerHTML = '<h3>Result — Score ' + data.score + '%</h3>' +
+    '<div><strong>' + (data.passed? 'Passed ✅' : 'Failed ❌') + '</strong></div>' +
+    '<div class="muted">Correct: ' + data.correct + ' / ' + data.total + '</div>' +
+    '<hr />' +
+    '<div id="detailList"></div>';
+  $('resultArea').innerHTML = '';
+  $('resultArea').appendChild(container);
+
+  const detail = document.getElementById('detailList');
+  (data.results||[]).forEach((r, i) => {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = '<b>Q' + (i+1) + '.</b> ' + escapeHtml(r.question) +
+      '<div><strong>Your:</strong> ' + escapeHtml(r.your_answer||'—') + ' &nbsp; <strong>Correct:</strong> ' + escapeHtml(r.correct_answer||'') + '</div>' +
+      '<div style="margin-top:6px;">' + escapeHtml(r.explanation||'') + '</div>';
+    el.style.borderLeft = r.is_correct ? '4px solid #16a34a' : '4px solid #dc2626';
+    detail.appendChild(el);
+
+    const explEl = document.getElementById('expl_' + (currentQuestions[i]?.id));
+    if(explEl) explEl.style.display = 'block';
+  });
+
+  const meta = document.createElement('div');
+  meta.className = 'muted';
+  meta.style.marginTop = '12px';
+  meta.innerText = 'Attempt ID: ' + (data.attempt_id || '') + ' • Certified: ' + (data.is_certified || false);
+  container.appendChild(meta);
+}
+
+async function getAttempts(){
+  const base = getBase();
+  const token = $('token').value.trim();
+  const url = base + '/attempts';
+  $('attemptsArea').innerHTML = '<div class="card">Loading attempts…</div>';
+  try{
+    const res = await fetch(url, { headers: headers(token), credentials: 'include' });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>res.statusText||'');
+      throw {status:res.status, text: txt};
+    }
+    const data = await res.json();
+    renderAttempts(data);
+  }catch(err){
+    console.error('getAttempts error', err);
+    $('attemptsArea').innerHTML = '<div class="card" style="color:#b91c1c">Attempts error: '+(err.status||'')+' '+(err.text||err.message||JSON.stringify(err))+'</div>';
+  }
+}
+
+function renderAttempts(items){
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = '<h3>Past Attempts</h3>';
+  const list = document.createElement('div');
+  (items||[]).forEach(it => {
+    const r = document.createElement('div');
+    r.style.padding='8px';
+    r.style.borderBottom='1px solid #e6eef6';
+    r.innerHTML = '<strong>' + it.score + '%</strong> • ' + (it.passed? 'Passed' : 'Failed') + ' • ' + it.date;
+    list.appendChild(r);
+  });
+  card.appendChild(list);
+  $('attemptsArea').innerHTML = '';
+  $('attemptsArea').appendChild(card);
+}
+
+function escapeHtml(s){
+  if(!s) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// wire buttons
+document.getElementById('loadBtn').addEventListener('click', fetchStart);
+document.getElementById('attemptsBtn').addEventListener('click', getAttempts);
+document.getElementById('clearBtn').addEventListener('click', ()=>{ document.getElementById('quizArea').innerHTML=''; document.getElementById('resultArea').innerHTML=''; document.getElementById('attemptsArea').innerHTML=''; currentQuestions=[] });
+
+</script>
+</body>
+</html>

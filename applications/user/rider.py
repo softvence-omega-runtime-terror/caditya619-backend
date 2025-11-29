@@ -20,6 +20,7 @@ class RiderProfile(models.Model):
     bank_holder_name = fields.CharField(max_length=100, null=True, blank=True)
     is_bank_verified = fields.BooleanField(default=False)
     fcm_token = fields.CharField(max_length=255, null=True, blank=True)
+    referral_code = fields.CharField(max_length=20, unique=True, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -174,33 +175,6 @@ class OrderOffer(models.Model):
 
 
 
-
-# class Order(models.Model):
-#     id = fields.UUIDField(pk=True, default=uuid.uuid4)
-#     rider = fields.ForeignKeyField("models.RiderProfile", related_name="orders", null=True)
-#     customer_name = fields.CharField(max_length=255)
-#     pickup_location = fields.CharField(max_length=255)
-#     pickup_distance_km = fields.FloatField()
-#     pickup_time = fields.DatetimeField()
-#     delivery_location = fields.CharField(max_length=255)
-#     eta_minutes = fields.IntField()
-#     payment_type = fields.CharField(max_length=50)
-#     order_type = fields.CharField(max_length=50)
-#     status = fields.CharField(max_length=50, default="offered")  # offered, accepted, rejected, completed
-#     is_urgent = fields.BooleanField(default=False)
-#     payout = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-#     base_rate = fields.DecimalField(max_digits=10, decimal_places=2, default=44.00)
-#     distance_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-#     offered_at = fields.DatetimeField(auto_now_add=True)
-#     accepted_at = fields.DatetimeField(null=True)
-#     completed_at = fields.DatetimeField(null=True)
-#     is_on_time = fields.BooleanField(null=True)
-#     is_combined = fields.BooleanField(default=False)
-#     combined_pickups = fields.JSONField(null=True)  # list of dicts: [{"name": "Thai Spice", "amount": 44}]
-
-#     class Meta:
-#         table = "orders"
-
 class Rating(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
     order = fields.ForeignKeyField("models.Order", related_name="ratings")
@@ -280,3 +254,118 @@ class DeviceToken(models.Model):
     token = fields.CharField(max_length=256)
     platform = fields.CharField(max_length=32)
     created_at = fields.DatetimeField(auto_now_add=True)
+
+
+
+
+#*********************************************************************#
+#              Training Section Models
+#*********************************************************************#
+
+
+# class TrainingVideo(models.Model):
+#     id = fields.IntField(pk=True)
+#     title = fields.CharField(max_length=100)
+#     duration = fields.CharField(max_length=10, default="0:00")
+#     video_file = fields.CharField(max_length=500)  # e.g., "/media/training/get_started.mp4"
+#     thumbnail = fields.CharField(max_length=500, null=True, blank=True)
+#     order = fields.IntField(default=0)
+#     uploaded_at = fields.DatetimeField(auto_now_add=True)
+
+#     class Meta:
+#         table = "training_videos"
+#         ordering = ["order"]
+
+
+# class TrainingPDF(models.Model):
+#     id = fields.IntField(pk=True)
+#     title = fields.CharField(max_length=100)
+#     file = fields.CharField(max_length=500)  # e.g., "/media/pdfs/handbook.pdf"
+#     icon = fields.CharField(max_length=50, default="document")
+#     uploaded_at = fields.DatetimeField(auto_now_add=True)
+
+#     class Meta:
+#         table = "training_pdfs"
+
+
+
+class QuizQuestion(models.Model):
+    id = fields.IntField(pk=True)
+    question = fields.TextField()
+    option_a = fields.CharField(max_length=200)
+    option_b = fields.CharField(max_length=200)
+    option_c = fields.CharField(max_length=200)
+    option_d = fields.CharField(max_length=200, null=True, blank=True)
+    correct_answer = fields.CharField(max_length=1)  # "A", "B", "C", "D"
+    explanation = fields.TextField(null=True, blank=True)
+
+    class Meta:
+        table = "quiz_questions"
+
+
+class RiderQuizAttempt(models.Model):
+    id = fields.IntField(pk=True)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="quiz_attempts")
+    score = fields.IntField()  # out of 100
+    correct_answers = fields.IntField()
+    total_questions = fields.IntField(default=5)
+    passed = fields.BooleanField(default=False)
+    attempted_at = fields.DatetimeField(auto_now_add=True)
+    is_latest = fields.BooleanField(default=True)
+
+    class Meta:
+        table = "rider_quiz_attempts"
+
+
+
+
+class TrainingVideo(models.Model):
+    id = fields.IntField(pk=True)
+    title = fields.CharField(max_length=200)
+    duration = fields.CharField(max_length=10, null=True)  # optional
+    video_file = fields.CharField(max_length=500)  # /static/videos/xyz.mp4
+    thumbnail = fields.CharField(max_length=500, null=True)
+    order = fields.IntField(default=0)
+    is_active = fields.BooleanField(default=True)
+
+class TrainingPDF(models.Model):
+    id = fields.IntField(pk=True)
+    title = fields.CharField(max_length=200)
+    file = fields.CharField(max_length=500)  # /static/pdfs/xyz.pdf
+    order = fields.IntField(default=0)
+    is_active = fields.BooleanField(default=True)
+
+
+
+
+
+class Referral(models.Model):
+    id = fields.IntField(pk=True)
+    referrer = fields.ForeignKeyField("models.RiderProfile", related_name="referrals_made")
+    referred = fields.ForeignKeyField("models.RiderProfile", related_name="referred_by", null=True)
+    code_used = fields.CharField(max_length=20)
+    status = fields.CharField(max_length=10, default="pending")  # pending / active
+    earned = fields.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+
+
+
+#*********************************************************************#
+#              fees and bonuses Models
+#*********************************************************************#
+
+
+class RiderFeesAndBonuses(models.Model):
+    id = fields.IntField(pk=True)
+    rider_base_salary = fields.DecimalField(max_digits=10, decimal_places=2, default=8000.00)
+    rider_delivery_fee = fields.DecimalField(max_digits=10, decimal_places=2, default=44.00)
+    distance_bonus_per_km = fields.DecimalField(max_digits=10, decimal_places=2, default=1.00)
+    weekly_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=400.00)
+    referral_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=500.00)
+    excellence_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=2000.00)
+    updated_at = fields.DatetimeField(auto_now=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "rider_fees_and_bonuses"
