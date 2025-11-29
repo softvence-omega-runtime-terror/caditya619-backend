@@ -1,59 +1,63 @@
-from celery import Celery
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-from applications.user.models import User
-from fastapi import Depends
-from app.token import get_current_user
-import asyncio
-from tortoise import Tortoise
-from applications.user.rider import RiderProfile as Rider, WorkDay, Withdrawal, DeviceToken, WorkDay
-from routes.rider.helper_functions import (
-    get_deliveries_count, get_earnings, get_delivery_pay,
-    get_weekly_bonuses, get_excellence_bonus, get_acceptance_rate, get_on_time_rate
-)
 from firebase_admin import messaging
 from app.utils.task_decorators import every
-import logging
-from app.config import init_db, close_db
+from applications.user.rider import RiderProfile as Rider, WorkDay, Withdrawal, DeviceToken, WorkDay
 
-logger = logging.getLogger(__name__)
 
-app = Celery("rider_app")
-app.conf.broker_url = "redis://localhost:6379/0"
-app.conf.result_backend = "redis://localhost:6379/0"
-app.conf.timezone = "Asia/Kolkata"
+# from datetime import datetime, timedelta
+# from dateutil.relativedelta import relativedelta
+# from applications.user.models import User
+# from fastapi import Depends
+# from app.token import get_current_user
+# import asyncio
+# from tortoise import Tortoise
+
+# from routes.rider.helper_functions import (
+#     get_deliveries_count, get_earnings, get_delivery_pay,
+#     get_weekly_bonuses, get_excellence_bonus, get_acceptance_rate, get_on_time_rate
+# )
+
+
+# import logging
+# from app.config import init_db, close_db
+#
+# logger = logging.getLogger(__name__)
+#
+# app = Celery("rider_app")
+# app.conf.broker_url = "redis://localhost:6379/0"
+# app.conf.result_backend = "redis://localhost:6379/0"
+# app.conf.timezone = "Asia/Kolkata"
 
 
 # Helper function to send notification directly in Celery
-async def send_push_notification(user_id: int, title: str, body: str, data: dict = None):
-    """Send push notification using Firebase Admin SDK"""
-    try:
-        device = await DeviceToken.filter(user_id=user_id).first()
-        if not device:
-            logger.warning(f"No device token found for user {user_id}")
-            return False
-        
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body,
-            ),
-            data=data or {},
-            token=device.token,
-        )
-        
-        response = messaging.send(message)
-        logger.info(f"Notification sent to user {user_id}: {response}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send notification to user {user_id}: {str(e)}")
-        return False
+# async def send_push_notification(user_id: int, title: str, body: str, data: dict = None):
+#     """Send push notification using Firebase Admin SDK"""
+#     try:
+#         device = await DeviceToken.filter(user_id=user_id).first()
+#         if not device:
+#             print(f"No device token found for user {user_id}")
+#             return False
+#
+#         message = messaging.Message(
+#             notification=messaging.Notification(
+#                 title=title,
+#                 body=body,
+#             ),
+#             data=data or {},
+#             token=device.token,
+#         )
+#
+#         response = messaging.send(message)
+#         print(f"Notification sent to user {user_id}: {response}")
+#         return True
+#     except Exception as e:
+#         print(f"Failed to send notification to user {user_id}: {str(e)}")
+#         return False
 
 
 # Initialize Tortoise ORM for Celery tasks
 
 
-# @every(minutes=1)
+# @every(seconds=1)
 # def check_every_schedule():
 #     print("Running every 5 seconds")
 

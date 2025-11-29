@@ -23,7 +23,7 @@ from applications.user.rider import RiderProfile as Rider, Withdrawal
 from applications.user.models import User
 from app.token import get_current_user
 from app.utils.razorpay_client import get_or_create_fund_account, client, RAZORPAY_X_ACCOUNT_NUMBER
-from app.utils.firebase_push import send_scheduled_push  # We'll add this next
+# from app.utils.firebase_push import send_scheduled_push  # We'll add this next
 import uuid
 import logging
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
