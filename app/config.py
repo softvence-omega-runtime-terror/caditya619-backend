@@ -24,7 +24,6 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-
 TORTOISE_ORM = {
     "connections": {
         "default": settings.DATABASE_URL,
