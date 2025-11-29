@@ -72,6 +72,14 @@ class VehicleCreate(BaseModel):
 
 
 
+class RiderListResponse(BaseModel):
+    count: int
+    offset: int
+    limit: int
+    results: List[RiderProfile_Pydantic]
+
+
+
 
 
 ###############################################
@@ -141,6 +149,35 @@ async def update_rider_documents_me(
     await rider_profile.save()
     return await RiderProfile_Pydantic.from_tortoise_orm(rider_profile)
 
+
+
+
+@router.get(
+    "/rider-list",
+    response_model=RiderListResponse,
+    summary="Admin: List all riders (paginated)"
+)
+async def list_riders(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    current_user: User = Depends(get_current_user)
+):
+    if not current_user.is_superuser:
+        raise HTTPException(403, "Superuser access required")
+
+    # Use .count() and keep queryset, don't convert to list early!
+    total = await RiderProfile.all().count()
+    
+    # Keep it as queryset → works with from_queryset()
+    riders_qs = RiderProfile.all().order_by("-created_at").offset(offset).limit(limit)
+    riders_data = await RiderProfile_Pydantic.from_queryset(riders_qs)
+
+    return RiderListResponse(
+        count=total,
+        offset=offset,
+        limit=limit,
+        results=riders_data
+    )
 
 
 
