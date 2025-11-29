@@ -14,9 +14,6 @@ FreshChatIn_Pydantic = pydantic_model_creator(FreshChat, name="FreshChatIn", exc
 
 @router.get("/restore_id", response_model=FreshChat_Pydantic)
 async def get_freshchat(current_user=Depends(login_required)):
-    """
-    Get the FreshChat restore_id for the current user.
-    """
     try:
         freshchat = await FreshChat.get(user_id=current_user.id)
         return await FreshChat_Pydantic.from_tortoise_orm(freshchat)
@@ -29,10 +26,6 @@ async def create_or_update_freshchat(
     restore_id: str = Form(...),
     current_user=Depends(login_required)
 ):
-    """
-    Create or update the FreshChat restore_id for the current user.
-    """
-    # Check if entry exists
     existing = await FreshChat.filter(user=current_user).first()
     if existing:
         existing.restore_id = restore_id
