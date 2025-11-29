@@ -15,8 +15,9 @@ class Settings(BaseSettings):
     SECRET_KEY: Optional[str] = None
     BASE_URL: str = "http://localhost:8000/"
     RADIS_URL: str = "redis://localhost:6379/0"
-    RAZORPAY_KEY_ID: str = ""
-    RAZORPAY_KEY_SECRET: str = ""
+    CASHFREE_APP_ID: str = ""
+    CASHFREE_SECRET_KEY: str = ""
+    CASHFREE_ENVIRONMENT: str = ""
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

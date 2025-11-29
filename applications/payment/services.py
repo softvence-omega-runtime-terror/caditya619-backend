@@ -1,293 +1,144 @@
 # applications/payment/services.py
 
-import razorpay
-import hmac
-import hashlib
-import uuid
-from typing import Optional, Dict, Any
+import os
+import time
+import httpx
 from decimal import Decimal
-from datetime import datetime
-from fastapi import HTTPException
-from applications.customer.models import *
 
-from applications.payment.models import (
-    Payment, PaymentRefund, PaymentStatus, PaymentProvider
-)
-from config import settings  # Your app settings
-
-class RazorpayService:
-    """
-    Service class to handle all Razorpay payment operations
-    """
+class PaymentService:
+    """Service to handle all Cashfree payment operations using REST API"""
     
-    def __init__(self):
-        """
-        Initialize Razorpay client with your credentials
-        Get these from Razorpay Dashboard: https://dashboard.razorpay.com/app/keys
-        """
-        self.key_id = settings.RAZORPAY_KEY_ID
-        self.key_secret = settings.RAZORPAY_KEY_SECRET
-        self.client = razorpay.Client(auth=(self.key_id, self.key_secret))
+    BASE_URL = "https://sandbox.cashfree.com/pg"  # Use production URL for live
     
-    async def create_razorpay_order(
-        self, 
-        order_id: str, 
-        amount: Decimal, 
-        currency: str = "INR"
-    ) -> Dict[str, Any]:
-        """
-        Step 1: Create a Razorpay order
-        This happens when user clicks 'Pay Now' button
-        
-        Args:
-            order_id: Your internal order ID
-            amount: Order amount in your currency
-            currency: Currency code (INR, USD, etc.)
-        
-        Returns:
-            Dict containing Razorpay order details
-        """
+    @staticmethod
+    def _get_headers():
+        """Get Cashfree API headers"""
+        return {
+            "x-client-id": os.getenv("CASHFREE_APP_ID"),
+            "x-client-secret": os.getenv("CASHFREE_SECRET_KEY"),
+            "x-api-version": os.getenv("CASHFREE_API_VERSION", "2023-08-01"),
+            "Content-Type": "application/json"
+        }
+    
+    @staticmethod
+    async def create_cashfree_order(order, current_user) -> dict:
+        """Create Cashfree payment order using REST API"""
         try:
-            # Get the order from database
-            order = await Order.get(id=order_id)
+            # Generate unique Cashfree order ID
+            cf_order_id = f"CF_{order.id}_{int(time.time())}"
             
-            # Convert amount to paise (Razorpay uses smallest currency unit)
-            # 1 INR = 100 paise
-            amount_in_paise = int(amount * 100)
-            
-            # Create Razorpay order
-            razorpay_order = self.client.order.create({
-                "amount": amount_in_paise,
-                "currency": currency,
-                "receipt": order_id,  # Your internal order ID for reference
-                "notes": {
-                    "order_id": order_id,
-                    "user_id": str(order.user_id)
+            # Prepare order data
+            order_data = {
+                "order_id": cf_order_id,
+                "order_amount": float(order.total),
+                "order_currency": "INR",
+                "customer_details": {
+                    "customer_id": str(current_user.id),
+                    "customer_email": getattr(current_user, 'email', 'customer@example.com'),
+                    "customer_phone": order.shipping_address.phone_number if order.shipping_address else "9999999999",
+                    "customer_name": order.shipping_address.full_name if order.shipping_address else "Customer"
+                },
+                "order_meta": {
+                    "return_url": f"{os.getenv('PAYMENT_RETURN_URL')}?order_id={order.id}",
+                    "notify_url": f"{os.getenv('PAYMENT_RETURN_URL')}/webhook"
                 }
-            })
-            
-            # Create payment record in your database
-            payment_id = f"pay_{uuid.uuid4().hex[:12]}"
-            payment = await Payment.create(
-                id=payment_id,
-                order_id=order_id,
-                user_id=order.user_id,
-                provider=PaymentProvider.RAZORPAY,
-                provider_order_id=razorpay_order['id'],
-                amount=amount,
-                currency=currency,
-                status=PaymentStatus.PENDING,
-                metadata={
-                    "razorpay_order": razorpay_order
-                }
-            )
-            
-            return {
-                "razorpay_order_id": razorpay_order['id'],
-                "razorpay_key_id": self.key_id,
-                "amount": amount,
-                "currency": currency,
-                "order_id": order_id,
-                "payment_id": payment_id
             }
             
-        except Order.DoesNotExist:
-            raise HTTPException(status_code=404, detail="Order not found")
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to create Razorpay order: {str(e)}"
-            )
-    
-    async def verify_payment(
-        self,
-        razorpay_order_id: str,
-        razorpay_payment_id: str,
-        razorpay_signature: str,
-        order_id: str
-    ) -> Payment:
-        """
-        Step 2: Verify payment after user completes payment
-        This ensures the payment is legitimate and not tampered
-        
-        Args:
-            razorpay_order_id: Razorpay order ID
-            razorpay_payment_id: Razorpay payment ID
-            razorpay_signature: Signature to verify authenticity
-            order_id: Your internal order ID
-        
-        Returns:
-            Payment object
-        """
-        try:
-            # Verify signature to ensure payment is authentic
-            is_valid = self._verify_signature(
-                razorpay_order_id,
-                razorpay_payment_id,
-                razorpay_signature
-            )
-            
-            if not is_valid:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="Invalid payment signature"
+            # Call Cashfree API
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{PaymentService.BASE_URL}/orders",
+                    json=order_data,
+                    headers=PaymentService._get_headers(),
+                    timeout=30.0
                 )
+                
+                if response.status_code != 200:
+                    raise ValueError(f"Cashfree API error: {response.text}")
+                
+                result = response.json()
             
-            # Get payment record
-            payment = await Payment.filter(
-                provider_order_id=razorpay_order_id,
-                order_id=order_id
-            ).first()
-            
-            if not payment:
-                raise HTTPException(status_code=404, detail="Payment not found")
-            
-            # Fetch payment details from Razorpay
-            razorpay_payment = self.client.payment.fetch(razorpay_payment_id)
-            
-            # Update payment record
-            payment.provider_payment_id = razorpay_payment_id
-            payment.provider_signature = razorpay_signature
-            payment.status = PaymentStatus.COMPLETED
-            payment.payment_method = razorpay_payment.get('method')
-            payment.completed_at = datetime.utcnow()
-            payment.metadata = {
-                **payment.metadata,
-                "razorpay_payment": razorpay_payment
-            }
-            await payment.save()
-            
-            # Update order status
-            order = await Order.get(id=order_id)
-            order.status = OrderStatus.CONFIRMED
-            order.transaction_id = razorpay_payment_id
+            # Update order with Cashfree details
+            order.cf_order_id = cf_order_id
+            order.payment_session_id = result.get("payment_session_id")
+            order.payment_status = "unpaid"
             await order.save()
             
-            return payment
+            return {
+                "success": True,
+                "payment_session_id": result.get("payment_session_id"),
+                "cf_order_id": cf_order_id,
+                "payment_url": result.get("payment_link"),
+                "order_id": order.id
+            }
             
-        except HTTPException:
-            raise
         except Exception as e:
-            # Update payment as failed
-            if payment:
-                payment.status = PaymentStatus.FAILED
-                payment.error_description = str(e)
-                await payment.save()
-            
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Payment verification failed: {str(e)}"
-            )
+            print(f"Cashfree order creation error: {e}")
+            raise ValueError(f"Payment initialization failed: {str(e)}")
     
-    def _verify_signature(
-        self,
-        razorpay_order_id: str,
-        razorpay_payment_id: str,
-        razorpay_signature: str
-    ) -> bool:
-        """
-        Verify Razorpay payment signature
-        This prevents payment tampering
-        """
-        try:
-            # Create signature verification string
-            message = f"{razorpay_order_id}|{razorpay_payment_id}"
-            
-            # Generate expected signature
-            generated_signature = hmac.new(
-                self.key_secret.encode(),
-                message.encode(),
-                hashlib.sha256
-            ).hexdigest()
-            
-            # Compare signatures
-            return hmac.compare_digest(generated_signature, razorpay_signature)
-            
-        except Exception:
-            return False
     
-    async def refund_payment(
-        self,
-        payment_id: str,
-        amount: Optional[Decimal] = None,
-        reason: Optional[str] = None
-    ) -> PaymentRefund:
-        """
-        Process refund for a payment
-        
-        Args:
-            payment_id: Your internal payment ID
-            amount: Amount to refund (None for full refund)
-            reason: Reason for refund
-        
-        Returns:
-            PaymentRefund object
-        """
+    @staticmethod
+    async def verify_payment(cf_order_id: str) -> dict:
+        """Verify payment status from Cashfree"""
         try:
-            # Get payment record
-            payment = await Payment.get(id=payment_id)
-            
-            if payment.status != PaymentStatus.COMPLETED:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="Can only refund completed payments"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{PaymentService.BASE_URL}/orders/{cf_order_id}",
+                    headers=PaymentService._get_headers(),
+                    timeout=30.0
                 )
-            
-            # Calculate refund amount
-            refund_amount = amount if amount else payment.amount
-            refund_amount_paise = int(refund_amount * 100)
-            
-            # Process refund via Razorpay
-            razorpay_refund = self.client.payment.refund(
-                payment.provider_payment_id,
-                {
-                    "amount": refund_amount_paise,
-                    "notes": {
-                        "reason": reason or "Refund requested"
-                    }
-                }
-            )
-            
-            # Create refund record
-            refund_id = f"rfnd_{uuid.uuid4().hex[:12]}"
-            refund = await PaymentRefund.create(
-                id=refund_id,
-                payment_id=payment_id,
-                provider_refund_id=razorpay_refund['id'],
-                amount=refund_amount,
-                reason=reason,
-                status=PaymentStatus.COMPLETED,
-                processed_at=datetime.utcnow()
-            )
-            
-            # Update payment status if full refund
-            if refund_amount == payment.amount:
-                payment.status = PaymentStatus.REFUNDED
-                await payment.save()
                 
-                # Update order status
-                order = await Order.get(id=payment.order_id)
-                order.status = OrderStatus.REFUNDED
-                await order.save()
+                if response.status_code != 200:
+                    raise ValueError(f"Cashfree API error: {response.text}")
+                
+                result = response.json()
             
-            return refund
+            return {
+                "order_id": result.get("order_id"),
+                "order_status": result.get("order_status"),
+                "payment_status": result.get("order_status"),
+                "transaction_id": result.get("cf_order_id"),
+                "order_amount": result.get("order_amount")
+            }
             
-        except Payment.DoesNotExist:
-            raise HTTPException(status_code=404, detail="Payment not found")
         except Exception as e:
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Refund processing failed: {str(e)}"
-            )
+            print(f"Payment verification error: {e}")
+            raise ValueError(f"Payment verification failed: {str(e)}")
     
-    async def get_payment_details(self, payment_id: str) -> Optional[Payment]:
-        """
-        Get payment details by ID
-        """
-        return await Payment.filter(id=payment_id).first()
     
-    async def get_order_payments(self, order_id: str) -> list:
-        """
-        Get all payments for an order
-        """
-        return await Payment.filter(order_id=order_id).all()
+    @staticmethod
+    async def handle_payment_callback(order_id: str, cf_order_id: str):
+        """Handle payment callback and update order"""
+        try:
+            from applications.customer.models import Order, OrderStatus
+            
+            # Get order
+            order = await Order.get(id=order_id).prefetch_related("items__item", "shipping_address")
+            
+            # Verify payment with Cashfree
+            payment_data = await PaymentService.verify_payment(cf_order_id)
+            
+            # Update order based on payment status
+            if payment_data["order_status"] == "PAID":
+                order.payment_status = "paid"
+                order.status = OrderStatus.CONFIRMED
+                order.transaction_id = payment_data.get("transaction_id")
+            elif payment_data["order_status"] in ["FAILED", "CANCELLED"]:
+                order.payment_status = "failed"
+                order.status = OrderStatus.CANCELLED
+                
+                # Restore stock on failed payment
+                for order_item in order.items:
+                    item = order_item.item
+                    item.stock += order_item.quantity
+                    item.total_sale -= order_item.quantity
+                    await item.save()
+            else:
+                order.payment_status = "pending"
+            
+            await order.save()
+            return order
+            
+        except Exception as e:
+            print(f"Payment callback error: {e}")
+            raise ValueError(f"Payment callback processing failed: {str(e)}")
