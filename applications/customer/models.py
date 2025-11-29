@@ -8,6 +8,7 @@ class OrderStatus(str, Enum):
     CONFIRMED = "confirmed"
     PROCESSING = "processing"
     SHIPPED = "shipped"
+    OUT_FOR_DELIVERY = "out_for_delivery"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
     REFUNDED = "refunded"
@@ -115,13 +116,11 @@ class Order(models.Model):
     metadata = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
-    
-
-    rating = fields.IntField(null=True)
+    prepire_time = fields.IntField(null=True)
     reason = fields.TextField(null=True)
-    pickup_distance_km = fields.FloatField()
-    pickup_time = fields.DatetimeField()
-    eta_minutes = fields.IntField()
+    pickup_distance_km = fields.FloatField(null= True)
+    pickup_time = fields.DatetimeField(null=True)
+    eta_minutes = fields.IntField(null =True)
     base_rate = fields.DecimalField(max_digits=10, decimal_places=2, default=44.00)
     distance_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     offered_at = fields.DatetimeField(null=True)

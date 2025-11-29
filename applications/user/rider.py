@@ -1,5 +1,7 @@
 from tortoise import fields, models
 import uuid
+from tortoise.validators import MinValueValidator, MaxValueValidator
+
 
 class RiderProfile(models.Model):
     id = fields.IntField(pk=True)
@@ -371,3 +373,12 @@ class RiderFeesAndBonuses(models.Model):
         table = "rider_fees_and_bonuses"
 
 
+
+class RiderReview(models.Model):
+    id = fields.IntField(pk=True)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="rider", on_delete=fields.CASCADE)
+    user = fields.ForeignKeyField('models.User', on_delete=fields.CASCADE, related_name='rider_reviews') 
+    rating = fields.IntField(validators=[MinValueValidator(1), MaxValueValidator(5)], null=True)
+    comment = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
