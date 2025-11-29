@@ -369,3 +369,5 @@ class RiderFeesAndBonuses(models.Model):
 
     class Meta:
         table = "rider_fees_and_bonuses"
+
+

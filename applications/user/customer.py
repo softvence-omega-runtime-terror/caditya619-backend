@@ -12,6 +12,9 @@ class CustomerProfile(models.Model):
     add1 = fields.CharField(max_length=100, null=True)
     add2 = fields.CharField(max_length=100, null=True)
     postal_code = fields.CharField(max_length=20, null=True)
+
+    customer_lat = fields.FloatField(null=True)
+    customer_lng = fields.FloatField(null=True)
     # photo = fields.CharField(max_length=20, null=True, blank=True)
     class Meta:
         table = "cus_profile"
