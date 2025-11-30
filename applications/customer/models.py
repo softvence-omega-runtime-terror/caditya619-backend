@@ -116,7 +116,7 @@ class Order(models.Model):
     metadata = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
-    prepire_time = fields.IntField(null=True)
+    # prepire_time = fields.IntField(null=True)
     reason = fields.TextField(null=True)
     pickup_distance_km = fields.FloatField(null= True)
     pickup_time = fields.DatetimeField(null=True)
