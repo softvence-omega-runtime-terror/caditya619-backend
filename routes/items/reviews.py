@@ -65,11 +65,11 @@ async def get_review(review_id: int):
 
 
 @router.get("/", response_model=List[dict])
-async def list_reviews():
-    reviews = await ItemReview.all().prefetch_related("replies")
+async def list_reviews(item_id: int):
+    reviews = await ItemReview.filter(item_id=item_id).prefetch_related("replies")
     result = []
     for r in reviews:
-        if not r.is_reply:  # only top-level reviews
+        if not r.is_reply:
             result.append(await serialize_review(r))
     return result
 
