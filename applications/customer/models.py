@@ -33,8 +33,6 @@ class DeliveryOption(models.Model):
     class Meta:
         table = "delivery_option"
 
-
-
 class PaymentMethodType(str, Enum):
     RAZORPAY = "razorpay"
     COD = "cod"
@@ -156,3 +154,6 @@ class OrderItem(models.Model):
     
     class Meta:
         table = "order_item"
+
+
+
