@@ -8,6 +8,7 @@ class OrderStatus(str, Enum):
     CONFIRMED = "confirmed"
     PROCESSING = "processing"
     SHIPPED = "shipped"
+    OUT_FOR_DELIVERY = "out_for_delivery"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
     REFUNDED = "refunded"
@@ -115,7 +116,30 @@ class Order(models.Model):
     metadata = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
+    prepire_time = fields.IntField(null=True)
+    reason = fields.TextField(null=True)
+    pickup_distance_km = fields.FloatField(null= True)
+    pickup_time = fields.DatetimeField(null=True)
+    eta_minutes = fields.IntField(null =True)
+    base_rate = fields.DecimalField(max_digits=10, decimal_places=2, default=44.00)
+    distance_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    offered_at = fields.DatetimeField(null=True)
+    expires_at = fields.DatetimeField(null=True)
+    accepted_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField(null=True)
+    is_on_time = fields.BooleanField(null=True)
+    is_combined = fields.BooleanField(default=False)
+    combined_pickups = fields.JSONField(null=True)  # list of dicts: [{"name": "Thai Spice", "amount": 44}]
+
+    payment_status = fields.CharField(max_length=50, default="unpaid")
+    # Tracks if payment is done: "unpaid", "paid", "failed"
     
+    cf_order_id = fields.CharField(max_length=255, null=True)
+    # Cashfree's order ID (they give us this)
+    
+    payment_session_id = fields.CharField(max_length=255, null=True)
+    # Session ID to track the payment
+
     class Meta:
         table = "orders"
         ordering = ["-order_date"]

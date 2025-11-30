@@ -11,8 +11,21 @@ from enum import Enum
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Literal
 from datetime import datetime
-
-
+from pydantic import BaseModel
+from typing import Optional
+class PaymentInitiateSchema(BaseModel):
+    order_id: str
+class PaymentCallbackSchema(BaseModel):
+    order_id: str
+    cf_order_id: str
+    payment_status: str
+    transaction_id: Optional[str] = None
+class PaymentResponseSchema(BaseModel):
+    success: bool
+    payment_session_id: str
+    cf_order_id: str
+    payment_url: str
+    order_id: str
 
 # Cart Schemas
 Cart_Pydantic = pydantic_model_creator(Cart, name="Cart")
