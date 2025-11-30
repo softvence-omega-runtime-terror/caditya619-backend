@@ -79,7 +79,7 @@ class Order(models.Model):
     id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
     rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_orders", on_delete=fields.CASCADE, null=True)
-    
+
     shipping_address = fields.ForeignKeyField(
         "models.CustomerShippingAddress",
         related_name="orders",
@@ -137,6 +137,8 @@ class Order(models.Model):
     payment_session_id = fields.CharField(max_length=255, null=True)
     # Session ID to track the payment
 
+
+    
     class Meta:
         table = "orders"
         ordering = ["-order_date"]

@@ -1,0 +1,391 @@
+"""
+applications.prescription.routes.py
+"""
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+from typing import List, Optional
+from decimal import Decimal
+from applications.prescription.schemas import (
+    PrescriptionCreate,
+    PrescriptionResponse,
+    PrescriptionUpdate,
+    PrescriptionListResponse,
+    VendorResponseCreate,
+    VendorResponseSchema,
+    VendorResponseUpdate
+)
+from applications.prescription.models import Prescription, PrescriptionVendorResponse, PrescriptionMedicine
+from applications.user.models import User
+from applications.user.vendor import VendorProfile
+from app.token import get_current_user
+router = APIRouter(prefix="/prescriptions", tags=["prescriptions"])
+
+
+async def get_current_vendor():
+    # Replace with your actual vendor authentication logic
+    pass
+
+
+# ============== CUSTOMER ENDPOINTS ==============
+
+@router.post("/", response_model=PrescriptionResponse, status_code=status.HTTP_201_CREATED)
+async def create_prescription(
+    prescription_data: PrescriptionCreate,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Customer uploads a prescription image
+    """
+    try:
+        prescription = await Prescription.create(
+            user=current_user,
+            image_path=prescription_data.image_path,
+            file_name=prescription_data.file_name,
+            notes=prescription_data.notes,
+            status="uploaded"
+        )
+        
+        return await format_prescription_response(prescription)
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating prescription: {str(e)}"
+        )
+
+
+@router.get("/", response_model=List[PrescriptionListResponse])
+async def get_user_prescriptions(
+    current_user: User = Depends(get_current_user),
+    status_filter: Optional[str] = None
+):
+    """
+    Get all prescriptions for the current user
+    """
+    query = Prescription.filter(user=current_user)
+    
+    if status_filter:
+        query = query.filter(status=status_filter)
+    
+    prescriptions = await query.order_by('-uploaded_at').all()
+    
+    return [
+        {
+            "id": str(p.id),
+            "user_id": str(p.user_id),
+            "image_path": p.image_path,
+            "file_name": p.file_name,
+            "uploaded_at": p.uploaded_at,
+            "status": p.status,
+            "notes": p.notes
+        }
+        for p in prescriptions
+    ]
+
+
+@router.get("/{prescription_id}", response_model=PrescriptionResponse)
+async def get_prescription_detail(
+    prescription_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get detailed prescription with all vendor responses
+    """
+    prescription = await Prescription.filter(
+        id=prescription_id,
+        user=current_user
+    ).prefetch_related(
+        'vendor_responses__vendor__vendor_profile',
+        'vendor_responses__medicines'
+    ).first()
+    
+    if not prescription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prescription not found"
+        )
+    
+    return await format_prescription_response(prescription)
+
+
+@router.patch("/{prescription_id}", response_model=PrescriptionResponse)
+async def update_prescription(
+    prescription_id: int,
+    prescription_update: PrescriptionUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update prescription status or notes
+    """
+    prescription = await Prescription.filter(
+        id=prescription_id,
+        user=current_user
+    ).first()
+    
+    if not prescription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prescription not found"
+        )
+    
+    if prescription_update.status:
+        prescription.status = prescription_update.status
+    if prescription_update.notes is not None:
+        prescription.notes = prescription_update.notes
+    
+    await prescription.save()
+    
+    return await format_prescription_response(prescription)
+
+
+@router.delete("/{prescription_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_prescription(
+    prescription_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a prescription
+    """
+    prescription = await Prescription.filter(
+        id=prescription_id,
+        user=current_user
+    ).first()
+    
+    if not prescription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prescription not found"
+        )
+    
+    await prescription.delete()
+    return None
+
+
+# ============== VENDOR ENDPOINTS ==============
+
+# @router.get("/vendor/pending", response_model=List[PrescriptionListResponse])
+# async def get_pending_prescriptions(
+#     current_vendor: User = Depends(get_current_vendor)
+# ):
+#     """
+#     Vendors get list of prescriptions to respond to
+#     """
+#     # Get prescriptions that are valid and don't have this vendor's response yet
+#     prescriptions = await Prescription.filter(
+#         status__in=["uploaded", "underReview", "valid"]
+#     ).prefetch_related('vendor_responses').order_by('-uploaded_at').all()
+    
+#     result = []
+#     for p in prescriptions:
+#         # Check if vendor already responded
+#         has_responded = any(
+#             vr.vendor_id == current_vendor.id 
+#             for vr in await p.vendor_responses.all()
+#         )
+        
+#         if not has_responded:
+#             result.append({
+#                 "id": str(p.id),
+#                 "user_id": str(p.user_id),
+#                 "image_path": p.image_path,
+#                 "file_name": p.file_name,
+#                 "uploaded_at": p.uploaded_at,
+#                 "status": p.status,
+#                 "notes": p.notes
+#             })
+    
+#     return result
+
+
+# @router.post("/vendor/respond", response_model=VendorResponseSchema, status_code=status.HTTP_201_CREATED)
+# async def create_vendor_response(
+#     response_data: VendorResponseCreate,
+#     current_vendor: User = Depends(get_current_vendor)
+# ):
+#     """
+#     Vendor responds to a prescription with medicines and pricing
+#     """
+#     # Check if prescription exists
+#     prescription = await Prescription.filter(id=response_data.prescription_id).first()
+#     if not prescription:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Prescription not found"
+#         )
+    
+#     # Check if vendor already responded
+#     existing = await PrescriptionVendorResponse.filter(
+#         prescription_id=response_data.prescription_id,
+#         vendor=current_vendor
+#     ).first()
+    
+#     if existing:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="You have already responded to this prescription"
+#         )
+    
+#     # Calculate total amount
+#     total_amount = sum(m.price * m.quantity for m in response_data.medicines)
+    
+#     # Create vendor response
+#     vendor_response = await PrescriptionVendorResponse.create(
+#         prescription_id=response_data.prescription_id,
+#         vendor=current_vendor,
+#         total_amount=total_amount,
+#         notes=response_data.notes,
+#         status="pending"
+#     )
+    
+#     # Create medicines
+#     for medicine_data in response_data.medicines:
+#         await PrescriptionMedicine.create(
+#             vendor_response=vendor_response,
+#             item_id=medicine_data.item_id,
+#             name=medicine_data.name,
+#             brand=medicine_data.brand,
+#             dosage=medicine_data.dosage,
+#             quantity=medicine_data.quantity,
+#             price=medicine_data.price,
+#             notes=medicine_data.notes,
+#             is_available=medicine_data.is_available,
+#             image_path=medicine_data.image_path
+#         )
+    
+#     # Update prescription status
+#     prescription.status = "underReview"
+#     await prescription.save()
+    
+#     return await format_vendor_response(vendor_response)
+
+
+# @router.get("/vendor/responses", response_model=List[VendorResponseSchema])
+# async def get_vendor_responses(
+#     current_vendor: User = Depends(get_current_vendor),
+#     status_filter: Optional[str] = None
+# ):
+#     """
+#     Get all responses from current vendor
+#     """
+#     query = PrescriptionVendorResponse.filter(vendor=current_vendor)
+    
+#     if status_filter:
+#         query = query.filter(status=status_filter)
+    
+#     responses = await query.prefetch_related(
+#         'prescription',
+#         'medicines'
+#     ).order_by('-responded_at').all()
+    
+#     return [await format_vendor_response(r) for r in responses]
+
+
+# @router.patch("/vendor/responses/{response_id}", response_model=VendorResponseSchema)
+# async def update_vendor_response(
+#     response_id: int,
+#     response_update: VendorResponseUpdate,
+#     current_vendor: User = Depends(get_current_vendor)
+# ):
+#     """
+#     Update vendor response
+#     """
+#     vendor_response = await PrescriptionVendorResponse.filter(
+#         id=response_id,
+#         vendor=current_vendor
+#     ).prefetch_related('medicines').first()
+    
+#     if not vendor_response:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Vendor response not found"
+#         )
+    
+#     if response_update.status:
+#         vendor_response.status = response_update.status
+#     if response_update.notes is not None:
+#         vendor_response.notes = response_update.notes
+    
+#     if response_update.medicines:
+#         # Delete existing medicines
+#         await PrescriptionMedicine.filter(vendor_response=vendor_response).delete()
+        
+#         # Create new medicines
+#         total_amount = Decimal(0)
+#         for medicine_data in response_update.medicines:
+#             await PrescriptionMedicine.create(
+#                 vendor_response=vendor_response,
+#                 item_id=medicine_data.item_id,
+#                 name=medicine_data.name,
+#                 brand=medicine_data.brand,
+#                 dosage=medicine_data.dosage,
+#                 quantity=medicine_data.quantity,
+#                 price=medicine_data.price,
+#                 notes=medicine_data.notes,
+#                 is_available=medicine_data.is_available,
+#                 image_path=medicine_data.image_path
+#             )
+#             total_amount += medicine_data.price * medicine_data.quantity
+        
+#         vendor_response.total_amount = total_amount
+    
+#     await vendor_response.save()
+    
+#     return await format_vendor_response(vendor_response)
+
+
+# ============== HELPER FUNCTIONS ==============
+
+async def format_prescription_response(prescription: Prescription) -> dict:
+    """Format prescription with vendor responses"""
+    vendor_responses = await PrescriptionVendorResponse.filter(
+        prescription=prescription
+    ).prefetch_related('vendor__vendor_profile', 'medicines').all()
+    
+    formatted_responses = [await format_vendor_response(vr) for vr in vendor_responses]
+    
+    return {
+        "id": str(prescription.id),
+        "user_id": str(prescription.user_id),
+        "image_path": prescription.image_path,
+        "file_name": prescription.file_name,
+        "uploaded_at": prescription.uploaded_at,
+        "status": prescription.status,
+        "notes": prescription.notes,
+        "vendor_responses": formatted_responses
+    }
+
+
+async def format_vendor_response(vendor_response: PrescriptionVendorResponse) -> dict:
+    """Format vendor response with medicines"""
+    vendor = await vendor_response.vendor
+    vendor_profile = await VendorProfile.filter(user=vendor).first()
+    vendor_name = vendor_profile.business_name if vendor_profile and hasattr(vendor_profile, 'business_name') else f"Vendor {vendor.id}"
+    
+    medicines = await PrescriptionMedicine.filter(vendor_response=vendor_response).all()
+    
+    formatted_medicines = [
+        {
+            "id": str(m.id),
+            "name": m.name,
+            "brand": m.brand,
+            "dosage": m.dosage,
+            "quantity": m.quantity,
+            "price": float(m.price),
+            "notes": m.notes,
+            "is_available": m.is_available,
+            "image_path": m.image_path,
+            "vendor_id": str(vendor_response.vendor_id)
+        }
+        for m in medicines
+    ]
+    
+    return {
+        "id": str(vendor_response.id),
+        "prescription_id": str(vendor_response.prescription_id),
+        "vendor_id": str(vendor_response.vendor_id),
+        "vendor_name": vendor_name,
+        "medicines": formatted_medicines,
+        "total_amount": float(vendor_response.total_amount),
+        "status": vendor_response.status,
+        "responded_at": vendor_response.responded_at,
+        "notes": vendor_response.notes
+    }
