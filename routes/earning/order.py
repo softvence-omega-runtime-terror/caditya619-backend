@@ -6,5 +6,6 @@ router = APIRouter(prefix='/order', tags=['Order Management'])
 
 
 @router.get("/manage")
-async def order_management():
+async def order_management(order_id):
+
     return f"this is earning"
