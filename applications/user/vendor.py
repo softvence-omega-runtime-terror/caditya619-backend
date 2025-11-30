@@ -47,9 +47,7 @@ class VendorProfile(models.Model):
         ]
         if not all(common_required):
             return False
-        if self.type == "food" and not self.fassai:
-            return False
-        if self.type == "medicine" and not self.drug_license:
+        if self.type != "grocery" and not self.kyc_document:
             return False
         return True
         
