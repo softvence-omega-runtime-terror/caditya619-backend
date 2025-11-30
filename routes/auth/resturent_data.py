@@ -22,10 +22,6 @@ async def create_or_update_restaurant_profile(
     data: RestaurantProfileUpdate,
     current_user: User = Depends(vendor_required),
 ):
-    """
-    Create or update a restaurant profile for the current vendor.
-    """
-    # Fetch vendor profile
     vendor = await VendorProfile.get_or_none(user_id=current_user.id)
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -117,13 +113,12 @@ async def get_restaurant_profile(current_user: User = Depends(vendor_required)):
 
 
 @router.get("/restaurants")
-async def get_all_restaurants(
-    popular: bool = None
-):
+async def get_all_restaurants():
     try:
         restaurants = await RestaurantProfile.filter(
             vendor__type="food",
-            vendor__is_active=True
+            vendor__is_active=True,
+            popular=True
         ).prefetch_related("vendor", "cuisines", "signature_dish")
 
         if not restaurants:
