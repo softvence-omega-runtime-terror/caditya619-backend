@@ -177,18 +177,19 @@ class OrderOffer(models.Model):
 
 
 
-class Rating(models.Model):
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
-    order = fields.ForeignKeyField("models.Order", related_name="ratings")
-    score = fields.FloatField()
-    created_at = fields.DatetimeField(auto_now_add=True)
+# class Rating(models.Model):
+#     id = fields.UUIDField(pk=True, default=uuid.uuid4)
+#     order = fields.ForeignKeyField("models.Order", related_name="ratings")
+#     score = fields.FloatField()
+#     created_at = fields.DatetimeField(auto_now_add=True)
 
-    class Meta:
-        table = "ratings"
+#     class Meta:
+#         table = "ratings"
 
 class Complaint(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
-    order = fields.ForeignKeyField("models.Order", related_name="complaints", null=True)
+    user = fields.ForeignKeyField("models.User", related_name="complaints", null=True)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="complaints", null=True)
     description = fields.TextField()
     is_serious = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)

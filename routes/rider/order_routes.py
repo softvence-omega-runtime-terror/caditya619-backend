@@ -1,6 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Form
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
 from datetime import date, datetime, time, timedelta
 from applications.user.models import User
 from enum import Enum
@@ -218,11 +216,11 @@ async def accept_order(order_id: str, user: User = Depends(get_current_user), re
     order = await Order.get(id=order_id)
     if not order:
         raise HTTPException(404, "Order not found")
-    now = datetime.now(timezone.utc)
-    if order.expires_at.astimezone(timezone.utc) > now.astimezone(timezone.utc):
-        print(f"expires at is {order.expires_at} and now is {now}")
-        await redis.delete(claim_key)
-        raise HTTPException(400, "Offer expired")
+    # now = datetime.now(timezone.utc)
+    # if order.expires_at.astimezone(timezone.utc) > now.astimezone(timezone.utc):
+    #     print(f"expires at is {order.expires_at} and now is {now}")
+    #     await redis.delete(claim_key)
+    #     raise HTTPException(400, "Offer expired")
     async with in_transaction() as conn:
         # order = await Order.get(id=order_id).using_db(conn)
         if order.status != OrderStatus.PROCESSING:
@@ -320,7 +318,6 @@ async def mark_order_shipped(order_id: str, user: User = Depends(get_current_use
     notify_payload = {
         "type": "order_shipped",
         "order_id": order_id,
-        "rider_id": offer.rider_id,
         "shipped_at": datetime.utcnow().isoformat()
     }
     await redis.publish("order_updates", json.dumps(notify_payload))
@@ -380,11 +377,30 @@ async def mark_order_delivered(order_id: str, user: User = Depends(get_current_u
     order = await Order.get_or_none(id=order_id)
     if not order:
         raise HTTPException(404, "Order not found")
+    order_item = await OrderItem.get_or_none(order=order)
+    if not order_item:
+        raise HTTPException(404, "Order item not found")
+    
+    item = await Item.get_or_none(id=order_item.item_id)
+    if not item:
+        raise HTTPException(404, "Item not found")
+    vendor = await VendorProfile.get_or_none(id=item.vendor_id)
+    if not vendor:
+        raise HTTPException(404, "Vendor not found")
+    rider = await RiderProfile.get_or_none(id=order.rider_id)
+    if not rider:
+        raise HTTPException(404, "Rider not found")
+
     if order.status != OrderStatus.OUT_FOR_DELIVERY:
         raise HTTPException(400, "Order not in out for delivery status")
+    duration_sec = (order.completed_at - order.accepted_at).total_seconds()
+    if duration_sec <= order.eta_minutes*60:
+        order.is_on_time = True
     order.status = OrderStatus.DELIVERED
-    order.delivered_at = datetime.utcnow()
+    order.completed_at = datetime.utcnow()
     await order.save()
+    rider.current_balance += order.base_rate + order.distance_bonus
+    await rider.save()
     notify_payload = {
         "type": "order_delivered",
         "order_id": order_id,
@@ -393,12 +409,17 @@ async def mark_order_delivered(order_id: str, user: User = Depends(get_current_u
     await redis.publish("order_updates", json.dumps(notify_payload))
     try:
         await manager.send_to(notify_payload, "customers", str(order.user_id))
+        await manager.send_to(notify_payload, "vendors", str(vendor.user_id))
     except:
         pass
     try:
         await send_notification(order.user_id, "Order Delivered", f"Your order {order.id} has been delivered successfully!")
+        await send_notification(vendor.user_id, "Order Delivered", f"Order {order.id} has been delivered.")
     except Exception as e:
         logger.error(f"Failed to send notification to customer {order.user_id}: {str(e)}")
+
+    end_chat("riders", user.id, "customers", order.user_id)
+    end_chat("riders", user.id, "vendors", vendor.user_id)
     return {"status": "delivered", "order_id": order_id, "rider_id": order.rider_id}
 
 
