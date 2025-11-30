@@ -17,8 +17,8 @@ from tortoise.exceptions import DoesNotExist
 class ShippingAddressService:
     """Service layer for managing customer shipping addresses"""
     
-    MAX_ADDRESSES_PER_TYPE = 1  # Only one address per type allowed
-    MAX_TOTAL_ADDRESSES = 3  # Maximum 3 addresses total
+    MAX_ADDRESSES_PER_TYPE = 20  # Only one address per type allowed
+    MAX_TOTAL_ADDRESSES = 50  # Maximum 3 addresses total
     
     @staticmethod
     async def validate_address_limit(current_user: int, address_type: str, exclude_id: Optional[str] = None):
