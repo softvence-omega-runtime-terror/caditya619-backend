@@ -1,10 +1,7 @@
 from datetime import datetime, timedelta, timezone
-
 from tortoise import fields, models
-from app.utils.generate_unique import generate_unique
 from tortoise.validators import MinValueValidator, MaxValueValidator
-from tortoise.expressions import Q
-from tortoise.functions import Avg
+from tortoise.functions import Avg, Count
 
 
 class Category(models.Model):
@@ -99,6 +96,33 @@ class Item(models.Model):
     async def get_total_reviews(self) -> int:
         from applications.items.review import ItemReview
         return await ItemReview.filter(item=self, parent=None).count()
+
+    async def get_rating_summary_percentage(self) -> dict:
+        from applications.items.review import ItemReview
+
+        # Get counts grouped by rating
+        qs = ItemReview.filter(item_id=self.id, parent_id__isnull=True).group_by("rating").annotate(
+            count=Count("rating"))
+        result = await qs.values("rating", "count")
+
+        # Initialize summary dictionary with 0 counts
+        summary_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+
+        total_reviews = 0
+        for item in result:
+            rating = int(item["rating"])
+            count = item["count"]
+            summary_counts[rating] = count
+            total_reviews += count
+
+        # Convert counts to percentage
+        summary_percentage = {star: (count / total_reviews * 100 if total_reviews > 0 else 0.0)
+                              for star, count in summary_counts.items()}
+
+        # Round to 1 decimal place
+        summary_percentage = {star: round(perc, 1) for star, perc in summary_percentage.items()}
+
+        return summary_percentage
 
 
     @property
