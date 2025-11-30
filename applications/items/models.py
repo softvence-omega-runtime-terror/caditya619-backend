@@ -89,16 +89,11 @@ class Item(models.Model):
     class Meta:
         ordering = ["-created_at"]
 
-    def __str__(self):
-        return self.title
-
     async def update_average_rating(self):
         from applications.items.review import ItemReview
-        result = await ItemReview.filter(
-            Q(item=self) & Q(parent__isnull=True) & Q(rating__not_isnull=True)
-        ).aggregate(avg_rating=Avg("rating"))
-        avg = round(result["avg_rating"] or 0.0, 2)
-        self.ratings = avg
+        qs = ItemReview.filter(item_id=self.id, parent_id__isnull=True, rating__not_isnull=True)
+        result = await qs.aggregate(avg_rating=Avg("rating"))
+        self.ratings = round(result.get("avg_rating") or 0.0, 2)
         await self.save(update_fields=["ratings"])
 
     async def get_total_reviews(self) -> int:
@@ -127,8 +122,6 @@ class Item(models.Model):
     def sell_price(self):
         return round(self.price - self.discounted_price, 2)
 
-    def __str__(self) -> str:
-        return self.title
 
 
     
