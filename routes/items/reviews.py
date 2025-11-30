@@ -10,6 +10,7 @@ router = APIRouter(prefix="/reviews", tags=["Review"])
 # Helper to serialize review + nested replies
 # -----------------------------
 async def serialize_review(review: ItemReview) -> dict:
+    await review.fetch_related("user")
     replies = []
     async for r in review.replies:
         replies.append(await serialize_review(r))
@@ -18,6 +19,7 @@ async def serialize_review(review: ItemReview) -> dict:
         "id": review.id,
         "item_id": review.item_id,
         "user_id": review.user_id,
+        "user_name": review.user.name if review.user else None,
         "rating": review.rating,
         "comment": review.comment,
         "parent_id": review.parent_id,
