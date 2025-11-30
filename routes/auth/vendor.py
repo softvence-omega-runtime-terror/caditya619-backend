@@ -147,7 +147,7 @@ async def vendor_details(
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
     if not vendor_profile:
-        raise HTTPException(status_code=404, detail="Vendor profile not found.")
+        raise HTTPException(status_code=200, detail="Vendor profile not found.")
 
     location_name = None
     if vendor_profile.latitude and vendor_profile.longitude:
