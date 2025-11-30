@@ -41,6 +41,7 @@ async def serialize_item(item: Item):
         "sell_price": format_float(item.sell_price),
         "ratings": item.ratings,
         "total_reviews": await item.get_total_reviews(),
+        "ratings_summery": await item.get_rating_summary_percentage(),
         "stock": item.stock,
         "total_sale": item.total_sale,
         "popular": item.popular,
