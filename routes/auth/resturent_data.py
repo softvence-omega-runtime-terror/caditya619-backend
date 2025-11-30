@@ -114,3 +114,64 @@ async def get_restaurant_profile(current_user: User = Depends(vendor_required)):
         "cuisines": cuisines_data,
         "signature_dishes": signature_dish_data
     }
+
+
+@router.get("/restaurants")
+async def get_all_restaurants(
+    popular: bool = None
+):
+    try:
+        restaurants = await RestaurantProfile.filter(
+            vendor__type="food",
+            vendor__is_active=True
+        ).prefetch_related("vendor", "cuisines", "signature_dish")
+
+        if not restaurants:
+            return {
+                "success": True,
+                "message": "No restaurants found",
+                "data": []
+            }
+
+        restaurant_list = []
+        for restaurant in restaurants:
+            vendor = restaurant.vendor
+
+            # Cuisines
+            cuisines_data = [{"id": c.id, "name": c.name} for c in restaurant.cuisines]
+
+            # Signature dishes
+            signature_dish_data = [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "price": float(item.price),
+                    "discount": item.discount,
+                    "sell_price": float(item.sell_price),
+                }
+                for item in restaurant.signature_dish
+            ]
+
+            restaurant_list.append({
+                "restaurant_id": restaurant.id,
+                "vendor_id": vendor.id,
+                "restaurant_name": vendor.owner_name,
+                "photo": vendor.photo,
+                "specialities": restaurant.specialities,
+                "latitude": vendor.latitude,
+                "longitude": vendor.longitude,
+                "open_time": vendor.open_time,
+                "close_time": vendor.close_time,
+
+                "cuisines": cuisines_data,
+                "signature_dishes": signature_dish_data,
+            })
+
+        return {
+            "success": True,
+            "message": "Restaurant list fetched successfully",
+            "data": restaurant_list,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
