@@ -11,10 +11,10 @@ from applications.user.rider import RiderProfile as Rider, WorkDay, Withdrawal, 
 # import asyncio
 # from tortoise import Tortoise
 
-# from routes.rider.helper_functions import (
-#     get_deliveries_count, get_earnings, get_delivery_pay,
-#     get_weekly_bonuses, get_excellence_bonus, get_acceptance_rate, get_on_time_rate
-# )
+from routes.rider.helper_functions import (
+    get_deliveries_count, get_earnings, get_delivery_pay,
+    get_weekly_bonuses, get_excellence_bonus, get_acceptance_rate, get_on_time_rate
+)
 
 
 # import logging

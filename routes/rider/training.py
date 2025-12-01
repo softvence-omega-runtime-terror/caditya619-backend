@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.requests import Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from app.utils.translator import translate
 
 
 
@@ -34,7 +35,8 @@ QuizeQusetionsPydanticOut = pydantic_model_creator(QuizQuestion, name="QuizQuest
 
 
 @router.post("/quiz/questions", response_model=QuizeQusetionsPydanticOut)
-async def create_quiz_questions(question : str = Form(...), 
+async def create_quiz_questions(lng:str = "eng",
+                                    question : str = Form(...), 
                                     option_a : str = Form(...), 
                                     option_b : str = Form(...), 
                                     option_c : str = Form(...), 
@@ -59,7 +61,7 @@ async def create_quiz_questions(question : str = Form(...),
 
     await quiz_question.save()
 
-    return await QuizeQusetionsPydanticOut.from_tortoise_orm(quiz_question)
+    return await QuizeQusetionsPydanticOut.from_tortoise_orm(translate(quiz_question, lng))
     
 
 
@@ -134,7 +136,7 @@ async def create_quiz_questions(question : str = Form(...),
 
 # ------------------- 1. Start Quiz – Get Questions -------------------
 @router.get("/start")
-async def start_quiz(current_user: User = Depends(get_current_user)):
+async def start_quiz(lng:str = "eng", current_user: User = Depends(get_current_user)):
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail="Not authorized")
     questions = await QuizQuestion.all()
@@ -159,11 +161,11 @@ async def start_quiz(current_user: User = Depends(get_current_user)):
             "explanation": q.explanation  # Show after submit
         })
 
-    return {
+    return translate(obj={
         "total_questions": len(questions),
         "instructions": "Select one answer per question. Minimum 80% to pass.",
         "questions": serialized
-    }
+    }, target_lang=lng)
 
 # ------------------- 2. Submit Quiz – With Full Results -------------------
 @router.post("/submit")

@@ -23,6 +23,7 @@ class RiderProfile(models.Model):
     is_bank_verified = fields.BooleanField(default=False)
     fcm_token = fields.CharField(max_length=255, null=True, blank=True)
     referral_code = fields.CharField(max_length=20, unique=True, null=True)
+    is_document_uploaded = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -177,15 +178,6 @@ class OrderOffer(models.Model):
 
 
 
-# class Rating(models.Model):
-#     id = fields.UUIDField(pk=True, default=uuid.uuid4)
-#     order = fields.ForeignKeyField("models.Order", related_name="ratings")
-#     score = fields.FloatField()
-#     created_at = fields.DatetimeField(auto_now_add=True)
-
-#     class Meta:
-#         table = "ratings"
-
 class Complaint(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
     user = fields.ForeignKeyField("models.User", related_name="complaints", null=True)
@@ -265,30 +257,6 @@ class DeviceToken(models.Model):
 #              Training Section Models
 #*********************************************************************#
 
-
-# class TrainingVideo(models.Model):
-#     id = fields.IntField(pk=True)
-#     title = fields.CharField(max_length=100)
-#     duration = fields.CharField(max_length=10, default="0:00")
-#     video_file = fields.CharField(max_length=500)  # e.g., "/media/training/get_started.mp4"
-#     thumbnail = fields.CharField(max_length=500, null=True, blank=True)
-#     order = fields.IntField(default=0)
-#     uploaded_at = fields.DatetimeField(auto_now_add=True)
-
-#     class Meta:
-#         table = "training_videos"
-#         ordering = ["order"]
-
-
-# class TrainingPDF(models.Model):
-#     id = fields.IntField(pk=True)
-#     title = fields.CharField(max_length=100)
-#     file = fields.CharField(max_length=500)  # e.g., "/media/pdfs/handbook.pdf"
-#     icon = fields.CharField(max_length=50, default="document")
-#     uploaded_at = fields.DatetimeField(auto_now_add=True)
-
-#     class Meta:
-#         table = "training_pdfs"
 
 
 

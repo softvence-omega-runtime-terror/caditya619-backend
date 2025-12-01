@@ -11,6 +11,7 @@ from app.utils.file_manager import save_file, update_file, delete_file
 from .helper_functions import *
 from applications.customer.models import Order
 from tortoise.functions import Avg, Sum
+from app.utils.translator import translate
 
 
 
@@ -156,6 +157,12 @@ async def get_wallet(period: str = "month", user: User = Depends(get_current_use
             excellence_bonus = await get_excellence_bonus(rider, m_start, m_end)
             subtotal = to_float(delivery_pay) + to_float(weekly_bonuses) + to_float(excellence_bonus)
             top_up = max(8000 - subtotal, 0)
+            if subtotal <= 0:
+                earnings = 0
+                top_up = 0
+            else:
+                guarantee = feesandbonus.rider_base_salary
+                top_up = max(to_float(guarantee) - to_float(subtotal), 0)
             earnings = subtotal + top_up
             month_name = m_start.strftime("%B")
             monthly_breakdown[month_name] = earnings
@@ -209,18 +216,18 @@ async def get_performance(rider: rider = Depends(get_current_user)):
     now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     deliveries = await get_deliveries_count(rider, month_start, now + timedelta(days=1))
-    # rating = await get_monthly_rating(rider, month_start, now + timedelta(days=1))
+    rating = await get_monthly_rating(rider, month_start, now + timedelta(days=1))
     acceptance = await get_acceptance_rate(rider, month_start, now + timedelta(days=1))
     on_time = await get_on_time_rate(rider, month_start, now + timedelta(days=1))
     return {
         "total_deliveries": deliveries,
-        # "customer_rating": f"{rating:.1f}/5.0",
-        "acceptance_rate": f"{acceptance:.0f}%",
-        "on_time_rate": f"{on_time:.0f}%"
+        "customer_rating": rating,
+        "acceptance_rate": acceptance,
+        "on_time_rate": on_time
     }
 
 @router.get("/leaderboard/")
-async def get_leaderboard(user: User = Depends(get_current_user)):
+async def get_leaderboard(lng:str = "eng", user: User = Depends(get_current_user)):
     rider = await Rider.get(user=user)
     if not rider:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Rider not found")
@@ -231,7 +238,7 @@ async def get_leaderboard(user: User = Depends(get_current_user)):
     scores = []
     for p in all_riders:
         deliveries = await get_deliveries_count(p, month_start, month_end)
-        rating = 0            #await get_monthly_rating(p, month_start, month_end)
+        rating = await get_monthly_rating(p, month_start, month_end)
         on_time = await get_on_time_rate(p, month_start, month_end)
         score = (deliveries * 0.5) + (rating * 50) + (on_time * 2)
         scores.append((p.id, score, deliveries, rating, on_time))
@@ -241,7 +248,7 @@ async def get_leaderboard(user: User = Depends(get_current_user)):
     my_score, my_deliveries, my_rating, my_on_time = next((s for s in scores if s[0] == rider.id), (0,0,0,0))[1:]
     prize_structure = {1: 2000, 2: 1000, 3: 500}
     prize = prize_structure.get(rank, 250 if rank <= 10 else 0)
-    return {
+    return translate(obj={
         "rank": rank,
         "total_riders": total_riders,
         "total_deliveries": my_deliveries,
@@ -252,14 +259,14 @@ async def get_leaderboard(user: User = Depends(get_current_user)):
             "rating_pts": my_rating * 50,
             "on_time_pts": my_on_time * 2
         }
-    }
+    }, target_lang=lng)
 
 
 
 
 
 @router.get("/rider/rider-ratings/")
-async def get_rider_ratings(current_user: User = Depends(get_current_user)):
+async def get_rider_ratings(lng:str = "eng", current_user: User = Depends(get_current_user)):
     # FIX 1: Correct model name
     rider_profile = await Rider.get_or_none(user=current_user)
     if not rider_profile:
@@ -279,7 +286,7 @@ async def get_rider_ratings(current_user: User = Depends(get_current_user)):
 
     return {
         "rider_id": rider_profile.id,
-        "avg_rating": round(float(avg_rating), 2),
-        "total_reviews": total_reviews,
-        "status": "success",
+        "avg_rating": translate(obj = round(float(avg_rating), 2), target_lang=lng),
+        "total_reviews": translate(total_reviews, lng),
+        "status": translate(obj = "success", target_lang=lng),
     }
