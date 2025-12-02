@@ -7,7 +7,7 @@ from tortoise.transactions import in_transaction
 from app.utils.phone_number import phone_number
 from app.utils.file_manager import save_file, update_file, delete_file
 from app.auth import permission_required, vendor_required
-from datetime import datetime, time
+from datetime import time
 from app.utils.get_location import get_location_name
 router = APIRouter(prefix='/vendor', tags=['Vendor Signup'])
 
@@ -161,14 +161,13 @@ async def vendor_details(
         "vendor_profile": {
             "id": current_user.id,
             "shop_name": current_user.name,
-            "email": current_user.email,
             "phone": current_user.phone,
             "photo": vendor_profile.photo,
             "owner_name": vendor_profile.owner_name,
             "type": vendor_profile.type,
             "is_active": vendor_profile.is_active,
-            "open_time": vendor_profile.open_time.strftime("%I:%M %p") if vendor_profile.open_time else None,
-            "close_time": vendor_profile.close_time.strftime("%I:%M %p") if vendor_profile.close_time else None,
+            "open_time": str(vendor_profile.open_time)[:-3] if vendor_profile.open_time else None,
+            "close_time": str(vendor_profile.close_time)[:-3] if vendor_profile.close_time else None,
             "is_completed": vendor_profile.is_completed,
 
             "latitude": vendor_profile.latitude,
@@ -185,33 +184,29 @@ async def vendor_details(
 async def update_vendor_profile(
     owner_name: str = Form(...),
     photo: UploadFile | None = File(None),
-    open_time: str = Form(default="09:00:00"),
-    close_time: str = Form(default="22:00:00"),
+    open_time: time | None = Form(default=time(9, 0)),
+    close_time: time | None = Form(default=time(22, 0)),
     current_user: User = Depends(vendor_required),
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
     if not vendor_profile:
-        raise HTTPException(status_code=404, detail="Vendor profile not found.")
+        raise HTTPException(status_code=200, detail="Vendor profile not found.")
 
-    # --- Parse times into naive time objects ---
-    try:
-        open_time_obj: time | None = datetime.strptime(open_time, "%H:%M:%S").time() if open_time else None
-        close_time_obj: time | None = datetime.strptime(close_time, "%H:%M:%S").time() if close_time else None
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM:SS")
+    # Remove timezone if exists
+    open_time = open_time.replace(tzinfo=None) if open_time else None
+    close_time = close_time.replace(tzinfo=None) if close_time else None
 
     async with in_transaction() as conn:
-        vendor_profile.owner_name = owner_name
-        vendor_profile.open_time = open_time_obj
-        vendor_profile.close_time = close_time_obj
 
-        # Handle photo upload
+        vendor_profile.owner_name = owner_name
+        vendor_profile.open_time = open_time
+        vendor_profile.close_time = close_time
+
         if photo:
             vendor_profile.photo = (
                 await update_file(photo, vendor_profile.photo, "vendor_photos")
                 if vendor_profile.photo else await save_file(photo, "vendor_photos")
             )
-
         await vendor_profile.save(using_db=conn)
 
     return {
@@ -219,9 +214,10 @@ async def update_vendor_profile(
         "vendor_profile": {
             "owner_name": vendor_profile.owner_name,
             "shop_name": current_user.name,
+            "email": current_user.email,
             "photo": vendor_profile.photo,
-            "open_time": vendor_profile.open_time.strftime("%H:%M:%S") if vendor_profile.open_time else None,
-            "close_time": vendor_profile.close_time.strftime("%H:%M:%S") if vendor_profile.close_time else None,
+            "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
+            "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
             "is_completed": vendor_profile.is_completed,
             "kyc_status": vendor_profile.kyc_status,
         }
