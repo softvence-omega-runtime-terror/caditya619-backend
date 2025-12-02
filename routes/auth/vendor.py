@@ -7,7 +7,7 @@ from tortoise.transactions import in_transaction
 from app.utils.phone_number import phone_number
 from app.utils.file_manager import save_file, update_file, delete_file
 from app.auth import permission_required, vendor_required
-from datetime import time
+from datetime import datetime, time
 from app.utils.get_location import get_location_name
 router = APIRouter(prefix='/vendor', tags=['Vendor Signup'])
 
@@ -186,8 +186,8 @@ async def update_vendor_profile(
     owner_name: str = Form(...),
     email: str = Form(None),
     photo: UploadFile | None = File(None),
-    open_time: time | None = Form(default=time(9, 0)),
-    close_time: time | None = Form(default=time(22, 0)),
+    open_time: str = Form(default="09:00:00"),
+    close_time: str = Form(default="22:00:00"),
     current_user: User = Depends(vendor_required),
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
@@ -195,8 +195,8 @@ async def update_vendor_profile(
         raise HTTPException(status_code=200, detail="Vendor profile not found.")
 
     # Remove timezone if exists
-    open_time = open_time.replace(tzinfo=None) if open_time else None
-    close_time = close_time.replace(tzinfo=None) if close_time else None
+    open_time = datetime.strptime(open_time, "%H:%M:%S").time() if open_time else None
+    close_time = datetime.strptime(close_time, "%H:%M:%S").time() if close_time else None
 
     async with in_transaction() as conn:
         current_user.email = email
