@@ -184,7 +184,6 @@ async def vendor_details(
 @router.put("/update-vendor-profile/", response_model=dict)
 async def update_vendor_profile(
     owner_name: str = Form(...),
-    email: str = Form(None),
     photo: UploadFile | None = File(None),
     open_time: str = Form(default="09:00:00"),
     close_time: str = Form(default="22:00:00"),
@@ -202,10 +201,6 @@ async def update_vendor_profile(
         raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM:SS")
 
     async with in_transaction() as conn:
-        # Update email safely (allow None)
-        current_user.email = email if email else None
-        await current_user.save(using_db=conn)
-
         vendor_profile.owner_name = owner_name
         vendor_profile.open_time = open_time_obj
         vendor_profile.close_time = close_time_obj
@@ -224,7 +219,6 @@ async def update_vendor_profile(
         "vendor_profile": {
             "owner_name": vendor_profile.owner_name,
             "shop_name": current_user.name,
-            "email": current_user.email,
             "photo": vendor_profile.photo,
             "open_time": vendor_profile.open_time.strftime("%H:%M:%S") if vendor_profile.open_time else None,
             "close_time": vendor_profile.close_time.strftime("%H:%M:%S") if vendor_profile.close_time else None,
