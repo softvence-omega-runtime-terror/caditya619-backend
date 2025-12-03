@@ -13,8 +13,23 @@ from typing import Optional, Literal
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
+
+
+
 class PaymentInitiateSchema(BaseModel):
     order_id: str
+class PaymentLinkResponse(BaseModel):
+    success: bool
+    order_id: str
+    cf_order_id: str
+    payment_link: str
+    message: str
+
+
+
+
+
+
 class PaymentCallbackSchema(BaseModel):
     order_id: str
     cf_order_id: str
@@ -270,7 +285,15 @@ class OrderItemResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
+class VendorLocationSchema(BaseModel):
+    vendor_id: int
+    vendor_name: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_active: bool = True
+    
+    class Config:
+        from_attributes = True
 class DeliveryOptionResponseSchema(BaseModel):
     type: str
     title: str
@@ -299,7 +322,8 @@ class OrderResponseSchema(BaseModel):
     tracking_number: Optional[str] = None
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
-
+    vendors: List[VendorLocationSchema] = []  # ✅ ADD THIS LINE
+    
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):
         if hasattr(v, 'id'):
@@ -309,12 +333,10 @@ class OrderResponseSchema(BaseModel):
     @validator('status', pre=True)
     def convert_status_enum(cls, v):
         return v.value if hasattr(v, 'value') else v
-
+    
     class Config:
         from_attributes = True
         populate_by_name = True
-
-
         
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
