@@ -13,8 +13,23 @@ from typing import Optional, Literal
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
+
+
+
 class PaymentInitiateSchema(BaseModel):
     order_id: str
+class PaymentLinkResponse(BaseModel):
+    success: bool
+    order_id: str
+    cf_order_id: str
+    payment_link: str
+    message: str
+
+
+
+
+
+
 class PaymentCallbackSchema(BaseModel):
     order_id: str
     cf_order_id: str
