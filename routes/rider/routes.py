@@ -6,7 +6,7 @@ from tortoise import fields, models
 from applications.user.models import User
 from enum import Enum
 from app.token import get_current_user
-from applications.user.rider import RiderProfile, Vehicle, Zone, RiderZoneAssignment, RiderAvailabilityStatus, HelpAndSupport, WorkDay, RiderCurrentLocation
+from applications.user.rider import RiderProfile, Vehicle, Zone, RiderAvailabilityStatus, HelpAndSupport, WorkDay, RiderCurrentLocation
 from app.utils.file_manager import save_file, update_file, delete_file
 from tortoise.exceptions import IntegrityError
 from fastapi import Body
@@ -15,6 +15,7 @@ from datetime import datetime, date, timezone
 from pytz import utc
 import logging
 from .helper_functions import to_time
+from app.utils.translator import translate
 
 
 # from datetime import time as _time
@@ -102,6 +103,7 @@ async def rider_profile_me(user: User = Depends(get_current_user)):
 
 @router.put("/rider-documents/me/", response_model=RiderProfile_Pydantic)
 async def update_rider_documents_me(
+     lng:str = "eng",
      pi: UploadFile = File(...),
      nid: UploadFile = File(...), 
      dl: UploadFile = File(...), 
@@ -144,9 +146,12 @@ async def update_rider_documents_me(
         rider_profile.vehicle_insurance_document = vi_path
 
     else:
-        raise HTTPException(status_code=400, detail="All documents must be provided")
+        raise HTTPException(status_code=400, detail=translate("All documents must be provided", lng))
+    
+    rider_profile.is_document_uploaded = True
     
     await rider_profile.save()
+
     return await RiderProfile_Pydantic.from_tortoise_orm(rider_profile)
 
 
@@ -158,6 +163,7 @@ async def update_rider_documents_me(
     summary="Admin: List all riders (paginated)"
 )
 async def list_riders(
+    lng:str = "eng",
     offset: int = Query(0, ge=0),
     limit: int = Query(30, ge=1, le=100),
     current_user: User = Depends(get_current_user)
@@ -173,10 +179,10 @@ async def list_riders(
     riders_data = await RiderProfile_Pydantic.from_queryset(riders_qs)
 
     return RiderListResponse(
-        count=total,
-        offset=offset,
-        limit=limit,
-        results=riders_data
+        count=translate(total, lng),
+        offset=translate(offset, lng),
+        limit=translate(limit, lng),
+        results=translate(riders_data, lng)
     )
 
 
