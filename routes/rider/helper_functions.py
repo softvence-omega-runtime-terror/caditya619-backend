@@ -226,3 +226,31 @@ def to_time(value) -> time | None:
         parts = value.split(".")[0]
         return datetime.strptime(parts, "%H:%M:%S").time()
     raise TypeError(f"Unsupported time type: {type(value)}")
+
+
+
+async def get_total_earnings(rider: rider) -> float:
+    orders = await Order.filter(
+        rider=rider, status="delivered"
+    ).all()
+    
+    return sum([order.base_rate + order.distance_bonus for order in orders])
+
+
+async def get_total_acceptance_rate(rider: rider) -> float:
+    offered = await WorkDay.filter(rider=rider)
+    offered_count = 0
+    for offer in offered:
+        offered_count += offer.order_offer_count
+    
+    accepted = await Order.filter(rider=rider, status="delivered").count()
+   
+    if offered_count == 0:
+        return 0.0
+    acceptance_rate = (to_float(accepted) / to_float(offered_count)) * 100.0
+    
+    return acceptance_rate
+
+
+
+

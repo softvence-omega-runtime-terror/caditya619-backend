@@ -12,6 +12,8 @@ from .helper_functions import *
 from applications.customer.models import Order
 from tortoise.functions import Avg, Sum
 from app.utils.translator import translate
+import pytz
+from dateutil.relativedelta import relativedelta
 
 
 
@@ -290,3 +292,60 @@ async def get_rider_ratings(lng:str = "eng", current_user: User = Depends(get_cu
         "total_reviews": translate(total_reviews, lng),
         "status": translate(obj = "success", target_lang=lng),
     }
+
+
+
+@router.get("/rider-current-tire/")
+async def get_rider_tires(current_user: User = Depends(get_current_user)):
+    rider_profile = await Rider.get_or_none(user=current_user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider not found")
+    today = datetime.now(pytz.UTC)
+    created_at = rider_profile.created_at
+    if created_at.tzinfo is None:
+        created_at = pytz.UTC.localize(created_at)
+    #today = datetime.utcnow()
+    month_of_work = relativedelta(today, created_at).years * 12 + \
+                    relativedelta(today, created_at).months
+
+    earnings = await get_total_earnings(rider_profile)
+    qs = RiderReview.filter(rider=rider_profile, rating__not_isnull=True)
+    # get list of rating values
+    ratings = await qs.values_list("rating", flat=True)  # returns list of Decimal/float
+
+    total_reviews = len(ratings)
+    if total_reviews == 0:
+        avg_rating = 0.0
+    else:
+        # Convert to float safely (ratings may be Decimal)
+        total = sum((float(r) for r in ratings))
+        avg_rating = total / total_reviews
+
+    acceptance_rate = await get_total_acceptance_rate(rider_profile)
+
+    #print(f"Month of work: {month_of_work} | Earnings: {earnings} | Average Rating: {avg_rating} | Acceptance Rate: {acceptance_rate}")
+
+
+    if month_of_work <= 2 and (earnings >= 16000 and earnings <= 18500):
+        return {
+            "tire": "Bronze",
+            "status": "success",
+        }
+    elif month_of_work >= 2 and avg_rating >= 4.0 and (earnings >= 18500 and earnings <= 21000):
+        return {
+            "tire": "Silver",
+            "status": "success",
+        }
+    elif month_of_work >= 2 and avg_rating >= 4.5 and acceptance_rate >= 90 and earnings >= 21000:
+        return {
+            "tire": "Gold",
+            "status": "success",
+        }
+    else:
+        return {
+            "tire": "None",
+            "status": "failed",
+        }
+
+
+
