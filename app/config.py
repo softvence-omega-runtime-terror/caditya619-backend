@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     CASHFREE_CLIENT_PAYOUT_ID: str = ""
     CASHFREE_CLIENT_PAYOUT_SECRET: str = ""
     CASHFREE_ENV: str = "PRODUCTION"
+    CASHFREE_PUBLIC_KEY: str = ""
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
