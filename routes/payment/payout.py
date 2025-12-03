@@ -1,101 +1,150 @@
+import time
+import hmac
+import hashlib
+import base64
 import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.config import settings
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
 
-payout_router = APIRouter(prefix="/payout", tags=["Payout Sandbox"])
+router = APIRouter(prefix="/payout", tags=["Cashfree Payouts"])
+#
+CLIENT_ID = settings.CASHFREE_CLIENT_PAYOUT_ID
+CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYOUT_SECRET
+PUBLIC_KEY = settings.CASHFREE_PUBLIC_KEY
 
-CLIENT_ID = settings.CLIENT_ID
-CLIENT_SECRET = settings.SANDBOX_CLIENT_SECRET
-BASE_URL = "https://payout-gamma.cashfree.com/payout/v1"
+BASE_URL = "https://sandbox.cashfree.com/payout"
 
 
-# -----------------------------------------------------
-#   AUTH TOKEN
-# -----------------------------------------------------
-@payout_router.post("/auth")
-def auth_token():
-    url = f"{BASE_URL}/authorize"
-    headers = {
-        "X-Client-Id": CLIENT_ID,
-        "X-Client-Secret": CLIENT_SECRET,
-        "Content-Type": "application/json",
-    }
+# {
+#   "beneficiary_id": "moynul2_m",
+#   "beneficiary_name": "Moynul Islam",
+#   "bank_account_number": "026291800001191",
+#   "bank_ifsc": "YESB0000262",
+#   "email": "softvence.moynul@gmail.com",
+#   "phone": "+919876543210"
+# }
 
-    res = requests.post(url, headers=headers)
-    data = res.json()
 
-    if res.status_code != 200:
-        raise HTTPException(status_code=400, detail=data)
+def generate_signature():
+    timestamp = int(time.time())
+    sign_string = f"{CLIENT_ID}.{timestamp}".encode()
 
-    return data
+    public_key = serialization.load_pem_public_key(PUBLIC_KEY.encode())
 
+    encrypted = public_key.encrypt(
+        sign_string,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA1()),
+            algorithm=hashes.SHA1(),
+            label=None,
+        )
+    )
+
+    signature = base64.b64encode(encrypted).decode()
+
+    return signature, str(timestamp)
 
 # -----------------------------------------------------
 #   ADD BENEFICIARY
 # -----------------------------------------------------
 class Beneficiary(BaseModel):
-    beneId: str
-    name: str
+    beneficiary_id: str
+    beneficiary_name: str
+    bank_account_number: str
+    bank_ifsc: str
     email: str
     phone: str
-    bankAccount: str
-    ifsc: str
 
 
-@payout_router.post("/add_beneficiary")
+@router.post("/add_beneficiary")
 def add_beneficiary(payload: Beneficiary):
-    token = auth_token()["data"]["token"]
+    signature, timestamp = generate_signature()
 
-    url = f"{BASE_URL}/addBeneficiary"
+    url = f"{BASE_URL}/beneficiary"
+
     headers = {
-        "Authorization": f"Bearer {token}",
+        "x-api-version": "2024-01-01",
+        "x-client-id": CLIENT_ID,
+        "x-client-secret": CLIENT_SECRET,
+        "x-cf-signature": signature,
+        "x-cf-timestamp": timestamp,
         "Content-Type": "application/json",
     }
 
     body = {
-        "beneId": payload.beneId,
-        "name": payload.name,
-        "email": payload.email,
-        "phone": payload.phone,
-        "bankAccount": payload.bankAccount,
-        "ifsc": payload.ifsc,
-        "address1": "Test Address",
-        "city": "Test City",
-        "state": "KA",
-        "pincode": "560001"
+        "beneficiary_id": payload.beneficiary_id,
+        "beneficiary_name": payload.beneficiary_name,
+        "beneficiary_instrument_details": {
+            "bank_account_number": payload.bank_account_number,
+            "bank_ifsc": payload.bank_ifsc,
+        },
+        "beneficiary_contact_details": {
+            "beneficiary_email": payload.email,
+            "beneficiary_phone": payload.phone,
+            "beneficiary_country_code": "+91",
+        },
     }
 
     res = requests.post(url, json=body, headers=headers)
+
+    if res.status_code not in [200, 201]:
+        raise HTTPException(status_code=res.status_code, detail=res.json())
+
     return res.json()
 
 
 # -----------------------------------------------------
-#   REQUEST PAYOUT
+#   PAYOUT TRANSFER
 # -----------------------------------------------------
 class PayoutRequest(BaseModel):
-    beneId: str
+    beneficiary_id: str
     amount: float
-    transferId: str
+    transfer_id: str
 
 
-@payout_router.post("/transfer")
-def transfer_money(payload: PayoutRequest):
-    token = auth_token()["data"]["token"]
+@router.post("/transfer")
+def transfer_amount(payload: PayoutRequest):
+    signature, timestamp = generate_signature()
 
-    url = f"{BASE_URL}/requestTransfer"
+    url = f"{BASE_URL}/transfers"
+
     headers = {
-        "Authorization": f"Bearer {token}",
+        "x-api-version": "2024-01-01",
+        "x-client-id": CLIENT_ID,
+        "x-client-secret": CLIENT_SECRET,
+        "x-cf-signature": signature,
+        "x-cf-timestamp": timestamp,
         "Content-Type": "application/json",
     }
 
     body = {
-        "beneId": payload.beneId,
-        "amount": payload.amount,
-        "transferId": payload.transferId,
-        "transferMode": "banktransfer",
-        "remarks": "Test Sandbox Payout",
+        "transfer_id": payload.transfer_id,
+        "transfer_amount": payload.amount,
+        "beneficiary_details": {
+            "beneficiary_id": payload.beneficiary_id
+        },
+        # optionally:
+        "transfer_mode": "banktransfer",
+        "currency": "INR",
+        "transfer_remarks": "some remarks"
     }
 
+    # body = {
+    #     "transfer_id": payload.transfer_id,
+    #     "beneficiary_id": payload.beneficiary_id,
+    #     "amount": int(payload.amount * 100),
+    #     "currency": "INR",
+    #     "purpose": "payout",
+    #     "remarks": "FastAPI payout test"
+    # }
+
     res = requests.post(url, json=body, headers=headers)
+
+    if res.status_code not in [200, 201]:
+        raise HTTPException(status_code=res.status_code, detail=res.json())
+
     return res.json()
+
