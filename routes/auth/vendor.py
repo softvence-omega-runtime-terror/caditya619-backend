@@ -147,7 +147,7 @@ async def vendor_details(
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
     if not vendor_profile:
-        raise HTTPException(status_code=404, detail="Vendor profile not found.")
+        raise HTTPException(status_code=200, detail="Vendor profile not found.")
 
     location_name = None
     if vendor_profile.latitude and vendor_profile.longitude:
@@ -161,14 +161,13 @@ async def vendor_details(
         "vendor_profile": {
             "id": current_user.id,
             "shop_name": current_user.name,
-            "email": current_user.email,
             "phone": current_user.phone,
             "photo": vendor_profile.photo,
             "owner_name": vendor_profile.owner_name,
             "type": vendor_profile.type,
             "is_active": vendor_profile.is_active,
-            "open_time": vendor_profile.open_time.strftime("%I:%M %p") if vendor_profile.open_time else None,
-            "close_time": vendor_profile.close_time.strftime("%I:%M %p") if vendor_profile.close_time else None,
+            "open_time": str(vendor_profile.open_time)[:-3] if vendor_profile.open_time else None,
+            "close_time": str(vendor_profile.close_time)[:-3] if vendor_profile.close_time else None,
             "is_completed": vendor_profile.is_completed,
 
             "latitude": vendor_profile.latitude,
@@ -184,7 +183,6 @@ async def vendor_details(
 @router.put("/update-vendor-profile/", response_model=dict)
 async def update_vendor_profile(
     owner_name: str = Form(...),
-    email: str = Form(None),
     photo: UploadFile | None = File(None),
     open_time: time | None = Form(default=time(9, 0)),
     close_time: time | None = Form(default=time(22, 0)),
@@ -199,8 +197,6 @@ async def update_vendor_profile(
     close_time = close_time.replace(tzinfo=None) if close_time else None
 
     async with in_transaction() as conn:
-        current_user.email = email
-        await current_user.save(using_db=conn)
 
         vendor_profile.owner_name = owner_name
         vendor_profile.open_time = open_time

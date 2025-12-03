@@ -47,9 +47,7 @@ class VendorProfile(models.Model):
         ]
         if not all(common_required):
             return False
-        if self.type == "food" and not self.fassai:
-            return False
-        if self.type == "medicine" and not self.drug_license:
+        if self.type != "grocery" and not self.kyc_document:
             return False
         return True
         
@@ -60,6 +58,7 @@ class RestaurantProfile(models.Model):
     cuisines = fields.ManyToManyField("models.SubCategory", related_name="restaurants", blank=True, null=True)
     specialities = fields.CharField(max_length=100, null=True, blank=True)
     signature_dish = fields.ManyToManyField("models.Item", related_name="restaurants", blank=True, null=True)
+    popular = fields.BooleanField(default=False)
 
     # async def save(self, *args, **kwargs):
     #     vendor_instance = await self.vendor

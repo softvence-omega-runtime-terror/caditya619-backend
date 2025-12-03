@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 
 from app.utils.get_location import get_location_name
+=======
+>>>>>>> 02705f4b469dd39d776d3c1efcc32551cb837df2
 from tortoise import fields, models
 from enum import Enum
 # ==================== Enums ====================
