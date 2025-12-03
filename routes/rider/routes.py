@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Path, Query, UploadFile, File, Header, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Path, Query, UploadFile, File, Header, Form, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from datetime import date, datetime, time
@@ -163,11 +163,12 @@ async def update_rider_documents_me(
     summary="Admin: List all riders (paginated)"
 )
 async def list_riders(
-    lng:str = "eng",
+    request: Request,
     offset: int = Query(0, ge=0),
     limit: int = Query(30, ge=1, le=100),
     current_user: User = Depends(get_current_user)
 ):
+    lng = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_superuser:
         raise HTTPException(403, "Superuser access required")
 
@@ -193,9 +194,11 @@ async def list_riders(
 
 @router.put("/rider-profile/me/")
 async def update_rider_profile_me(
+    request: Request,
     profile_data: RiderProfileUpdateModel,
     user: User = Depends(get_current_user)
 ):
+    lng = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail="Rider profile not found")
@@ -213,9 +216,9 @@ async def update_rider_profile_me(
     
     await rider_profile.save()
     await user.save()
-    return {"name": user.name, "email": user.email, "phone": user.phone,
+    return translate({"name": user.name, "email": user.email, "phone": user.phone,
             "driving_license": rider_profile.driving_license, "nid": rider_profile.nid,
-            "profile_image": rider_profile.profile_image,}
+            "profile_image": rider_profile.profile_image,})
 
 
 

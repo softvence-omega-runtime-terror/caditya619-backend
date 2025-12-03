@@ -461,178 +461,105 @@ async def cancel_order(order_id: str, user: User = Depends(get_current_user), re
 
 
 
-@router.websocket("/ws/rider/location/{rider_id}")
-async def rider_location_ws(
-    websocket: WebSocket,
-    rider_id: str,
-    redis = Depends(get_redis)
-):
-    await manager.connect(websocket, "riders", rider_id)
-    try:
-        user = await User.get(id=int(rider_id))
-        rider = await RiderProfile.get(user=user)
-        loc = await RiderCurrentLocation.get(rider_profile= rider)
-        while True:
-            data = await websocket.receive_json()
-            lat = data.get("lat")
-            lng = data.get("lng")
+# @router.websocket("/ws/rider/location/{rider_id}")
+# async def rider_location_ws(
+#     websocket: WebSocket,
+#     rider_id: str,
+#     redis = Depends(get_redis)
+# ):
+#     await manager.connect(websocket, "riders", rider_id)
+#     try:
+#         user = await User.get(id=int(rider_id))
+#         rider = await RiderProfile.get(user=user)
+#         loc = await RiderCurrentLocation.get(rider_profile= rider)
+#         while True:
+#             data = await websocket.receive_json()
+#             lat = data.get("lat")
+#             lng = data.get("lng")
 
-            # Update DB
-            loc.latitude = lat
-            loc.longitude = lng
-            #loc.is_active = True
-            await loc.save()
+#             # Update DB
+#             loc.latitude = lat
+#             loc.longitude = lng
+#             #loc.is_active = True
+#             await loc.save()
 
-            # Prepare message
-            location_msg = {
-                "type": "location_update",
-                "rider_id": rider_id,
-                "lat": lat,
-                "lng": lng,
-                "timestamp": datetime.utcnow().isoformat()
-            }
+#             # Prepare message
+#             location_msg = {
+#                 "type": "location_update",
+#                 "rider_id": rider_id,
+#                 "lat": lat,
+#                 "lng": lng,
+#                 "timestamp": datetime.utcnow().isoformat()
+#             }
 
-            # SEND ONLY TO CUSTOMERS TRACKING THIS RIDER
-            await manager.send_location_to_tracking_customers(rider_id, location_msg)
+#             # SEND ONLY TO CUSTOMERS TRACKING THIS RIDER
+#             await manager.send_location_to_tracking_customers(rider_id, location_msg)
 
-            # Optional: Still publish to Redis for analytics
-            await redis.publish("rider_locations", json.dumps({
-                "rider_id": rider_id,
-                "lat": lat,
-                "lng": lng
-            }))
+#             # Optional: Still publish to Redis for analytics
+#             await redis.publish("rider_locations", json.dumps({
+#                 "rider_id": rider_id,
+#                 "lat": lat,
+#                 "lng": lng
+#             }))
 
-            await asyncio.sleep(0.1)
-    except WebSocketDisconnect:
-        manager.disconnect("riders", rider_id)
-        # rider.is_active = False
-        # await rider.save()
+#             await asyncio.sleep(0.1)
+#     except WebSocketDisconnect:
+#         manager.disconnect("riders", rider_id)
+#         # rider.is_active = False
+#         # await rider.save()
 
 
 
-@router.websocket("/ws/track/{order_id}/{client_type}/{user_id}")
-async def track_order(
-    websocket: WebSocket,
-    order_id: str,
-    client_type: str,
-    user_id: int
-):
-    if client_type not in ["customer", "vendor"]:
-        await websocket.close(code=1008)
-        return
+# @router.websocket("/ws/track/{order_id}/{client_type}/{user_id}")
+# async def track_order(
+#     websocket: WebSocket,
+#     order_id: str,
+#     client_type: str,
+#     user_id: int
+# ):
+#     if client_type not in ["customer", "vendor"]:
+#         await websocket.close(code=1008)
+#         return
 
-    order = await Order.get(id=order_id)
-    offer = await OrderOffer.get(order=order).first()
-    if not offer.rider:
-        await websocket.close(code=4000, reason="No rider assigned")
-        return
+#     order = await Order.get(id=order_id)
+#     offer = await OrderOffer.get(order=order).first()
+#     if not offer.rider:
+#         await websocket.close(code=4000, reason="No rider assigned")
+#         return
 
-    if client_type == "customer" and order.user_id != int(user_id):
-        await websocket.close(code=4003, reason="Unauthorized")
-        return
+#     if client_type == "customer" and order.user_id != int(user_id):
+#         await websocket.close(code=4003, reason="Unauthorized")
+#         return
 
-    # CONNECT & ADD TO TRACKING
-    await manager.connect(websocket, "customers" if client_type == "customer" else "vendors", user_id)
+#     # CONNECT & ADD TO TRACKING
+#     await manager.connect(websocket, "customers" if client_type == "customer" else "vendors", user_id)
 
-    rider = await RiderProfile.get(id=offer.rider_id)
-    if not rider:
-        await websocket.close(code=4001, reason="Rider not found")
-        return
+#     rider = await RiderProfile.get(id=offer.rider_id)
+#     if not rider:
+#         await websocket.close(code=4001, reason="Rider not found")
+#         return
     
-    # ADD CUSTOMER TO RIDER'S TRACKING LIST
-    if client_type == "customer":
-        manager.add_tracking(str(rider.user_id), user_id)
+#     # ADD CUSTOMER TO RIDER'S TRACKING LIST
+#     if client_type == "customer":
+#         manager.add_tracking(str(rider.user_id), user_id)
 
-    try:
-        # Send initial state
-        await manager.send_to({
-            "type": "order_state",
-            "order_id": order_id,
-            "status": order.status,
-            "rider_id": offer.rider_id,
-            #"eta_pickup": order.estimated_pickup.isoformat() if order.estimated_pickup else None
-        }, client_type, user_id)
+#     try:
+#         # Send initial state
+#         await manager.send_to({
+#             "type": "order_state",
+#             "order_id": order_id,
+#             "status": order.status,
+#             "rider_id": offer.rider_id,
+#             #"eta_pickup": order.estimated_pickup.isoformat() if order.estimated_pickup else None
+#         }, client_type, user_id)
 
-        while True:
-            await asyncio.sleep(1)
+#         while True:
+#             await asyncio.sleep(1)
 
-    except WebSocketDisconnect:
-        pass
-    finally:
-        manager.disconnect("customers" if client_type == "customer" else "vendors", user_id)
-
-
-
-
-
-
-
-
-@router.websocket("/ws/{client_type}/{user_id}")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    client_type: str,
-    user_id: str,
-    redis = Depends(get_redis)
-):
-    if client_type not in {"riders", "customers", "vendors"}:
-        await websocket.close(code=1008)
-        return
-
-    await manager.connect(websocket, client_type, user_id)
-
-    try:
-        while True:
-            raw = await websocket.receive_text()
-            raw = raw.strip()
-            if not raw:
-                continue
-
-            try:
-                msg = json.loads(raw)
-                text = msg.get("text", "")
-                to_type = msg.get("to_type")
-                to_id = msg.get("to_id")
-            except json.JSONDecodeError:
-                await websocket.send_json({"error": "Invalid JSON"})
-                continue
-
-            # REQUIRED: Must specify who to send to
-            if not text or not to_type or not to_id:
-                await websocket.send_json({
-                    "error": "Missing text/to_type/to_id",
-                    "example": {"text": "Hi", "to_type": "customers", "to_id": 8}
-                })
-                continue
-
-            to_id_str = str(to_id)
-
-            # VALIDATE: You must have an active chat with this person
-            if not manager.is_chatting_with(client_type, user_id, to_type, to_id_str):
-                await websocket.send_json({"error": "No active chat with this user"})
-                continue
-
-            # BUILD MESSAGE
-            payload = {
-                "from_type": client_type,
-                "from_id": user_id,
-                "from_name": getattr(websocket.state, "username", user_id),  # optional
-                "text": text,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-            # SEND ONLY TO THIS ONE PERSON
-            channel = f"msg:{to_type}:{to_id_str}"
-            await redis.publish(channel, json.dumps(payload))
-            await manager.send_to(payload, to_type, to_id_str)
-
-            # Optional: Confirm sent
-            await websocket.send_json({"status": "sent", "to": f"{to_type}:{to_id_str}"})
-
-    except WebSocketDisconnect:
-        pass
-    finally:
-        manager.disconnect(client_type, user_id)
+#     except WebSocketDisconnect:
+#         pass
+#     finally:
+#         manager.disconnect("customers" if client_type == "customer" else "vendors", user_id)
 
 
 
@@ -641,18 +568,91 @@ async def websocket_endpoint(
 
 
 
-@router.websocket("/ws/")
-async def ws_endpoint(ws: WebSocket):
-    client_type = ws.query_params.get("client_type")  # "riders" / "customers" / "vendors"
-    user_id = ws.query_params.get("user_id")          # e.g. "123"
-    if not client_type or not user_id:
-        await ws.close(code=4001)
-        return
+# @router.websocket("/ws/{client_type}/{user_id}")
+# async def websocket_endpoint(
+#     websocket: WebSocket,
+#     client_type: str,
+#     user_id: str,
+#     redis = Depends(get_redis)
+# ):
+#     if client_type not in {"riders", "customers", "vendors"}:
+#         await websocket.close(code=1008)
+#         return
 
-    await manager.connect(ws, client_type, user_id)
-    try:
-        while True:
-            await ws.receive_text()  # keep connection alive; ignore inbound payloads for test
-    except WebSocketDisconnect:
-        manager.disconnect(client_type, user_id)
+#     await manager.connect(websocket, client_type, user_id)
+
+#     try:
+#         while True:
+#             raw = await websocket.receive_text()
+#             raw = raw.strip()
+#             if not raw:
+#                 continue
+
+#             try:
+#                 msg = json.loads(raw)
+#                 text = msg.get("text", "")
+#                 to_type = msg.get("to_type")
+#                 to_id = msg.get("to_id")
+#             except json.JSONDecodeError:
+#                 await websocket.send_json({"error": "Invalid JSON"})
+#                 continue
+
+#             # REQUIRED: Must specify who to send to
+#             if not text or not to_type or not to_id:
+#                 await websocket.send_json({
+#                     "error": "Missing text/to_type/to_id",
+#                     "example": {"text": "Hi", "to_type": "customers", "to_id": 8}
+#                 })
+#                 continue
+
+#             to_id_str = str(to_id)
+
+#             # VALIDATE: You must have an active chat with this person
+#             if not manager.is_chatting_with(client_type, user_id, to_type, to_id_str):
+#                 await websocket.send_json({"error": "No active chat with this user"})
+#                 continue
+
+#             # BUILD MESSAGE
+#             payload = {
+#                 "from_type": client_type,
+#                 "from_id": user_id,
+#                 "from_name": getattr(websocket.state, "username", user_id),  # optional
+#                 "text": text,
+#                 "timestamp": datetime.utcnow().isoformat()
+#             }
+
+#             # SEND ONLY TO THIS ONE PERSON
+#             channel = f"msg:{to_type}:{to_id_str}"
+#             await redis.publish(channel, json.dumps(payload))
+#             await manager.send_to(payload, to_type, to_id_str)
+
+#             # Optional: Confirm sent
+#             await websocket.send_json({"status": "sent", "to": f"{to_type}:{to_id_str}"})
+
+#     except WebSocketDisconnect:
+#         pass
+#     finally:
+#         manager.disconnect(client_type, user_id)
+
+
+
+
+
+
+
+
+# @router.websocket("/ws/")
+# async def ws_endpoint(ws: WebSocket):
+#     client_type = ws.query_params.get("client_type")  # "riders" / "customers" / "vendors"
+#     user_id = ws.query_params.get("user_id")          # e.g. "123"
+#     if not client_type or not user_id:
+#         await ws.close(code=4001)
+#         return
+
+#     await manager.connect(ws, client_type, user_id)
+#     try:
+#         while True:
+#             await ws.receive_text()  # keep connection alive; ignore inbound payloads for test
+#     except WebSocketDisconnect:
+#         manager.disconnect(client_type, user_id)
 
