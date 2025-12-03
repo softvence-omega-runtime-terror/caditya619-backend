@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Form
-from applications.user.rider import RiderFeesAndBonuses
+from applications.user.rider import RiderFeesAndBonuses, RiderProfile
 from applications.user.models import User
 from app.token import get_current_user
 from tortoise.contrib.pydantic import pydantic_model_creator
+from .notifications import send_notification
+from app.utils.translator import translate
 
 
 
@@ -20,8 +22,8 @@ RiderFeesAndBonuses_Pydantic = pydantic_model_creator(RiderFeesAndBonuses, name=
 
 
 @router.get("/test-admin-points/")
-async def test_admin_points():
-    return {"message": "Admin Rider Points route is working!"}
+async def test_admin_points(lang:str = "eng"):
+    return {"message": translate("Admin Rider Points route is working!", lang)}
 
 
 
@@ -101,4 +103,46 @@ async def update_rider_fees_and_bonus_rate(id:int,
     
     
 
+
+@router.get("/rider-document-check/{rider_id}", response_model=dict)
+async def check_rider_document(rider_id:str, user:User = Depends(get_current_user)):
+    if not user.is_superuser:
+        raise HTTPException(403, "Not authorized")
+    rider_profile = await RiderProfile.filter(user=rider_id).first()
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail=f"No profile found for {rider_id}")
+    
+    return {
+        "profile_image":rider_profile.profile_image,
+        "driving_license":rider_profile.driving_license_document,
+        "nid":rider_profile.national_id_document,
+        "vehicle_registration":rider_profile.vehicle_registration_document,
+        "vehicle_insurance":rider_profile.vehicle_insurance_document
+    }
+
+
+
+@router.put("/rider-document-approve/{rider_id}", response_model=dict)
+async def approve_rider_document(rider_id:str, is_verified:bool = Form(), user:User = Depends(get_current_user)):
+    if not user.is_superuser:
+        raise HTTPException(403, "Not authorized")
+    rider_profile = await RiderProfile.filter(user=rider_id).first()
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail=f"No profile found for {rider_id}")
+    if is_verified == True:
+        rider_profile.is_verified = True
+        await rider_profile.save()
+        try:
+            await send_notification(rider_id,"Your document has been verified","You are now eligible to earn points.")
+        except Exception as e:
+            print(e)
+        return {"message":"Document approved successfully"}
+    else:
+        rider_profile.is_verified = False
+        await rider_profile.save()
+        try:
+            await send_notification(rider_id,"Your document has been rejected","Please upload valid documents.")
+        except Exception as e:
+            print(e)
+        return {"message":"Document rejected successfully"}
 
