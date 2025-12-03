@@ -1,12 +1,13 @@
 
+from app.utils.get_location import get_location_name
 from tortoise import fields, models
 from enum import Enum
 # ==================== Enums ====================
 
 class OrderStatus(str, Enum):
-    PENDING = "pending"
-    CONFIRMED = "confirmed"
-    PROCESSING = "processing"
+    PENDING = "Placed"
+    CONFIRMED = "Accepted"
+    PROCESSING = "In_Progress"
     SHIPPED = "shipped"
     OUT_FOR_DELIVERY = "out_for_delivery"
     DELIVERED = "delivered"
@@ -40,7 +41,7 @@ class PaymentMethodType(str, Enum):
 
 class PaymentMethod(models.Model):
     id = fields.IntField(pk=True)  # Auto-incrementing integer
-    type = fields.CharEnumField(PaymentMethodType, max_length=20)
+    type = fields.CharEnumField(PaymentMethodType, max_length=20, default=PaymentMethodType.COD)
     title = fields.CharField(max_length=100)
     description = fields.TextField(null=True)
     is_active = fields.BooleanField(default=True)
@@ -138,8 +139,43 @@ class Order(models.Model):
     payment_session_id = fields.CharField(max_length=255, null=True)
     # Session ID to track the payment
 
+    async def get_all_vendors_locations(self):
+        """
+        Get ALL vendor locations if order has items from multiple vendors
+        """
+        
+        # Step 1: Load all data
+        await self.fetch_related("items__item__vendor__vendor_profile")
+        
+        # Step 2: Collect all unique vendors
+        vendors_locations = []
+        seen_vendor_ids = set()  # To avoid duplicates
+        
+        # Step 3: Loop through all order items
+        for order_item in self.items:
+            vendor = order_item.item.vendor
+            
+            # Skip if we already processed this vendor
+            if vendor.id in seen_vendor_ids:
+                continue
+            
+            # Check if vendor has profile and location
+            if hasattr(vendor, 'vendor_profile'):
+                profile = vendor.vendor_profile
+                
+                if profile.latitude and profile.longitude:
+                    vendors_locations.append({
+                        'vendor_id': vendor.id,
+                        'vendor_name': profile.owner_name,
+                        'latitude': profile.latitude,
+                        'longitude': profile.longitude,
+                        'is_active': profile.is_active
+                    })
+                    
+                    seen_vendor_ids.add(vendor.id)
+        
+        return vendors_locations
 
-    
     class Meta:
         table = "orders"
         ordering = ["-order_date"]

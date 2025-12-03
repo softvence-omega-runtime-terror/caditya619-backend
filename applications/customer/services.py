@@ -397,33 +397,134 @@ class OrderService:
 
 
     # ============= SERVICE METHODS FOR RETRIEVAL =============
-    async def get_order_by_id(self, order_id: str, current_user) -> dict:
-        """Get a single order by ID"""
-        try:
-            order = await Order.get(id=order_id, user_id=current_user.id).prefetch_related(
-                "items__item", "shipping_address", "user"
-            )
-            return self._format_order_response(order)
-        except Order.DoesNotExist:
+    async def get_all_orders(self, user: User, skip: int = 0, limit: int = 10):
+        """Get all orders for a user with vendor locations"""
+        
+        orders = await Order.filter(user=user).offset(skip).limit(limit).prefetch_related(
+            "items__item__vendor__vendor_profile",
+            "items__item",
+            "shipping_address"
+        )
+        
+        result = []
+        for order in orders:
+            # Get vendor locations
+            vendor_locations = await order.get_all_vendors_locations()
+            
+            # Get order items
+            items_data = []
+            for order_item in order.items:
+                items_data.append({
+                    "id": order_item.id,
+                    "item_id": order_item.item_id,
+                    "title": order_item.title,
+                    "price": order_item.price,
+                    "quantity": order_item.quantity,
+                    "image_path": order_item.image_path,
+                })
+            
+            # Prepare order data
+            order_data = {
+                "id": order.id,
+                "user_id": order.user_id,
+                "items": items_data,
+                "shipping_address": order.shipping_address,
+                "delivery_option": {
+                    "type": order.delivery_type.value if order.delivery_type else None,
+                    "title": order.delivery_type.value.replace('_', ' ').title() if order.delivery_type else None,
+                    "description": "",
+                    "price": float(order.delivery_fee),
+                },
+                "payment_method": {
+                    "type": order.payment_method.value if order.payment_method else None,
+                    "name": order.payment_method.value.upper() if order.payment_method else None,
+                },
+                "subtotal": order.subtotal,
+                "delivery_fee": order.delivery_fee,
+                "total": order.total,
+                "coupon_code": order.coupon_code,
+                "discount": order.discount,
+                "order_date": order.order_date,
+                "status": order.status.value,
+                "transaction_id": order.transaction_id,
+                "tracking_number": order.tracking_number,
+                "estimated_delivery": order.estimated_delivery,
+                "metadata": order.metadata,
+                "vendors": vendor_locations,  # ✅ Vendor locations
+            }
+            
+            result.append(order_data)
+        
+        return result
+    
+    async def get_order_by_id(self, order_id: str, user: User):
+        """Get a specific order with vendor locations"""
+        
+        order = await Order.filter(id=order_id, user=user).prefetch_related(
+            "items__item__vendor__vendor_profile",
+            "items__item",
+            "shipping_address"
+        ).first()
+        
+        if not order:
             raise ValueError(f"Order with id {order_id} not found")
-
-
-    async def get_all_orders(self, current_user, skip: int = 0, limit: int = 10) -> dict:
-        """Get all orders for the current user"""
-        orders = await Order.filter(user_id=current_user.id).prefetch_related(
-            "items__item", "shipping_address", "user"
-        ).offset(skip).limit(limit).order_by('-order_date')
         
-        total_count = await Order.filter(user_id=current_user.id).count()
+        # Get vendor locations
+        vendor_locations = await order.get_all_vendors_locations()
         
-        formatted_orders = [self._format_order_response(order) for order in orders]
+        # Get order items
+        items_data = []
+        for order_item in order.items:
+            items_data.append({
+                "id": order_item.id,
+                "item_id": order_item.item_id,
+                "title": order_item.title,
+                "price": order_item.price,
+                "quantity": order_item.quantity,
+                "image_path": order_item.image_path,
+            })
         
-        return {
-            "orders": formatted_orders,
-            "total": total_count,
-            "page": (skip // limit) + 1 if limit > 0 else 1,
-            "page_size": limit
+        # Prepare order data
+        order_data = {
+            "id": order.id,
+            "user_id": order.user_id,
+            "items": items_data,
+            "shipping_address": order.shipping_address,
+            "delivery_option": {
+                "type": order.delivery_type.value if order.delivery_type else None,
+                "title": order.delivery_type.value.replace('_', ' ').title() if order.delivery_type else None,
+                "description": "",
+                "price": float(order.delivery_fee),
+            },
+            "payment_method": {
+                "type": order.payment_method.value if order.payment_method else None,
+                "name": order.payment_method.value.upper() if order.payment_method else None,
+            },
+            "subtotal": order.subtotal,
+            "delivery_fee": order.delivery_fee,
+            "total": order.total,
+            "coupon_code": order.coupon_code,
+            "discount": order.discount,
+            "order_date": order.order_date,
+            "status": order.status.value,
+            "transaction_id": order.transaction_id,
+            "tracking_number": order.tracking_number,
+            "estimated_delivery": order.estimated_delivery,
+            "metadata": order.metadata,
+            "vendors": vendor_locations,  # ✅ Vendor locations
         }
+        
+        return order_data
+
+
+
+
+
+
+
+
+
+
 
 
     def _format_order_response(self, order) -> dict:
