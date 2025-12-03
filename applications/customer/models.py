@@ -15,9 +15,8 @@ class OrderStatus(str, Enum):
     REFUNDED = "refunded"
 
 class DeliveryTypeEnum(str, Enum):
-    STANDARD = "standard"
-    EXPRESS = "express"
-    PICKUP = "pickup"
+    COMBINED = "combined"
+    SPLIT = "split"
     URGENT = "urgent"
 
 # Create a proper Tortoise Model for delivery options

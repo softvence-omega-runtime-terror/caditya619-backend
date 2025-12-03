@@ -313,9 +313,8 @@ class OrderService:
 
     def _calculate_estimated_delivery(self, delivery_type: str) -> datetime:
         days_map = {
-            "standard": 5,
-            "express": 2,
-            "pickup": 1,
+            "combined": 5,
+            "split": 2,
             "urgent": 1
         }
         days = days_map.get(delivery_type, 5)
