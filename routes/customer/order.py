@@ -4,6 +4,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import os
+from applications.user import vendor
 from applications.user.models import *
 from applications.items.models import *
 from applications.customer.models import *
@@ -38,9 +39,9 @@ async def place_order(
         if not item:
             raise HTTPException(404, "Item not found")
         
-        vendor = await VendorProfile.get_or_none(id=item.vendor_id)
-        if not vendor:
-            raise HTTPException(404, "Vendor not found")
+        # vendor = await VendorProfile.get_or_none(id=item.vendor_id)
+        # if not vendor:
+        #     raise HTTPException(404, "Vendor not found")
 
         payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
         requires_payment = payment_method.lower() == "cashfree"
