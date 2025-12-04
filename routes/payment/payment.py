@@ -1,18 +1,20 @@
-# app/main.py
-from fastapi import FastAPI, APIRouter, HTTPException, Request
+from fastapi import Depends, FastAPI, APIRouter, HTTPException, Request
 from pydantic import BaseModel, validator
 import httpx
 import uuid
-import re
+import json
+import hmac
+import hashlib
 from app.config import settings
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-import httpx
-from app.config import settings
-from applications.customer.models import Order
+from app.redis import get_redis
+from applications.customer.models import Order, OrderStatus
+from applications.user.vendor import VendorProfile
+from routes.rider.websocket_endpoints import send_notification
+from app.utils.websocket_manager import manager
 
-CASHFREE_CLIENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
-CASHFREE_CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
+
+CASHFREE_CLIENT_PAYMENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
+CASHFREE_CLIENT_PAYMENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
 CASHFREE_ENV = settings.CASHFREE_ENV
 CASHFREE_BASE = "https://sandbox.cashfree.com/pg" if CASHFREE_ENV == "SANDBOX" else "https://api.cashfree.com/pg"
 CASHFREE_API_VERSION = "2023-08-01"
@@ -31,26 +33,25 @@ router = APIRouter(prefix='/payment', tags=['Payment'])
 
 @router.post("/initiate", response_model=PaymentLinkResponse)
 async def create_payment_link(req: PaymentInitiateRequest):
-    """Create a Cashfree payment link for an order"""
     
-    # Fetch order from database
     order = await Order.get_or_none(id=req.order_id).prefetch_related(
         'user', 
         'shipping_address'
     )
+
+
     
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    # Check if payment method is cashfree
     payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
+    
     if payment_method.lower() != "cashfree":
         raise HTTPException(
             status_code=400, 
             detail=f"Order payment method is {payment_method}, not Cashfree"
         )
     
-    # Check if order is in pending status
     order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
     if order_status.lower() != "pending":
         raise HTTPException(
@@ -58,23 +59,20 @@ async def create_payment_link(req: PaymentInitiateRequest):
             detail=f"Order is already {order_status}. Cannot create payment link."
         )
     
-    # Get customer details from order
     customer_name = order.shipping_address.full_name or order.user.name or "Customer"
     customer_email = order.shipping_address.email or order.user.email or f"customer_{order.user.id}@example.com"
     customer_phone = order.shipping_address.phone_number or "9999999999"
     
-    # Prepare Cashfree API headers
     headers = {
-        "x-client-id": CASHFREE_CLIENT_ID,
-        "x-client-secret": CASHFREE_CLIENT_SECRET,
+        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
+        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET,
         "x-api-version": CASHFREE_API_VERSION,
         "Content-Type": "application/json"
     }
     
-    # Generate unique Cashfree order ID
     cf_order_id = f"CF_{req.order_id}_{uuid.uuid4().hex[:8].upper()}"
     
-    # Prepare payment link payload
+    # FIXED: Added return_url in link_meta for callback
     payload = {
         "link_id": cf_order_id,
         "link_amount": float(order.total),
@@ -91,7 +89,8 @@ async def create_payment_link(req: PaymentInitiateRequest):
         },
         "link_meta": {
             "order_id": req.order_id,
-            "user_id": str(order.user.id)
+            "user_id": str(order.user.id),
+            "return_url": f"{settings.FRONTEND_URL}/payment-status?order_id={req.order_id}"
         }
     }
     
@@ -112,7 +111,6 @@ async def create_payment_link(req: PaymentInitiateRequest):
                 detail=f"Cashfree API error: {error_msg}"
             )
         
-        # Extract payment link
         payment_link = data.get("link_url")
         
         if not payment_link:
@@ -121,7 +119,6 @@ async def create_payment_link(req: PaymentInitiateRequest):
                 detail="Payment link not received from Cashfree"
             )
         
-        # Update order metadata with Cashfree details
         if order.metadata is None:
             order.metadata = {}
         
@@ -155,59 +152,211 @@ async def create_payment_link(req: PaymentInitiateRequest):
 
 
 @router.post("/webhook")
-async def cashfree_webhook(request: dict):
-    """Handle Cashfree payment webhook notifications"""
+async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
+    """
+    Cashfree webhook - automatically called when payment status changes
+    When payment is successful: PENDING → PROCESSING
+    """
     
-    # Extract relevant data from webhook
-    link_id = request.get("link_id")
-    link_status = request.get("link_status")
-    
-    if not link_id:
-        raise HTTPException(status_code=400, detail="Invalid webhook data")
-    
-    # Extract order_id from link_id (format: CF_order_xxx_HASH)
     try:
-        order_id = "_".join(link_id.split("_")[1:-1])
-    except:
-        raise HTTPException(status_code=400, detail="Invalid link_id format")
+        # Get raw body for signature verification
+        raw_body = await request.body()
+        body_str = raw_body.decode('utf-8')
+        payload = json.loads(body_str)
+        
+        # Verify webhook signature (IMPORTANT for security)
+        signature = request.headers.get("x-webhook-signature")
+        timestamp = request.headers.get("x-webhook-timestamp")
+        
+        if signature and timestamp:
+            signed_payload = f"{timestamp}.{body_str}"
+            computed_signature = hmac.new(
+                CASHFREE_CLIENT_SECRET.encode('utf-8'),
+                signed_payload.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            
+            if not hmac.compare_digest(computed_signature, signature):
+                print("[WEBHOOK] Invalid signature")
+                raise HTTPException(status_code=401, detail="Invalid webhook signature")
+        
+        # Extract payment data
+        data = payload.get("data", {})
+        link_id = data.get("link_id")
+        link_status = data.get("link_status")
+        
+        if not link_id:
+            raise HTTPException(status_code=400, detail="Invalid webhook data")
+        
+        print(f"[WEBHOOK] Received: link_id={link_id}, status={link_status}")
+        
+        # Find order by cf_link_id stored in metadata
+        orders = await Order.filter(
+            metadata__contains=link_id
+        ).prefetch_related('user', 'items__item__vendor')
+        
+        if not orders:
+            print(f"[WEBHOOK] Order not found for link_id: {link_id}")
+            return {"status": "ignored", "message": "Order not found"}
+        
+        order = orders[0]
+        
+        # Handle payment status
+        if link_status == "PAID":
+            # CRITICAL: Change status from PENDING to PROCESSING
+            order.status = OrderStatus.PROCESSING
+            order.payment_status = "paid"
+            
+            if order.metadata:
+                order.metadata["cashfree"]["payment_status"] = "PAID"
+                order.metadata["cashfree"]["paid_at"] = data.get("link_paid_at")
+                order.metadata["cashfree"]["payment_amount"] = data.get("link_amount_paid")
+            
+            await order.save()
+            
+            print(f"[WEBHOOK] ✅ Payment successful - Order {order.id} status: PENDING → PROCESSING")
+            
+            # Send notifications
+            try:
+                notification_payload = {
+                    "type": "payment_success",
+                    "order_id": order.id,
+                    "customer_name": order.user.name,
+                    "amount": float(order.total),
+                    "paid_at": data.get("link_paid_at"),
+                    "status": "PROCESSING"
+                }
+                
+                # WebSocket notifications
+                await manager.send_to(notification_payload, "customers", str(order.user.id), "notifications")
+                
+                # Notify customer
+                await send_notification(
+                    order.user.id,
+                    "Payment Successful",
+                    f"Your payment of ₹{order.total} was successful. Order #{order.id} is now being processed."
+                )
+                
+                # Notify all vendors
+                vendor_ids = set()
+                for item in order.items:
+                    vendor_ids.add(item.item.vendor_id)
+                
+                for vendor_id in vendor_ids:
+                    vendor = await VendorProfile.get_or_none(id=vendor_id)
+                    if vendor:
+                        await manager.send_to(notification_payload, "vendors", str(vendor.user_id), "notifications")
+                        await send_notification(
+                            vendor.user_id,
+                            "New Paid Order",
+                            f"New order #{order.id} received with confirmed payment."
+                        )
+                
+                # Redis pub/sub
+                await redis.publish("order_updates", json.dumps(notification_payload))
+                
+            except Exception as e:
+                print(f"[WEBHOOK] Notification error: {e}")
+            
+        elif link_status == "FAILED":
+            order.payment_status = "failed"
+            if order.metadata:
+                order.metadata["cashfree"]["payment_status"] = "FAILED"
+                order.metadata["cashfree"]["failed_at"] = data.get("link_failed_at")
+            await order.save()
+            
+            print(f"[WEBHOOK] ❌ Payment failed for order {order.id}")
+            
+            # Notify customer
+            try:
+                await send_notification(
+                    order.user.id,
+                    "Payment Failed",
+                    f"Your payment for order #{order.id} failed. Please try again."
+                )
+            except Exception as e:
+                print(f"[WEBHOOK] Notification error: {e}")
+            
+        elif link_status == "EXPIRED":
+            order.payment_status = "expired"
+            if order.metadata:
+                order.metadata["cashfree"]["payment_status"] = "EXPIRED"
+            await order.save()
+            
+            print(f"[WEBHOOK] ⏰ Payment link expired for order {order.id}")
+        
+        return {"status": "success", "message": "Webhook processed"}
+        
+    except Exception as e:
+        print(f"[WEBHOOK ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/verify/{order_id}")
+async def verify_payment_status(order_id: str):
+    """
+    Manually verify payment status and update order if needed.
+    This is a backup in case webhook fails.
+    """
     
-    # Find and update order
     order = await Order.get_or_none(id=order_id)
+    
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    # Update order based on payment status
-    if link_status == "PAID":
-        order.status = "CONFIRMED"  # or whatever status enum you use
-        if order.metadata:
-            order.metadata["cashfree"]["payment_status"] = "PAID"
-            order.metadata["cashfree"]["paid_at"] = request.get("link_paid_at")
-        await order.save()
-        
-        # TODO: Send notifications to customer and vendor
-        
-    elif link_status == "EXPIRED":
-        if order.metadata:
-            order.metadata["cashfree"]["payment_status"] = "EXPIRED"
-        await order.save()
+    # Get cf_link_id from order metadata
+    cashfree_data = order.metadata.get("cashfree", {}) if order.metadata else {}
+    cf_link_id = cashfree_data.get("cf_link_id")
     
-    return {"status": "success"}
-
-# @router.post("/webhook/cashfree/")
-# async def cashfree_webhook(request: Request):
-#     payload = await request.json()
-#     order_id = payload.get("order_id")
-#     status = payload.get("order_status")
-
-#     if order_id in ORDERS_DB:
-#         ORDERS_DB[order_id]["status"] = status
-
-#     return {"status": "ok", "received_order_id": order_id, "status_from_cashfree": status}
-
-# # Include router
-# app.include_router(router)
-
-# # Test root endpoint
-# @app.get("/")
-# def read_root():
-#     return {"message": "FastAPI + Cashfree Sandbox Example"}
+    if not cf_link_id:
+        raise HTTPException(status_code=400, detail="No Cashfree link found for this order")
+    
+    # Call Cashfree API to check link status
+    headers = {
+        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
+        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET,
+        "x-api-version": CASHFREE_API_VERSION,
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{CASHFREE_BASE}/links/{cf_link_id}",
+                headers=headers
+            )
+            
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=resp.status_code,
+                    detail=f"Failed to verify payment: {resp.text}"
+                )
+            
+            data = resp.json()
+            link_status = data.get("link_status")
+            
+            # Update order if payment was successful but status not updated
+            if link_status == "PAID" and order.payment_status != "paid":
+                order.status = OrderStatus.PROCESSING  # PENDING → PROCESSING
+                order.payment_status = "paid"
+                
+                if order.metadata:
+                    order.metadata["cashfree"]["payment_status"] = "PAID"
+                    order.metadata["cashfree"]["paid_at"] = data.get("link_paid_at")
+                
+                await order.save()
+                
+                print(f"[VERIFY] ✅ Order {order_id} status updated: PENDING → PROCESSING")
+            
+            return {
+                "order_id": order_id,
+                "link_status": link_status,
+                "payment_status": order.payment_status,
+                "order_status": order.status.value if hasattr(order.status, 'value') else str(order.status),
+                "amount_paid": data.get("link_amount_paid"),
+                "paid_at": data.get("link_paid_at")
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error verifying payment: {str(e)}")

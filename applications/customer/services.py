@@ -185,27 +185,26 @@ class ShippingAddressService:
 
 
 
+# ============================================================
+# SERVICE - applications.customer.services.py
+# ============================================================
+
 class OrderService:
-    
     @staticmethod
     def _generate_order_id() -> str:
-        """Generate unique order ID"""
         return f"ORD_{uuid.uuid4().hex[:8].upper()}"
 
     async def create_order(self, order_data: OrderCreateSchema, current_user) -> Order:
         subtotal = Decimal("0")
         order_items = []
-        
         user = current_user
         user_id = user.id
         
-        # Process items directly from order request
+        # Process order items
         for item_input in order_data.items:
             try:
-                # Fetch the item from database
                 item = await Item.get(id=item_input.item_id)
                 
-                # Check stock availability
                 if item.stock < item_input.quantity:
                     raise ValueError(f"Insufficient stock for item: {item.title}")
                 
@@ -227,33 +226,27 @@ class OrderService:
                 print(f"Error processing item {item_input.item_id}: {e}")
                 raise
         
-        # Calculate totals
         delivery_fee = Decimal(str(order_data.delivery_option.price))
         discount = self._apply_coupon(subtotal, order_data.coupon_code)
         total = subtotal + delivery_fee - discount
         
-        # Create shipping address
-        shipping_address_id = f"addr_{int(time.time() * 1000)}"
-        shipping_address = await CustomerShippingAddress.create(
-            id=shipping_address_id,
-            user_id=user_id,
-            full_name=order_data.shipping_address.full_name or "",
-            address_line1=order_data.shipping_address.address_line1 or "",
-            address_line2=order_data.shipping_address.address_line2 or "",
-            city=order_data.shipping_address.city or "",
-            state=order_data.shipping_address.state or "",
-            postal_code=order_data.shipping_address.postal_code or "",
-            country=order_data.shipping_address.country or "",
-            phone_number=order_data.shipping_address.phone_number or "",
-            is_default=order_data.shipping_address.is_default or False
-        )
+        # FIXED: Create order with temporary shipping address data (not saved separately)
+        order_id = self._generate_order_id()
         
-        # Create order
-        order_id = f"order_{int(time.time() * 1000)}"
+        # Store shipping address in metadata instead of creating separate record
+        shipping_data = {
+            "full_name": order_data.shipping_address.full_name or "",
+            "address_line1": order_data.shipping_address.address_line1 or "",
+            "address_line2": order_data.shipping_address.address_line2 or "",
+            "city": order_data.shipping_address.city or "",
+            "state": order_data.shipping_address.state or "",
+            "postal_code": order_data.shipping_address.postal_code or "",
+            "country": order_data.shipping_address.country or "",
+            "phone_number": order_data.shipping_address.phone_number or ""
+        }
         
-        # Store delivery and payment details in metadata
         order_metadata = {
-            "created_at": datetime.utcnow().isoformat(),
+            "shipping_address": shipping_data,
             "delivery_option": {
                 "type": order_data.delivery_option.type,
                 "title": getattr(order_data.delivery_option, 'title', ''),
@@ -269,7 +262,7 @@ class OrderService:
         order = await Order.create(
             id=order_id,  
             user_id=user_id,
-            shipping_address_id=shipping_address.id,
+            shipping_address_id=None,  # FIXED: No separate shipping address
             delivery_type=order_data.delivery_option.type, 
             payment_method=order_data.payment_method.type, 
             subtotal=subtotal,
@@ -278,6 +271,7 @@ class OrderService:
             coupon_code=order_data.coupon_code,
             discount=discount,
             status=OrderStatus.PENDING,
+            payment_status="unpaid",  # Always starts as unpaid
             tracking_number=self._generate_tracking_number(),
             estimated_delivery=self._calculate_estimated_delivery(
                 order_data.delivery_option.type
@@ -296,20 +290,17 @@ class OrderService:
                 image_path=item_data['image_path']
             )
             
-            # Update item stock
+            # Update stock
             item_data['item'].stock -= item_data['quantity']
             item_data['item'].total_sale += item_data['quantity']
             await item_data['item'].save(update_fields=['stock', 'total_sale'])
         
-        # Fetch related data
-        await order.fetch_related("shipping_address", "user", "items__item")
+        await order.fetch_related("user", "items__item")
         return order
-
 
     def _generate_tracking_number(self) -> str:
         import random
         return f"TRK{random.randint(100000000, 999999999)}"
-
 
     def _calculate_estimated_delivery(self, delivery_type: str) -> datetime:
         days_map = {
@@ -320,7 +311,6 @@ class OrderService:
         days = days_map.get(delivery_type, 5)
         return datetime.utcnow() + timedelta(days=days)
 
-
     @staticmethod
     def _apply_coupon(subtotal: Decimal, coupon_code: Optional[str]) -> Decimal:
         coupon_discounts = {
@@ -329,7 +319,6 @@ class OrderService:
             "WELCOME10": Decimal("10.0")
         }
         return coupon_discounts.get(coupon_code, Decimal("0.0"))
-
 
     # ============= SERVICE METHODS FOR UPDATE & CANCEL =============
     async def update_order(self, order_id: str, update_data: OrderUpdateSchema, current_user) -> dict:

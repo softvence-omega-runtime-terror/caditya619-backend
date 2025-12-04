@@ -304,6 +304,19 @@ class PaymentMethodResponseSchema(BaseModel):
     type: str
     name: str
 
+# ============================================================
+# SCHEMAS - applications.customer.schemas.py
+# ============================================================
+
+class RiderInfoSchema(BaseModel):
+    rider_id: Optional[int] = None
+    rider_name: Optional[str] = None
+    rider_phone: Optional[str] = None
+    rider_image: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
 class OrderResponseSchema(BaseModel):
     order_id: str = Field(..., alias="id")
     user_id: str
@@ -322,7 +335,10 @@ class OrderResponseSchema(BaseModel):
     tracking_number: Optional[str] = None
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
-    vendors: List[VendorLocationSchema] = []  # ✅ ADD THIS LINE
+    vendors: List[VendorLocationSchema] = []
+    rider_info: Optional[RiderInfoSchema] = None  # NEW: Rider information
+    payment_link: Optional[str] = None  # NEW: Payment link for unpaid orders
+    payment_status: str = "unpaid"  # NEW: Payment status
      
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):
@@ -336,8 +352,7 @@ class OrderResponseSchema(BaseModel):
     
     class Config:
         from_attributes = True
-        populate_by_name = True
-        
+        populate_by_name = True       
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
     first_name: Optional[str] = None
