@@ -24,25 +24,28 @@ async def place_order(
     current_user: User = Depends(get_current_user),
     redis = Depends(get_redis)
 ):
+    """
+    Place a new order. Returns payment URL if payment method is Cashfree.
+    For COD orders, the order is placed directly.
+    """
     service = OrderService()
     try:
         order = await service.create_order(order_data, current_user)
         delivery_info = order.metadata.get('delivery_option', {})
         payment_info = order.metadata.get('payment_method', {})
         
-        # Fixed: Get first order item instead of expecting exactly one
-        order_item = await OrderItem.filter(order=order).first()
-        if not order_item:
-            raise HTTPException(404, "Order item not found")
-        
-        item = await Item.get_or_none(id=order_item.item_id)
-        if not item:
-            raise HTTPException(404, "Item not found")
-        
+        # # Get vendor info for notifications
+        # order_item = await OrderItem.get_or_none(order=order)
+        # if not order_item:
+        #     raise HTTPException(404, "Order item not found")
+        # item = await Item.get_or_none(id=order_item.item_id)
+        # if not item:
+        #     raise HTTPException(404, "Item not found")
         # vendor = await VendorProfile.get_or_none(id=item.vendor_id)
         # if not vendor:
         #     raise HTTPException(404, "Vendor not found")
 
+        # Determine if payment is required
         payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
         requires_payment = payment_method.lower() == "cashfree"
         
@@ -68,6 +71,7 @@ async def place_order(
             }
         }
         
+        # For COD orders, send notifications immediately
         if not requires_payment:
             payload = {
                 "type": "order_placed",
@@ -102,6 +106,7 @@ async def place_order(
             except Exception as e:
                 print(f"Notification send error: {e}")
         else:
+            # For Cashfree orders, add note about payment requirement
             response_data["message"] = "Order created. Please proceed to payment."
             response_data["data"]["payment_instructions"] = (
                 "Call POST /payment/initiate with order_id to get payment URL"
@@ -113,6 +118,8 @@ async def place_order(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
+
+
 @router.get("/", status_code=status.HTTP_200_OK, response_model=List[OrderResponseSchema])
 async def get_all_orders(
     skip: int = 0,
