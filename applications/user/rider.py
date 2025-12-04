@@ -212,15 +212,15 @@ class Notification(models.Model):
     class Meta:
         table = "notifications"
 
-class Withdrawal(models.Model):
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
-    rider = fields.ForeignKeyField("models.RiderProfile", related_name="withdrawals")
-    amount = fields.DecimalField(max_digits=10, decimal_places=2)
-    status = fields.CharField(max_length=50, default="pending")
-    created_at = fields.DatetimeField(auto_now_add=True)
+# class Withdrawal(models.Model):
+#     id = fields.UUIDField(pk=True, default=uuid.uuid4)
+#     rider = fields.ForeignKeyField("models.RiderProfile", related_name="withdrawals")
+#     amount = fields.DecimalField(max_digits=10, decimal_places=2)
+#     status = fields.CharField(max_length=50, default="pending")
+#     created_at = fields.DatetimeField(auto_now_add=True)
 
-    class Meta:
-        table = "withdrawals"
+#     class Meta:
+#         table = "withdrawals"
 
 
 
@@ -351,3 +351,59 @@ class RiderReview(models.Model):
     comment = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
+
+
+
+
+
+class Withdrawal(models.Model):
+    """
+    Enhanced Withdrawal model with production features
+    """
+
+    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="withdrawals")
+    amount = fields.DecimalField(max_digits=10, decimal_places=2)
+
+    # Production status tracking
+    status = fields.CharField(
+        max_length=50,
+        default="pending",
+        choices=[
+            ("pending", "Pending"),
+            ("processing", "Processing"),
+            ("success", "Success"),
+            ("failed", "Failed"),
+            ("cancelled", "Cancelled"),
+        ],
+    )
+
+    # Idempotency – prevents duplicate processing of the same request
+    idempotency_key = fields.CharField(max_length=255, unique=True, null=True)
+
+    # Error tracking
+    error_message = fields.TextField(null=True)
+    last_error_type = fields.CharField(max_length=50, null=True)
+
+    # Cashfree integration
+    cashfree_transfer_id = fields.CharField(max_length=255, null=True)
+
+    # Retry tracking
+    retry_count = fields.IntField(default=0)
+    last_retry_at = fields.DatetimeField(null=True)
+
+    # Timestamps
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+    processed_at = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "withdrawals"
+        indexes = [
+            ("idempotency_key",),
+            ("rider_id", "status"),
+            ("created_at",),
+        ]
+
+    def __str__(self):
+        return f"Withdrawal {self.id}: {self.amount} ({self.status})"
