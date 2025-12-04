@@ -52,7 +52,7 @@ async def create_payment_link(req: PaymentInitiateRequest):
     
     # Check if order is in pending status
     order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-    if order_status.lower() != "placed":
+    if order_status.lower() != "pending":
         raise HTTPException(
             status_code=400, 
             detail=f"Order is already {order_status}. Cannot create payment link."
