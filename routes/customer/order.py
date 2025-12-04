@@ -4,6 +4,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import os
+from applications.user import vendor
 from applications.user.models import *
 from applications.items.models import *
 from applications.customer.models import *
@@ -33,16 +34,16 @@ async def place_order(
         delivery_info = order.metadata.get('delivery_option', {})
         payment_info = order.metadata.get('payment_method', {})
         
-        # Get vendor info for notifications
-        order_item = await OrderItem.get_or_none(order=order)
-        if not order_item:
-            raise HTTPException(404, "Order item not found")
-        item = await Item.get_or_none(id=order_item.item_id)
-        if not item:
-            raise HTTPException(404, "Item not found")
-        vendor = await VendorProfile.get_or_none(id=item.vendor_id)
-        if not vendor:
-            raise HTTPException(404, "Vendor not found")
+        # # Get vendor info for notifications
+        # order_item = await OrderItem.get_or_none(order=order)
+        # if not order_item:
+        #     raise HTTPException(404, "Order item not found")
+        # item = await Item.get_or_none(id=order_item.item_id)
+        # if not item:
+        #     raise HTTPException(404, "Item not found")
+        # vendor = await VendorProfile.get_or_none(id=item.vendor_id)
+        # if not vendor:
+        #     raise HTTPException(404, "Vendor not found")
 
         # Determine if payment is required
         payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)

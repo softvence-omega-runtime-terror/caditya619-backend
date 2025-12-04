@@ -70,3 +70,5 @@ class RestaurantProfile(models.Model):
 
     class Meta:
         table = "restaurant_profiles"
+
+

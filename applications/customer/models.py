@@ -5,14 +5,15 @@ from enum import Enum
 # ==================== Enums ====================
 
 class OrderStatus(str, Enum):
-    PENDING = "Placed"
-    CONFIRMED = "Accepted"
-    PROCESSING = "In_Progress"
+    PENDING = "pending"
+    PLACED = "processing"
+    CONFIRMED = "confirmed"
     SHIPPED = "shipped"
-    OUT_FOR_DELIVERY = "out_for_delivery"
+    OUT_FOR_DELIVERY = "outForDelivery"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
     REFUNDED = "refunded"
+
 
 class DeliveryTypeEnum(str, Enum):
     COMBINED = "combined"
