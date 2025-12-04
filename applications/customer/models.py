@@ -5,7 +5,8 @@ from enum import Enum
 # ==================== Enums ====================
 
 class OrderStatus(str, Enum):
-    PENDING = "Placed"
+    PENDING = "pending"
+    PLACED = "Placed"
     CONFIRMED = "Accepted"
     PROCESSING = "In_Progress"
     SHIPPED = "shipped"

@@ -323,7 +323,7 @@ class OrderResponseSchema(BaseModel):
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
     vendors: List[VendorLocationSchema] = []  # ✅ ADD THIS LINE
-    
+     
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):
         if hasattr(v, 'id'):
