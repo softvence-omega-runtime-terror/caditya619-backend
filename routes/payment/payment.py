@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import Depends, FastAPI, APIRouter, HTTPException, Request
 from pydantic import BaseModel, validator
 import httpx
@@ -31,127 +32,132 @@ class PaymentLinkResponse(BaseModel):
 
 router = APIRouter(prefix='/payment', tags=['Payment'])
 
-@router.post("/initiate", response_model=PaymentLinkResponse)
-async def create_payment_link(req: PaymentInitiateRequest):
+# @router.post("/initiate", response_model=PaymentLinkResponse)
+# async def create_payment_link(req: PaymentInitiateRequest):
     
-    order = await Order.get_or_none(id=req.order_id).prefetch_related(
-        'user', 
-        'shipping_address'
-    )
+#     order = await Order.get_or_none(id=req.order_id).prefetch_related(
+#         'user', 
+#         'shipping_address'
+#     )
 
 
     
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+#     if not order:
+#         raise HTTPException(status_code=404, detail="Order not found")
     
-    payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
+#     payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
     
-    if payment_method.lower() != "cashfree":
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Order payment method is {payment_method}, not Cashfree"
-        )
+#     if payment_method.lower() != "cashfree":
+#         raise HTTPException(
+#             status_code=400, 
+#             detail=f"Order payment method is {payment_method}, not Cashfree"
+#         )
     
-    order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-    if order_status.lower() != "pending":
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Order is already {order_status}. Cannot create payment link."
-        )
+#     order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
+#     if order_status.lower() != "pending":
+#         raise HTTPException(
+#             status_code=400, 
+#             detail=f"Order is already {order_status}. Cannot create payment link."
+#         )
     
-    customer_name = order.shipping_address.full_name or order.user.name or "Customer"
-    customer_email = order.shipping_address.email or order.user.email or f"customer_{order.user.id}@example.com"
-    customer_phone = order.shipping_address.phone_number or "9999999999"
+#     customer_name = order.shipping_address.full_name or order.user.name or "Customer"
+#     customer_email = order.shipping_address.email or order.user.email or f"customer_{order.user.id}@example.com"
+#     customer_phone = order.shipping_address.phone_number or "9999999999"
     
-    headers = {
-        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
-        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET,
-        "x-api-version": CASHFREE_API_VERSION,
-        "Content-Type": "application/json"
-    }
+#     headers = {
+#         "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
+#         "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET,
+#         "x-api-version": CASHFREE_API_VERSION,
+#         "Content-Type": "application/json"
+#     }
     
-    cf_order_id = f"CF_{req.order_id}_{uuid.uuid4().hex[:8].upper()}"
+#     cf_order_id = f"CF_{req.order_id}_{uuid.uuid4().hex[:8].upper()}"
     
-    # FIXED: Added return_url in link_meta for callback
-    payload = {
-        "link_id": cf_order_id,
-        "link_amount": float(order.total),
-        "link_currency": "INR",
-        "link_purpose": f"Payment for order {req.order_id}",
-        "customer_details": {
-            "customer_phone": customer_phone,
-            "customer_email": customer_email,
-            "customer_name": customer_name
-        },
-        "link_notify": {
-            "send_sms": True,
-            "send_email": True
-        },
-        "link_meta": {
-            "order_id": req.order_id,
-            "user_id": str(order.user.id),
-            "return_url": f"{settings.FRONTEND_URL}/payment-status?order_id={req.order_id}"
-        }
-    }
+#     # FIXED: Added return_url in link_meta for callback
+#     payload = {
+#         "link_id": cf_order_id,
+#         "link_amount": float(order.total),
+#         "link_currency": "INR",
+#         "link_purpose": f"Payment for order {req.order_id}",
+#         "customer_details": {
+#             "customer_phone": customer_phone,
+#             "customer_email": customer_email,
+#             "customer_name": customer_name
+#         },
+#         "link_notify": {
+#             "send_sms": True,
+#             "send_email": True
+#         },
+#         "link_meta": {
+#             "order_id": req.order_id,
+#             "user_id": str(order.user.id),
+#             "return_url": f"{settings.BACKEND_URL}/payment/payment/webhook/test"
+#         }
+#     }
+
+#     # http://localhost:5173/payment-status?order_id=76
+#     # http://127.0.0.1:8000/
+#     # "return_url": f"{settings.FRONTEND_URL}/payment-status?order_id={req.order_id}"
+
     
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{CASHFREE_BASE}/links",
-                json=payload,
-                headers=headers
-            )
+#     try:
+#         async with httpx.AsyncClient(timeout=30.0) as client:
+#             resp = await client.post(
+#                 f"{CASHFREE_BASE}/links",
+#                 json=payload,
+#                 headers=headers
+#             )
         
-        data = resp.json()
+#         data = resp.json()
         
-        if resp.status_code not in [200, 201]:
-            error_msg = data.get("message", "Payment link creation failed")
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail=f"Cashfree API error: {error_msg}"
-            )
+#         if resp.status_code not in [200, 201]:
+#             error_msg = data.get("message", "Payment link creation failed")
+#             raise HTTPException(
+#                 status_code=resp.status_code,
+#                 detail=f"Cashfree API error: {error_msg}"
+#             )
         
-        payment_link = data.get("link_url")
+#         payment_link = data.get("link_url")
         
-        if not payment_link:
-            raise HTTPException(
-                status_code=500,
-                detail="Payment link not received from Cashfree"
-            )
+#         if not payment_link:
+#             raise HTTPException(
+#                 status_code=500,
+#                 detail="Payment link not received from Cashfree"
+#             )
         
-        if order.metadata is None:
-            order.metadata = {}
+#         if order.metadata is None:
+#             order.metadata = {}
         
-        order.metadata["cashfree"] = {
-            "cf_link_id": cf_order_id,
-            "payment_link": payment_link,
-            "link_status": data.get("link_status"),
-            "created_at": data.get("link_created_at")
-        }
+#         order.metadata["cashfree"] = {
+#             "cf_link_id": cf_order_id,
+#             "payment_link": payment_link,
+#             "link_status": data.get("link_status"),
+#             "created_at": data.get("link_created_at")
+#         }
         
-        await order.save(update_fields=["metadata"])
+#         await order.save(update_fields=["metadata"])
         
-        return PaymentLinkResponse(
-            success=True,
-            order_id=req.order_id,
-            cf_order_id=cf_order_id,
-            payment_link=payment_link,
-            message="Payment link created successfully"
-        )
+#         return PaymentLinkResponse(
+#             success=True,
+#             order_id=req.order_id,
+#             cf_order_id=cf_order_id,
+#             payment_link=payment_link,
+#             message="Payment link created successfully"
+#         )
         
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Failed to connect to Cashfree: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error creating payment link: {str(e)}"
-        )
+#     except httpx.RequestError as e:
+#         raise HTTPException(
+#             status_code=503,
+#             detail=f"Failed to connect to Cashfree: {str(e)}"
+#         )
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Error creating payment link: {str(e)}"
+#         )
 
 
-@router.post("/webhook")
+@router.get("/webhook")
 async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
     """
     Cashfree webhook - automatically called when payment status changes
@@ -159,36 +165,69 @@ async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
     """
     
     try:
-        # Get raw body for signature verification
+        # Get raw body
         raw_body = await request.body()
         body_str = raw_body.decode('utf-8')
-        payload = json.loads(body_str)
         
-        # Verify webhook signature (IMPORTANT for security)
+        print(f"[WEBHOOK] Received request")
+        print(f"[WEBHOOK] Headers: {dict(request.headers)}")
+        print(f"[WEBHOOK] Raw body: {body_str}")
+        
+        # Handle empty body
+        if not body_str or body_str.strip() == "":
+            print("[WEBHOOK] Empty body received")
+            return {
+                "status": "ignored", 
+                "message": "Empty webhook body",
+                "note": "This might be a test ping from Cashfree. No action needed."
+            }
+        
+        # Try to parse JSON
+        try:
+            payload = json.loads(body_str)
+        except json.JSONDecodeError as e:
+            print(f"[WEBHOOK] JSON decode error: {str(e)}")
+            print(f"[WEBHOOK] Body content: {body_str[:200]}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid JSON payload: {str(e)}"
+            )
+        
+        # Verify webhook signature (if present)
         signature = request.headers.get("x-webhook-signature")
         timestamp = request.headers.get("x-webhook-timestamp")
         
-        if signature and timestamp:
+        if signature and timestamp and CASHFREE_CLIENT_PAYMENT_SECRET:
             signed_payload = f"{timestamp}.{body_str}"
             computed_signature = hmac.new(
-                CASHFREE_CLIENT_SECRET.encode('utf-8'),
+                CASHFREE_CLIENT_PAYMENT_SECRET.encode('utf-8'),
                 signed_payload.encode('utf-8'),
                 hashlib.sha256
             ).hexdigest()
             
             if not hmac.compare_digest(computed_signature, signature):
-                print("[WEBHOOK] Invalid signature")
+                print("[WEBHOOK] ❌ Invalid signature")
                 raise HTTPException(status_code=401, detail="Invalid webhook signature")
+            
+            print("[WEBHOOK] ✅ Signature verified")
+        else:
+            print("[WEBHOOK] ⚠️  No signature to verify (might be test webhook)")
         
         # Extract payment data
-        data = payload.get("data", {})
+        # Cashfree sends different payload structures, handle both
+        if "data" in payload:
+            data = payload.get("data", {})
+        else:
+            data = payload  # Some webhooks send data directly
+        
         link_id = data.get("link_id")
         link_status = data.get("link_status")
         
-        if not link_id:
-            raise HTTPException(status_code=400, detail="Invalid webhook data")
+        print(f"[WEBHOOK] Parsed - link_id: {link_id}, status: {link_status}")
         
-        print(f"[WEBHOOK] Received: link_id={link_id}, status={link_status}")
+        if not link_id:
+            print("[WEBHOOK] No link_id in payload")
+            raise HTTPException(status_code=400, detail="Invalid webhook data: missing link_id")
         
         # Find order by cf_link_id stored in metadata
         orders = await Order.filter(
@@ -197,20 +236,42 @@ async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
         
         if not orders:
             print(f"[WEBHOOK] Order not found for link_id: {link_id}")
-            return {"status": "ignored", "message": "Order not found"}
+            # Try to extract order_id from link_id as fallback
+            try:
+                # Format: CF_ORD_12345678_ABC123
+                parts = link_id.split("_")
+                if len(parts) >= 3:
+                    order_id = "_".join(parts[1:-1])
+                    print(f"[WEBHOOK] Trying fallback order_id: {order_id}")
+                    order = await Order.get_or_none(id=order_id).prefetch_related('user', 'items__item__vendor')
+                    if order:
+                        orders = [order]
+            except Exception as e:
+                print(f"[WEBHOOK] Fallback failed: {e}")
+            
+            if not orders:
+                return {"status": "ignored", "message": "Order not found"}
         
         order = orders[0]
+        print(f"[WEBHOOK] Found order: {order.id}")
         
         # Handle payment status
         if link_status == "PAID":
+            print(f"[WEBHOOK] Processing PAID status for order {order.id}")
+            
             # CRITICAL: Change status from PENDING to PROCESSING
             order.status = OrderStatus.PROCESSING
             order.payment_status = "paid"
             
-            if order.metadata:
-                order.metadata["cashfree"]["payment_status"] = "PAID"
-                order.metadata["cashfree"]["paid_at"] = data.get("link_paid_at")
-                order.metadata["cashfree"]["payment_amount"] = data.get("link_amount_paid")
+            if order.metadata is None:
+                order.metadata = {}
+            
+            if "cashfree" not in order.metadata:
+                order.metadata["cashfree"] = {}
+            
+            order.metadata["cashfree"]["payment_status"] = "PAID"
+            order.metadata["cashfree"]["paid_at"] = data.get("link_paid_at", datetime.utcnow().isoformat())
+            order.metadata["cashfree"]["payment_amount"] = data.get("link_amount_paid")
             
             await order.save()
             
@@ -228,7 +289,7 @@ async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
                 }
                 
                 # WebSocket notifications
-                await manager.send_to(notification_payload, "customers", str(order.user.id), "notifications")
+                await manager.send_to(notification_payload, "customers", str(order.user.id))
                 
                 # Notify customer
                 await send_notification(
@@ -245,7 +306,7 @@ async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
                 for vendor_id in vendor_ids:
                     vendor = await VendorProfile.get_or_none(id=vendor_id)
                     if vendor:
-                        await manager.send_to(notification_payload, "vendors", str(vendor.user_id), "notifications")
+                        await manager.send_to(notification_payload, "vendors", str(vendor.user_id))
                         await send_notification(
                             vendor.user_id,
                             "New Paid Order",
@@ -253,16 +314,31 @@ async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
                         )
                 
                 # Redis pub/sub
-                await redis.publish("order_updates", json.dumps(notification_payload))
+                if redis:
+                    await redis.publish("order_updates", json.dumps(notification_payload))
+                
+                print("[WEBHOOK] ✅ Notifications sent")
                 
             except Exception as e:
                 print(f"[WEBHOOK] Notification error: {e}")
+                import traceback
+                traceback.print_exc()
             
         elif link_status == "FAILED":
+            print(f"[WEBHOOK] Processing FAILED status for order {order.id}")
+            
             order.payment_status = "failed"
-            if order.metadata:
-                order.metadata["cashfree"]["payment_status"] = "FAILED"
-                order.metadata["cashfree"]["failed_at"] = data.get("link_failed_at")
+            
+            if order.metadata is None:
+                order.metadata = {}
+            
+            if "cashfree" not in order.metadata:
+                order.metadata["cashfree"] = {}
+                
+            order.metadata["cashfree"]["payment_status"] = "FAILED"
+            order.metadata["cashfree"]["failed_at"] = data.get("link_failed_at", datetime.utcnow().isoformat())
+            order.metadata["cashfree"]["failure_reason"] = data.get("failure_reason")
+            
             await order.save()
             
             print(f"[WEBHOOK] ❌ Payment failed for order {order.id}")
@@ -278,21 +354,84 @@ async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
                 print(f"[WEBHOOK] Notification error: {e}")
             
         elif link_status == "EXPIRED":
+            print(f"[WEBHOOK] Processing EXPIRED status for order {order.id}")
+            
             order.payment_status = "expired"
-            if order.metadata:
-                order.metadata["cashfree"]["payment_status"] = "EXPIRED"
+            
+            if order.metadata is None:
+                order.metadata = {}
+            
+            if "cashfree" not in order.metadata:
+                order.metadata["cashfree"] = {}
+                
+            order.metadata["cashfree"]["payment_status"] = "EXPIRED"
+            order.metadata["cashfree"]["expired_at"] = datetime.utcnow().isoformat()
+            
             await order.save()
             
             print(f"[WEBHOOK] ⏰ Payment link expired for order {order.id}")
         
+        else:
+            print(f"[WEBHOOK] Unknown status: {link_status}")
+        
         return {"status": "success", "message": "Webhook processed"}
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         print(f"[WEBHOOK ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        # Return 200 to prevent Cashfree from retrying
+        # But log the error
+        return {
+            "status": "error", 
+            "message": str(e),
+            "note": "Error logged but returning 200 to prevent retry"
+        }
 
+
+# ============================================================
+# ADD: Test Webhook Endpoint
+# ============================================================
+
+@router.get("/webhook/test")
+async def test_webhook(request: Request):
+    """
+    Test endpoint to simulate webhook calls.
+    Use this to test your webhook handler locally.
+    """
+    
+    try:
+        raw_body = await request.body()
+        body_str = raw_body.decode('utf-8')
+        
+        print(f"[TEST WEBHOOK] Body: {body_str}")
+        
+        if not body_str:
+            return {"error": "Empty body"}
+        
+        try:
+            payload = json.loads(body_str)
+            return {
+                "status": "success",
+                "message": "Test webhook received",
+                "parsed_data": payload
+            }
+        except json.JSONDecodeError as e:
+            return {
+                "error": "Invalid JSON",
+                "details": str(e),
+                "body": body_str[:200]
+            }
+            
+    except Exception as e:
+        return {
+            "error": str(e),
+            "type": type(e).__name__
+        }
 
 @router.get("/verify/{order_id}")
 async def verify_payment_status(order_id: str):

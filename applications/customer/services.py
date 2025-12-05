@@ -499,7 +499,7 @@ class OrderService:
             "tracking_number": order.tracking_number,
             "estimated_delivery": order.estimated_delivery,
             "metadata": order.metadata,
-            "vendors": vendor_locations,  # ✅ Vendor locations
+            "vendors": vendor_locations,  
         }
         
         return order_data

@@ -6,7 +6,7 @@ from applications.customer.models import *
 from applications.customer.schemas import *
 from app.token import get_current_user
 
-router = APIRouter(prefix="/carts", tags=["Cart"])
+# router = APIRouter(prefix="/carts", tags=["Cart"])
 
 @router.get("/{cart_id}/")
 async def get_cart(cart_id: str, current_user = Depends(get_current_user)):
