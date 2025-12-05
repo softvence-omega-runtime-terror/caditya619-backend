@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     SECRET_KEY: Optional[str] = None
     BASE_URL: str = "http://localhost:8000/"
     RADIS_URL: str = "redis://localhost:6379/0"
+    FRONTEND_URL: str = "http://localhost:5173"
+    BACKEND_URL: str = "http://127.0.0.1:8000"
     CASHFREE_CLIENT_PAYMENT_ID: str = ""
     CASHFREE_CLIENT_PAYMENT_SECRET: str = ""
     CASHFREE_CLIENT_PAYOUT_ID: str = ""

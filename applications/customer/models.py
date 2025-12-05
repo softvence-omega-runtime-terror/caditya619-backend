@@ -82,11 +82,11 @@ class Order(models.Model):
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
     rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_orders", on_delete=fields.CASCADE, null=True)
 
-    shipping_address = fields.ForeignKeyField(
-        "models.CustomerShippingAddress",
-        related_name="orders",
-        null=True
-    )
+    # shipping_address = fields.ForeignKeyField(
+    #     "models.CustomerShippingAddress",
+    #     related_name="orders",
+    #     null=True
+    # )
     
     delivery_type = fields.CharEnumField(
         DeliveryTypeEnum,
@@ -130,7 +130,16 @@ class Order(models.Model):
     is_combined = fields.BooleanField(default=False)
     combined_pickups = fields.JSONField(null=True)  # list of dicts: [{"name": "Thai Spice", "amount": 44}]
 
-    payment_status = fields.CharField(max_length=50, default="unpaid")
+    payment_status = fields.CharField(
+        max_length=50, 
+        default="unpaid"
+    )  # Values: "unpaid", "paid", "failed", "expired", "cod"
+    
+    shipping_address_id = fields.ForeignKeyField(
+        "models.CustomerShippingAddress",
+        related_name="orders",
+        null=True  # ← Make this nullable
+    )
     # Tracks if payment is done: "unpaid", "paid", "failed"
     
     cf_order_id = fields.CharField(max_length=255, null=True)
