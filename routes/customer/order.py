@@ -139,7 +139,7 @@ async def place_order(
 # 2. GET ALL ORDERS (with filters and pagination)
 # ============================================================
 
-@router.get("/", response_model=List[OrderResponseSchema])
+@router.get("/")  # ✅ NO response_model here!
 async def get_all_orders(
     current_user: User = Depends(get_current_user),
     status_filter: Optional[str] = Query(None, description="Filter by status: pending, processing, confirmed, etc."),
@@ -156,10 +156,8 @@ async def get_all_orders(
     
     # Build query
     if current_user.is_staff:
-        # Admin sees all orders
         query = Order.all()
     else:
-        # Regular user sees only their orders
         query = Order.filter(user_id=current_user.id)
     
     # Apply status filter
@@ -247,24 +245,23 @@ async def get_all_orders(
             "shipping_address": shipping_address,
             "delivery_option": delivery_option,
             "payment_method": payment_method,
-            "subtotal": order.subtotal,
-            "delivery_fee": order.delivery_fee,
-            "total": order.total,
+            "subtotal": float(order.subtotal),
+            "delivery_fee": float(order.delivery_fee),
+            "total": float(order.total),
             "coupon_code": order.coupon_code,
-            "discount": order.discount,
-            "order_date": order.order_date,
+            "discount": float(order.discount),
+            "order_date": order.order_date.isoformat(),
             "status": order_status,
             "transaction_id": order.transaction_id,
             "tracking_number": order.tracking_number,
-            "estimated_delivery": order.estimated_delivery,
+            "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
             "payment_status": order.payment_status,
             "payment_link": payment_link,
             "vendors": vendors_locations,
-            "rider_info": rider_info,
-            "metadata": order.metadata
+            "rider_info": rider_info
         })
     
-    # Add pagination metadata to response
+    # Return with pagination metadata
     return {
         "total": total_count,
         "limit": limit,
