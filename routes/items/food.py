@@ -69,8 +69,8 @@ async def serialize_item(item: Item):
 async def create_item(
         title: str = Form(...),
         description: Optional[str] = Form(None),
-        category_id: int = Form(...),
         subcategory_id: Optional[int] = Form(None),
+        sub_subcategory_id: Optional[int] = Form(None),
         price: float = Form(0.0),
         discount: int = Form(0),
         stock: int = Form(0),
@@ -84,13 +84,15 @@ async def create_item(
         vendor: User = Depends(get_current_user)
 ):
     async with in_transaction() as conn:
-        category = await Category.get_or_none(id=category_id, using_db=conn)
-        if not category and not category.type=='food':
-            raise HTTPException(status_code=404, detail="Category not found")
-        if vendor.vendor_profile.type != 'food':
+        vendor_profile = await vendor.vendor_profile
+        category = await Category.filter(type='food').first()
+        if vendor_profile.type != 'food':
             raise HTTPException(status_code=403, detail="Vendor type mismatch")
 
         subcategory = await SubCategory.get_or_none(id=subcategory_id, using_db=conn) if subcategory_id else None
+        sub_subcategory = await SubSubCategory.get_or_none(
+            id=sub_subcategory_id, using_db=conn
+        ) if sub_subcategory_id else None
 
         img_path = None
         if image:

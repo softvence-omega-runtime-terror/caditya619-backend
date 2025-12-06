@@ -2,6 +2,7 @@ import time
 from tortoise import fields, models
 from fastapi import Depends
 from app.token import get_current_user
+from applications.items.models import Item
 current_user = Depends(get_current_user)
 
 class CustomerProfile(models.Model):
@@ -15,6 +16,7 @@ class CustomerProfile(models.Model):
 
     customer_lat = fields.FloatField(null=True)
     customer_lng = fields.FloatField(null=True)
+
     # photo = fields.CharField(max_length=20, null=True, blank=True)
     class Meta:
         table = "cus_profile"
@@ -26,14 +28,11 @@ class CustomerProfile(models.Model):
             return existing
         profile = await cls.create(user=user)
         return profile
-
-
-
-
+    
 class CustomerShippingAddress(models.Model):
     """Shipping Address Model"""
     ADDRESS_TYPES = ["HOME", "Office", "OTHERS"]
-
+    
     id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField(
         "models.User", related_name="shipping_addresses", on_delete=fields.CASCADE

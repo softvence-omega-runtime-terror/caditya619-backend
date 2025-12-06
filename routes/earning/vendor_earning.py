@@ -115,9 +115,7 @@ async def admin_process(transfer_id: str):
     # -------------------------
     if status_code in (200, 201):
         cf_status = (cf_resp.get("status") or "").upper()
-
         async with in_transaction():
-
             payout.cf_response = cf_resp
             payout.amount_in_paise = int(payout.amount * 100)
 
