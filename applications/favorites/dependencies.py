@@ -1,9 +1,9 @@
-# applications/items/favorites/dependencies.py
 from fastapi import Depends, HTTPException, status
 from applications.user.models import User
 from applications.user.customer import CustomerProfile
 from applications.favorites.models import CustomerFavoriteItem
 from app.token import get_current_user
+
 
 async def get_customer_profile(
     current_user: User = Depends(get_current_user)
