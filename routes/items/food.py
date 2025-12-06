@@ -263,7 +263,6 @@ async def patch_item(
         item_id: int,
         title: Optional[str] = Form(None),
         description: Optional[str] = Form(None),
-        category_id: Optional[int] = Form(None),
         subcategory_id: Optional[int] = Form(None),
         price: Optional[float] = Form(None),
         discount: Optional[int] = Form(None),
@@ -282,13 +281,6 @@ async def patch_item(
         raise HTTPException(status_code=404, detail="Item not found")
 
     async with in_transaction() as conn:
-        # Update related fields if IDs provided
-        if category_id:
-            category = await Category.get_or_none(id=category_id, using_db=conn)
-            if not category:
-                raise HTTPException(status_code=404, detail="Category not found")
-            item.category = category
-
         if subcategory_id:
             subcategory = await SubCategory.get_or_none(id=subcategory_id, using_db=conn)
             if not subcategory:
