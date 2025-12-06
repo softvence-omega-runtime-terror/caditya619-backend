@@ -27,7 +27,18 @@ class PaymentLinkResponse(BaseModel):
 
 
 
+# ============================================================
+# Delivery Option Schema
+# ============================================================
 
+class DeliveryOptionResponseSchema(BaseModel):
+    type: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    price: float
+    
+    class Config:
+        from_attributes = True
 
 
 class PaymentCallbackSchema(BaseModel):
@@ -218,36 +229,25 @@ class ShippingAddressSchema(BaseModel):
     class Config:
         populate_by_name = True
         from_attributes = True
+# ============================================================
+# Shipping Address Schema
+# ============================================================
+
 class ShippingAddressResponseSchema(BaseModel):
-    """Shipping Address Response Schema"""
-    id: str
-    full_name: str = Field(..., alias="fullName")
-    address_line1: str = Field(..., alias="addressLine1")
-    address_line2: str = Field(..., alias="addressLine2")
-    city: Optional[str] = None
-    state: Optional[str] = None
-    postal_code: Optional[str] = Field(None, alias="postalCode")
-    country: Optional[str] = None
-    phone_number: str = Field(..., alias="phoneNumber")
-    is_default: bool = Field(..., alias="isDefault")
+    id: Optional[str] = None  # FIXED: Made optional
+    full_name: str
+    address_line1: str
+    address_line2: Optional[str] = None
+    city: str
+    state: str
+    postal_code: str
+    country: str
+    phone_number: str
+    isDefault: Optional[bool] = Field(default=False, alias="is_default")  # FIXED: Made optional with alias
     
     class Config:
-        populate_by_name = True
         from_attributes = True
-        json_schema_extra = {
-            "example": {
-                "id": "addr_1234567890",
-                "fullName": "John Doe",
-                "addressLine1": "123 Main Street",
-                "addressLine2": "Apt 4B",
-                "city": "New York",
-                "state": "NY",
-                "postalCode": "10001",
-                "country": "USA",
-                "phoneNumber": "+1234567890",
-                "isDefault": True
-            }
-        }
+        populate_by_name = True
 
 
 class OrderItemInputSchema(BaseModel):
@@ -268,41 +268,63 @@ class OrderUpdateSchema(BaseModel):
     estimated_delivery: Optional[datetime] = None
 
 
+# ============================================================
+# Order Item Schema
+# ============================================================
+
 class OrderItemResponseSchema(BaseModel):
-    id: int
+    id: Optional[int] = None  # FIXED: Made optional
     item_id: int
     title: str
     price: str
     quantity: int
     image_path: str
     
-    @validator('item_id', pre=True)
-    def convert_item_id(cls, v):
-        if hasattr(v, 'id'):
-            return int(v.id)
-        return int(v)
-    
     class Config:
         from_attributes = True
+
+# ============================================================
+# Vendor Location Schema
+# ============================================================
 
 class VendorLocationSchema(BaseModel):
     vendor_id: int
-    vendor_name: Optional[str] = None
+    vendor_name: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    is_active: bool = True
+    is_active: bool
     
     class Config:
         from_attributes = True
-class DeliveryOptionResponseSchema(BaseModel):
-    type: str
-    title: str
-    description: str
-    price: float
+
+
+# ============================================================
+# Payment Method Schema
+# ============================================================
 
 class PaymentMethodResponseSchema(BaseModel):
     type: str
-    name: str
+    name: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+# ============================================================
+# SCHEMAS - applications.customer.schemas.py
+# ============================================================
+
+class RiderInfoSchema(BaseModel):
+    rider_id: Optional[int] = None
+    rider_name: Optional[str] = None
+    rider_phone: Optional[str] = None
+    rider_image: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+# ============================================================
+# Order Response Schema
+# ============================================================
 
 class OrderResponseSchema(BaseModel):
     order_id: str = Field(..., alias="id")
@@ -322,7 +344,10 @@ class OrderResponseSchema(BaseModel):
     tracking_number: Optional[str] = None
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
-    vendors: List[VendorLocationSchema] = []  # ✅ ADD THIS LINE
+    vendors: List[VendorLocationSchema] = []
+    rider_info: Optional[RiderInfoSchema] = None
+    payment_link: Optional[str] = None
+    payment_status: str = "unpaid"
      
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):
@@ -336,8 +361,7 @@ class OrderResponseSchema(BaseModel):
     
     class Config:
         from_attributes = True
-        populate_by_name = True
-        
+        populate_by_name = True       
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
     first_name: Optional[str] = None
