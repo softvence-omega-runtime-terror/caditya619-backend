@@ -32,7 +32,7 @@ class CustomerProfile(models.Model):
 class CustomerShippingAddress(models.Model):
     """Shipping Address Model"""
     ADDRESS_TYPES = ["HOME", "Office", "OTHERS"]
-
+    
     id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField(
         "models.User", related_name="shipping_addresses", on_delete=fields.CASCADE

@@ -627,7 +627,7 @@ async def create_payment_link_internal(order: Order):
         "link_meta": {
             "order_id": order.id,
             "user_id": str(order.user.id),
-            "return_url": f"{settings.BACKEND_URL}/payment/payment/webhook/test"
+            "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last"
         }
     }
     
