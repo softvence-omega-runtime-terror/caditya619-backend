@@ -8,7 +8,9 @@ import hmac
 import hashlib
 from app.config import settings
 from app.redis import get_redis
+from app.token import get_current_user
 from applications.customer.models import Order, OrderStatus
+from applications.user.models import User
 from applications.user.vendor import VendorProfile
 from routes.rider.websocket_endpoints import send_notification
 from app.utils.websocket_manager import manager
@@ -397,41 +399,117 @@ async def cashfree_webhook(request: Request, redis = Depends(get_redis)):
 # ADD: Test Webhook Endpoint
 # ============================================================
 
-@router.get("/webhook/test")
-async def test_webhook(request: Request):
+# @router.get("/webhook/test")
+# async def test_webhook(request: Request):
+#     """
+#     Test endpoint to simulate webhook calls.
+#     Use this to test your webhook handler locally.
+#     """
+    
+#     try:
+#         raw_body = await request.body()
+#         body_str = raw_body.decode('utf-8')
+        
+#         print(f"[TEST WEBHOOK] Body: {body_str}")
+        
+#         if not body_str:
+#             return {"error": "Empty body"}
+        
+#         try:
+#             payload = json.loads(body_str)
+#             return {
+#                 "status": "success",
+#                 "message": "Test webhook received",
+#                 "parsed_data": payload
+#             }
+#         except json.JSONDecodeError as e:
+#             return {
+#                 "error": "Invalid JSON",
+#                 "details": str(e),
+#                 "body": body_str[:200]
+#             }
+            
+#     except Exception as e:
+#         return {
+#             "error": str(e),
+#             "type": type(e).__name__
+#         }
+
+@router.get("/test/pay-last")
+@router.post("/test/pay-last")
+async def pay_last_order_no_auth():
     """
-    Test endpoint to simulate webhook calls.
-    Use this to test your webhook handler locally.
+    TEST ONLY: Find and pay the most recent unpaid order.
+    Just open in browser: /payment/test/pay-last
+    
+    ⚠️ REMOVE THIS ENDPOINT IN PRODUCTION!
     """
     
-    try:
-        raw_body = await request.body()
-        body_str = raw_body.decode('utf-8')
-        
-        print(f"[TEST WEBHOOK] Body: {body_str}")
-        
-        if not body_str:
-            return {"error": "Empty body"}
-        
-        try:
-            payload = json.loads(body_str)
-            return {
-                "status": "success",
-                "message": "Test webhook received",
-                "parsed_data": payload
-            }
-        except json.JSONDecodeError as e:
-            return {
-                "error": "Invalid JSON",
-                "details": str(e),
-                "body": body_str[:200]
-            }
-            
-    except Exception as e:
+    # Find most recent unpaid order
+    order = await Order.filter(
+        payment_status="unpaid"
+    ).order_by('-created_at').first().prefetch_related('user', 'items__item__vendor')
+    
+    if not order:
         return {
-            "error": str(e),
-            "type": type(e).__name__
+            "success": False,
+            "message": "No unpaid orders found in the system"
         }
+    
+    # Update order
+    old_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
+    
+    order.status = OrderStatus.PROCESSING
+    order.payment_status = "paid"
+    
+    if order.metadata is None:
+        order.metadata = {}
+    
+    if "cashfree" not in order.metadata:
+        order.metadata["cashfree"] = {}
+    
+    order.metadata["cashfree"]["payment_status"] = "PAID"
+    order.metadata["cashfree"]["paid_at"] = datetime.utcnow().isoformat()
+    order.metadata["cashfree"]["payment_amount"] = float(order.total)
+    order.metadata["cashfree"]["test_no_auth_last"] = True
+    
+    await order.save()
+    
+    print(f"[NO-AUTH LAST] ✅ Order {order.id}: {old_status} → PROCESSING")
+    
+    # Send notifications
+    try:
+        await send_notification(
+            order.user.id,
+            "Payment Successful (TEST)",
+            f"Order #{order.id} payment confirmed."
+        )
+    except Exception as e:
+        print(f"[NO-AUTH LAST] Notification error: {e}")
+    
+    return {
+        "success": True,
+        "message": "✅ Most recent order marked as paid!",
+        "order_id": order.id,
+        "customer_name": order.user.name,
+        "old_status": old_status,
+        "new_status": "processing",
+        "payment_status": "paid",
+        "total": float(order.total),
+        "order_date": order.order_date.isoformat(),
+        "note": "⚠️ This is a TEST payment - remove this endpoint in production!"
+    }
+
+
+    return {
+        "success": True,
+        "message": "Last order marked as paid",
+        "order_id": order.id,
+        "old_status": old_status,
+        "new_status": "processing",
+        "total": float(order.total)
+    }
+
 
 @router.get("/verify/{order_id}")
 async def verify_payment_status(order_id: str):
