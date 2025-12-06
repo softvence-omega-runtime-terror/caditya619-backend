@@ -1,354 +1,594 @@
-# routes/withdrawals.py
-import os
-import uuid
-import decimal
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-import httpx
-from datetime import datetime
-from fastapi.responses import JSONResponse
+import time
+import hmac
+import hashlib
 import base64
-
-from tortoise.transactions import in_transaction
-try:
-    from cryptography.hazmat.primitives import serialization, hashes
-    from cryptography.hazmat.primitives.asymmetric import padding
-    HAS_CRYPTO = True
-except Exception:
-    HAS_CRYPTO = False
-
-# Import your Tortoise models
-from applications.user.rider import RiderProfile, Withdrawal  # adjust import to your project
-from app.token import get_current_user  # adjust according to your auth
+import requests
+import logging
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import Optional, Dict, Any
+import uuid
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from pydantic import BaseModel, Field, field_validator
+from app.config import settings
+from applications.user.rider import RiderProfile, Withdrawal, WorkDay
 from applications.user.models import User
+from app.token import get_current_user
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
 
+# ============================================================================
+# LOGGING SETUP
+# ============================================================================
+logger = logging.getLogger(__name__)
 
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+CLIENT_ID = settings.CASHFREE_CLIENT_PAYOUT_ID
+CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYOUT_SECRET
+PUBLIC_KEY = settings.CASHFREE_PUBLIC_KEY
+BASE_URL = "https://sandbox.cashfree.com/payout"  # Change to production URL in .env
 
-from passlib.context import CryptContext
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Payout configuration
+MINIMUM_WITHDRAWAL = Decimal("100.00")
+MAXIMUM_WITHDRAWAL = Decimal("100000.00")
+PROCESSING_FEE = Decimal("0.00")
 
-router = APIRouter(tags=['Rider Withdrawal'])
+# ============================================================================
+# ENUMS & CONSTANTS
+# ============================================================================
+class WithdrawalStatus:
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
-# Config (read from env)
-CASHFREE_CLIENT_ID="CF10898143D4L8U3J9JJ6C7392MESG"
-CASHFREE_CLIENT_SECRET="cfsk_ma_test_f5f0e8ab9488e7b93ac49303e203dc24_fd14c175"
-CASHFREE_API_VERSION="2024-01-01"
-CASHFREE_BASE_URL="https://sandbox.cashfree.com/payout"
+class ErrorType:
+    INVALID_ACCOUNT = "invalid_account"  # Don't retry
+    INSUFFICIENT_BALANCE = "insufficient_balance"  # Don't retry
+    NETWORK_ERROR = "network_error"  # Retry
+    API_ERROR = "api_error"  # Retry
+    UNKNOWN = "unknown"  # Retry
 
-if not CASHFREE_CLIENT_ID or not CASHFREE_CLIENT_SECRET:
-    # In dev it's helpful to raise early
-    raise RuntimeError("Set CASHFREE_CLIENT_ID and CASHFREE_CLIENT_SECRET in env")
+# ============================================================================
+# PYDANTIC MODELS (SCHEMAS)
+# ============================================================================
+class BeneficiaryCreate(BaseModel):
+    """Add bank details to rider profile"""
+    bank_account_number: str
+    bank_ifsc: str
+    bank_holder_name: str
 
-HEADERS = {
-    "x-api-version": CASHFREE_API_VERSION,
-    "x-client-id": CASHFREE_CLIENT_ID,
-    "x-client-secret": CASHFREE_CLIENT_SECRET,
-    "Content-Type": "application/json",
-}
-
-
-async def _create_beneficiary_if_not_exists(rider: RiderProfile) -> str:
-    """
-    Create (or reuse) a beneficiary id in Cashfree for a rider.
-    Returns beneficiary_id (string).
-    """
-    # Choose a safe beneficiary_id scheme
-    beneficiary_id = f"rider_{rider.id}"
-
-    payload = {
-        "beneficiary_id": beneficiary_id,
-        "beneficiary_name": rider.bank_holder_name or f"Rider {rider.id}",
-        "beneficiary_instrument_details": {
-            "bank_account_number": rider.bank_account_number,
-            "bank_ifsc": rider.bank_ifsc
-        },
-        "beneficiary_contact_details": {
-            # optional: include phone/email if available
-            "beneficiary_phone": getattr(rider, "phone", None) or "",
-            "beneficiary_email": getattr(rider, "email", None) or "",
-            "beneficiary_country_code": "+91"
+    class Config:
+        example = {
+            "bank_account_number": "026291800001191",
+            "bank_ifsc": "YESB0000262",
+            "bank_holder_name": "Moynul Islam"
         }
-    }
 
-    url = f"{CASHFREE_BASE_URL}/beneficiary"
+class WithdrawalRequest(BaseModel):
+    """Request withdrawal"""
+    amount: Decimal = Field(..., gt=0)
+    idempotency_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload, headers=HEADERS)
-        # 201 - created; 409 - already exists; other codes -> error
-        if resp.status_code in (200, 201):
-            return beneficiary_id
-        elif resp.status_code == 409:
-            # beneficiary exists — still return our beneficiary_id
-            return beneficiary_id
-        else:
-            # bubble up error details for debugging
-            raise HTTPException(status_code=502, detail={
-                "msg": "failed to create beneficiary",
-                "status": resp.status_code,
-                "body": resp.text
-            })
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v):
+        if v < MINIMUM_WITHDRAWAL or v > MAXIMUM_WITHDRAWAL:
+            raise ValueError(f"Amount must be between {MINIMUM_WITHDRAWAL} and {MAXIMUM_WITHDRAWAL}")
+        return v
 
+    class Config:
+        example = {
+            "amount": 5000.00,
+            "idempotency_key": "550e8400-e29b-41d4-a716-446655440000"
+        }
 
-async def _create_transfer(beneficiary_id: str, transfer_id: str, amount: decimal.Decimal) -> dict:
+class WithdrawalResponse(BaseModel):
+    """Response for withdrawal"""
+    id: UUID
+    amount: Decimal
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class BeneficiaryDetails(BaseModel):
+    """Get beneficiary details"""
+    bank_account_number: str
+    bank_ifsc: str
+    bank_holder_name: str
+    is_verified: bool
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+def generate_signature():
+    """Generate RSA-encrypted signature for Cashfree API"""
+    try:
+        timestamp = int(time.time())
+        sign_string = f"{CLIENT_ID}.{timestamp}".encode()
+        public_key = serialization.load_pem_public_key(PUBLIC_KEY.encode())
+        encrypted = public_key.encrypt(
+            sign_string,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA1()),
+                algorithm=hashes.SHA1(),
+                label=None,
+            )
+        )
+        signature = base64.b64encode(encrypted).decode()
+        return signature, str(timestamp)
+    except Exception as e:
+        logger.error(f"Error generating signature: {str(e)}")
+        raise
+
+def classify_error(status_code: int, response: dict) -> str:
+    """Classify error type to determine if we should retry"""
+    if status_code == 400:
+        error_code = response.get("code", "")
+        if "invalid" in error_code.lower() or "account" in error_code.lower():
+            return ErrorType.INVALID_ACCOUNT
+    elif status_code == 402:
+        return ErrorType.INSUFFICIENT_BALANCE
+    elif status_code in [500, 502, 503, 504]:
+        return ErrorType.API_ERROR
+    elif status_code >= 500:
+        return ErrorType.API_ERROR
+    return ErrorType.NETWORK_ERROR
+
+# ============================================================================
+# ROUTER SETUP
+# ============================================================================
+router = APIRouter(tags=["Withdrawals"])
+
+# ============================================================================
+# ENDPOINTS
+# ============================================================================
+
+@router.get("/test/")
+async def test():
+    return {"message": "Hello World"}
+
+@router.post("/beneficiary/add", status_code=201)
+async def add_beneficiary(
+    payload: BeneficiaryCreate,
+    user: User = Depends(get_current_user)
+):
     """
-    Start a transfer (v2 transfers). Returns response JSON.
-    amount is expected in rupees (decimal) - docs expect numeric (no paise multiplier required).
+    Add or update bank details for rider
+    This endpoint adds bank account details to the rider's profile.
     """
-    url = f"{CASHFREE_BASE_URL}/transfers"
-    payload = {
-        "transfer_id": transfer_id,
-        "transfer_amount": float(amount),  # Cashfree expects number
-        "beneficiary_details": {"beneficiary_id": beneficiary_id},
-        # optional: "transfer_mode": "BANK"
-    }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload, headers=HEADERS)
-        if resp.status_code in (200, 201):
-            return resp.json()
-        else:
-            raise HTTPException(status_code=502, detail={
-                "msg": "failed to create transfer",
-                "status": resp.status_code,
-                "body": resp.text
-            })
+    rider = await RiderProfile.get(user=user)
+    try:
+        # 1. Verify rider is allowed to add beneficiary
+        if not rider.is_verified:
+            raise HTTPException(
+                status_code=403,
+                detail="Rider must be verified to add bank details"
+            )
 
+        # 2. Update rider profile with bank details
+        rider.bank_account_number = payload.bank_account_number
+        rider.bank_ifsc = payload.bank_ifsc
+        rider.bank_holder_name = payload.bank_holder_name
+        rider.is_bank_verified = False
+        await rider.save()
 
-async def _get_transfer_status(transfer_id: Optional[str] = None, cf_transfer_id: Optional[str] = None) -> dict:
+        logger.info(f"Bank details updated for rider {rider.id}")
+        return {
+            "success": True,
+            "message": "Bank details saved successfully",
+            "data": {
+                "bank_account_number": f"****{payload.bank_account_number[-4:]}",
+                "bank_ifsc": payload.bank_ifsc,
+                "is_verified": rider.is_bank_verified
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding beneficiary: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save bank details")
+
+@router.get("/beneficiary")
+async def get_beneficiary(user: User = Depends(get_current_user)):
+    """Get rider's bank details"""
+    rider = await RiderProfile.get(user=user)
+    try:
+        if not rider.bank_account_number:
+            raise HTTPException(status_code=404, detail="No bank details found")
+        
+        return {
+            "bank_account_number": f"****{rider.bank_account_number[-4:]}",
+            "bank_ifsc": rider.bank_ifsc,
+            "bank_holder_name": rider.bank_holder_name,
+            "is_verified": rider.is_bank_verified,
+            "created_at": rider.updated_at
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting beneficiary: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch bank details")
+
+@router.post("/request", status_code=202)
+async def request_withdrawal(
+    payload: WithdrawalRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user)
+):
     """
-    Query Cashfree get-transfer-status V2.
-    You can call GET /payout/transfers with query params or body depending on API. We'll call the generic GET and pass transfer_id as a query param.
+    Request withdrawal (returns 202 Accepted, processes in background)
     """
-    url = f"{CASHFREE_BASE_URL}/transfers"
-    params = {}
-    if transfer_id:
-        params["transfer_id"] = transfer_id
-    if cf_transfer_id:
-        params["cf_transfer_id"] = cf_transfer_id
+    rider = await RiderProfile.get(user=user)
+    try:
+        # 1. Validate rider has bank details
+        if not rider.bank_account_number:
+            raise HTTPException(
+                status_code=400,
+                detail="Please add bank details before requesting withdrawal"
+            )
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(url, headers=HEADERS, params=params)
-        if resp.status_code == 200:
-            return resp.json()
-        else:
-            raise HTTPException(status_code=502, detail={
-                "msg": "failed to fetch transfer status",
-                "status": resp.status_code,
-                "body": resp.text
-            })
+        # 2. Check balance
+        if rider.current_balance < payload.amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient balance. Available: ₹{rider.current_balance}"
+            )
 
+        # 3. Check for duplicate request (idempotency)
+        existing = await Withdrawal.filter(
+            rider=rider,
+            status__in=[WithdrawalStatus.PENDING, WithdrawalStatus.PROCESSING]
+        ).first()
 
-async def _verify_signature(raw_body: bytes, signature_b64: str) -> None:
-    """
-    Verifies signature using CASHFREE_PUBLIC_KEY_PEM env var.
-    Raises Exception on verification failure.
-    """
-    if not HAS_CRYPTO:
-        raise RuntimeError("cryptography not installed for signature verification")
+        if existing:
+            # Convert ORM object to dict manually to avoid validation errors
+            existing_data = {
+                "id": existing.id,
+                "amount": existing.amount,
+                "status": existing.status,
+                "created_at": existing.created_at,
+                "updated_at": existing.updated_at
+            }
+            return {
+                "message": "Withdrawal already in progress",
+                "data": existing_data
+            }
 
-    pub_pem = os.getenv("CASHFREE_PUBLIC_KEY_PEM")
-    if not pub_pem:
-        raise RuntimeError("No public key configured in CASHFREE_PUBLIC_KEY_PEM")
-
-    sig_bytes = base64.b64decode(signature_b64)
-    pubkey = serialization.load_pem_public_key(pub_pem.encode())
-    # Cashfree signs raw body with RSA-SHA256 (this is typical). If they use different scheme adjust accordingly.
-    pubkey.verify(
-        sig_bytes,
-        raw_body,
-        padding.PKCS1v15(),
-        hashes.SHA256()
-    )
-
-
-
-
-@router.post("/withdraw/", status_code=status.HTTP_201_CREATED)
-async def request_withdrawal(amount: float, user: User = Depends(get_current_user)):
-    """
-    Rider requests a withdrawal. This will:
-      - validate rider/bank details and available balance,
-      - create Withdrawal row with status 'pending',
-      - create beneficiary in Cashfree (if not exists),
-      - create transfer in Cashfree and update Withdrawal record.
-    """
-    # fetch rider profile
-    rider = await RiderProfile.get_or_none(user=user)
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-
-    # validations
-    if not rider.bank_account_number or not rider.bank_ifsc or not rider.bank_holder_name:
-        raise HTTPException(status_code=400, detail="Missing bank details, cannot withdraw")
-
-    if decimal.Decimal(amount) <= 0:
-        raise HTTPException(status_code=400, detail="Invalid amount")
-
-    if rider.current_balance < decimal.Decimal(amount):
-        raise HTTPException(status_code=400, detail="Insufficient balance")
-
-    # transaction: create withdrawal row and try to call Cashfree
-    async with in_transaction() as conn:
+        # 4. Create withdrawal record
         withdrawal = await Withdrawal.create(
             rider=rider,
-            amount=decimal.Decimal(amount),
-            status="pending",
-            created_at=datetime.utcnow()
+            amount=payload.amount,
+            status=WithdrawalStatus.PENDING,
+            idempotency_key=payload.idempotency_key
         )
 
-        # create beneficiary
+        # 5. Deduct from balance immediately (pessimistic)
+        rider.current_balance -= payload.amount
+        await rider.save()
+
+        logger.info(f"Withdrawal {withdrawal.id} created for rider {rider.id}, amount: {payload.amount}")
+
+        await process_withdrawal(withdrawal_id=str(withdrawal.id), rider_id=rider.id)
+
+        # 6. Process in background
+        # background_tasks.add_task(
+        #     process_withdrawal,
+        #     withdrawal_id=withdrawal.id,
+        #     rider_id=rider.id
+        # )
+
+        return {
+            "message": "Withdrawal request accepted. Processing...",
+            "data": {
+                "id": str(withdrawal.id),
+                "amount": str(withdrawal.amount),
+                "status": withdrawal.status,
+                "created_at": withdrawal.created_at
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error requesting withdrawal: {str(e)}")
+        # Restore balance on error
         try:
-            beneficiary_id = await _create_beneficiary_if_not_exists(rider)
-        except HTTPException as e:
-            # update withdrawal status to failed
-            withdrawal.status = "failed"
-            withdrawal.remark = f"beneficiary error: {e.detail}"
-            await withdrawal.save()
-            raise
+            rider.current_balance += payload.amount
+            await rider.save()
+        except:
+            pass
+        raise HTTPException(status_code=500, detail="Failed to process withdrawal request")
 
-        # create unique transfer id
-        transfer_id = f"wd_{withdrawal.id}"
+@router.get("/{withdrawal_id}/status")
+async def get_withdrawal_status(
+    withdrawal_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Get withdrawal status"""
+    rider = await RiderProfile.get(user=user)
+    try:
+        withdrawal = await Withdrawal.get_or_none(
+            id=withdrawal_id,
+            rider=rider
+        )
 
-        try:
-            transfer_resp = await _create_transfer(beneficiary_id, transfer_id, decimal.Decimal(amount))
-        except HTTPException as e:
-            withdrawal.status = "failed"
-            withdrawal.remark = f"transfer error: {e.detail}"
-            await withdrawal.save()
-            raise
+        if not withdrawal:
+            raise HTTPException(status_code=404, detail="Withdrawal not found")
 
-        # On success, update withdrawal with reference
-        # Cashfree may provide cf_transfer_id or transfer_id in response
-        cf_transfer_id = transfer_resp.get("cf_transfer_id") or transfer_resp.get("data", {}).get("cf_transfer_id")
-        withdrawal.cashfree_transfer_id = cf_transfer_id or transfer_resp.get("transfer_id") or transfer_id
-        withdrawal.status = "processing"  # or 'initiated'
+        return {
+            "id": str(withdrawal.id),
+            "amount": str(withdrawal.amount),
+            "status": withdrawal.status,
+            "created_at": withdrawal.created_at,
+            "updated_at": withdrawal.updated_at
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting withdrawal status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch status")
+
+@router.get("/")
+async def list_withdrawals(
+    skip: int = 0,
+    limit: int = 20,
+    user: User = Depends(get_current_user)
+):
+    """List rider's withdrawals"""
+    rider = await RiderProfile.get(user=user)
+    try:
+        withdrawals = await Withdrawal.filter(rider=rider).offset(skip).limit(limit)
+        return {
+            "count": len(withdrawals),
+            "data": [
+                {
+                    "id": str(w.id),
+                    "amount": str(w.amount),
+                    "status": w.status,
+                    "created_at": w.created_at
+                }
+                for w in withdrawals
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error listing withdrawals: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch withdrawals")
+
+# ============================================================================
+# BACKGROUND PROCESSING
+# ============================================================================
+
+async def process_withdrawal(withdrawal_id: str, rider_id: int):
+    """
+    Process withdrawal in background
+    """
+    print("process_withdrawal")
+    try:
+        logger.info(f"Processing withdrawal {withdrawal_id}")
+        
+        # Get withdrawal and rider
+        withdrawal = await Withdrawal.get(id=withdrawal_id)
+        rider = await RiderProfile.get(id=rider_id)
+
+        # Update status to processing
+        withdrawal.status = WithdrawalStatus.PROCESSING
         await withdrawal.save()
 
-        # optional: deduct immediately (business choice). Here we hold balance until success:
-        # rider.current_balance -= decimal.Decimal(amount)
-        # await rider.save()
+        # Step 1: Add beneficiary (if not verified)
+        if not rider.is_bank_verified:
+            logger.info(f"Adding beneficiary for rider {rider.id}")
+            beneficiary_result = await add_beneficiary_to_cashfree(rider)
+            if not beneficiary_result["success"]:
+                await handle_withdrawal_error(
+                    withdrawal, rider,
+                    "Failed to add beneficiary",
+                    ErrorType.INVALID_ACCOUNT
+                )
+                return
+            rider.is_bank_verified = True
+            await rider.save()
 
-    return {
-        "status": "processing",
-        "withdrawal_id": str(withdrawal.id),
-        "transfer_id": transfer_id,
-        "cashfree_transfer_id": withdrawal.cashfree_transfer_id,
-        "amount": float(withdrawal.amount)
-    }
+        # Step 2: Initiate transfer
+        transfer_result = await transfer_amount_to_cashfree(
+            withdrawal=withdrawal,
+            rider=rider
+        )
 
-
-@router.get("/withdrawals/{withdrawal_id}/status/")
-async def withdrawal_status(withdrawal_id: str, user: User = Depends(get_current_user)):
-    # get withdrawal
-    w = await Withdrawal.get_or_none(id=withdrawal_id).prefetch_related("rider")
-    if not w:
-        raise HTTPException(status_code=404, detail="Withdrawal not found")
-
-    # check ownership
-    if w.rider.user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not allowed")
-
-    # query cashfree if we have a transfer id
-    if not w.cashfree_transfer_id:
-        return {"status": w.status, "detail": "No external transfer id"}
-
-    status_resp = await _get_transfer_status(transfer_id=w.cashfree_transfer_id)
-    return {"local_status": w.status, "cashfree_status": status_resp}
-
-
-# Webhook endpoint skeleton
-@router.post("/withdrawals/webhook/")
-async def cashfree_webhook(request: Request):
-    # Read raw body bytes
-    raw = await request.body()
-    headers = dict(request.headers)
-
-    # Debug logs (remove or change to logger in prod)
-    print("WEBHOOK HEADERS:", headers)
-    print("WEBHOOK RAW LENGTH:", len(raw))
-
-    if not raw or raw.strip() == b"":
-        # Empty payload — respond with 400 to indicate misconfigured webhook sender
-        return JSONResponse({"ok": False, "reason": "Empty request body"}, status_code=400)
-
-    # Try parsing JSON first
-    payload = None
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        # Try form-encoded parsing
+        if transfer_result["success"]:
+            withdrawal.status = WithdrawalStatus.SUCCESS
+            withdrawal.cashfree_transfer_id = transfer_result.get("transfer_id")
+            await withdrawal.save()
+            logger.info(f"Withdrawal {withdrawal_id} processed successfully")
+        else:
+            error_type = classify_error(
+                transfer_result.get("status_code", 500),
+                transfer_result.get("response", {})
+            )
+            await handle_withdrawal_error(
+                withdrawal, rider,
+                transfer_result.get("error", "Transfer failed"),
+                error_type
+            )
+    except Exception as e:
+        logger.error(f"Error processing withdrawal {withdrawal_id}: {str(e)}")
         try:
-            form = await request.form()
-            payload = dict(form)
-        except Exception:
-            # Fallback: parse as urlencoded string
-            try:
-                text = raw.decode("utf-8", errors="ignore")
-                from urllib.parse import parse_qs
-                parsed = parse_qs(text)
-                payload = {k: v[0] if v and isinstance(v, list) else v for k, v in parsed.items()}
-            except Exception:
-                payload = None
-
-    if payload is None:
-        return JSONResponse({"ok": False, "reason": "Unable to parse body (not JSON or form-data)"}, status_code=400)
-
-    # Optional signature verification (recommended for production)
-    sig = request.headers.get("x-cf-signature") or request.headers.get("X-Cf-Signature")
-    if sig:
-        try:
-            await _verify_signature(raw, sig)
-        except Exception as e:
-            # signature failed
-            return JSONResponse({"ok": False, "reason": "signature verification failed", "error": str(e)}, status_code=400)
-
-    # Now handle payload fields. Cashfree may use cf_transfer_id, transfer_id, status, etc.
-    transfer_id = payload.get("transfer_id") or payload.get("cf_transfer_id") or payload.get("data", {}).get("transfer_id") or payload.get("data", {}).get("cf_transfer_id")
-    status_str = payload.get("status") or payload.get("data", {}).get("status") or payload.get("transfer_status")
-
-    if not transfer_id:
-        # try other helpful keys if needed
-        return JSONResponse({"ok": False, "reason": "no transfer id in payload", "payload": payload}, status_code=400)
-
-    # Find matching withdrawal - try both cashfree_transfer_id and transfer_id fields
-    w = await Withdrawal.get_or_none(cashfree_transfer_id=transfer_id)
-    if not w:
-        # maybe stored transfer id is different; attempt search by transfer_id substring
-        w = await Withdrawal.get_or_none(cashfree_transfer_id__icontains=transfer_id)
-
-    if not w:
-        # Not found — return 404 so sender knows we didn't match
-        return JSONResponse({"ok": False, "reason": "withdrawal not found", "transfer_id": transfer_id}, status_code=404)
-
-    # Map statuses from Cashfree to local statuses
-    # Adjust mapping as per actual Cashfree status values you receive
-    mapping = {
-        "SUCCESS": "success",
-        "COMPLETED": "success",
-        "FAILED": "failed",
-        "REVERSED": "failed",
-        "PENDING": "processing",
-        "PROCESSING": "processing"
-    }
-
-    new_status = None
-    if status_str:
-        new_status = mapping.get(status_str.upper(), status_str.lower())
-    else:
-        # fallback: try to read from payload.data
-        ds = payload.get("data", {})
-        new_status = mapping.get(ds.get("status", "").upper(), ds.get("status", None))
-
-    # persist update inside transaction
-    async with in_transaction():
-        if new_status:
-            w.status = new_status
-        # optionally store raw payload / remark for audit
-        try:
-            # if model has remark field or an extra json field, save the payload summary
-            if hasattr(w, "remark"):
-                w.remark = json.dumps(payload)[:2000]  # avoid very long
-        except Exception:
+            withdrawal = await Withdrawal.get(id=withdrawal_id)
+            await handle_withdrawal_error(
+                withdrawal, None,
+                str(e),
+                ErrorType.UNKNOWN
+            )
+        except:
             pass
-        await w.save()
 
-    return JSONResponse({"ok": True, "withdrawal_id": str(w.id), "new_status": w.status})
+async def add_beneficiary_to_cashfree(rider: RiderProfile) -> Dict[str, Any]:
+    """Add beneficiary to Cashfree"""
+    print("add_beneficiary_to_cashfree")
+    try:
+        signature, timestamp = generate_signature()
+        url = f"{BASE_URL}/beneficiary"
+        user = await User.get(id=rider.user_id)
+        headers = {
+            "x-api-version": "2024-01-01",
+            "x-client-id": CLIENT_ID,
+            "x-client-secret": CLIENT_SECRET,
+            "x-cf-signature": signature,
+            "x-cf-timestamp": timestamp,
+            "Content-Type": "application/json",
+        }
+
+        body = {
+            "beneficiary_id": f"rider_{rider.id}",
+            "beneficiary_name": rider.bank_holder_name,
+            "beneficiary_instrument_details": {
+                "bank_account_number": rider.bank_account_number,
+                "bank_ifsc": rider.bank_ifsc,
+            },
+            "beneficiary_contact_details": {
+                "beneficiary_email": user.email,
+                "beneficiary_phone": user.phone,
+                "beneficiary_country_code": "+91",
+            },
+        }
+
+        logger.debug(f"Adding beneficiary with body: {body}")
+        response = requests.post(url, json=body, headers=headers, timeout=10)
+        
+        if response.status_code in [200, 201]:
+            logger.info(f"Beneficiary added for rider {rider.id}")
+            return {"success": True, "data": response.json()}
+        else:
+            logger.error(f"Failed to add beneficiary: {response.text}")
+            return {"success": False, "error": response.text}
+    except Exception as e:
+        logger.error(f"Error adding beneficiary to Cashfree: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+async def transfer_amount_to_cashfree(withdrawal, rider: RiderProfile) -> Dict[str, Any]:
+    """Initiate transfer with Cashfree"""
+    print("transfer_amount_to_cashfree")
+    try:
+        signature, timestamp = generate_signature()
+        url = f"{BASE_URL}/transfers"
+        headers = {
+            "x-api-version": "2024-01-01",
+            "x-client-id": CLIENT_ID,
+            "x-client-secret": CLIENT_SECRET,
+            "x-cf-signature": signature,
+            "x-cf-timestamp": timestamp,
+            "Content-Type": "application/json",
+        }
+
+        body = {
+            "transfer_id": str(withdrawal.id),
+            "transfer_amount": float(withdrawal.amount),
+            "beneficiary_details": {
+                "beneficiary_id": f"rider_{rider.id}"
+            },
+            "transfer_mode": "banktransfer",
+            "currency": "INR",
+            "transfer_remarks": f"Withdrawal for rider {rider.id}",
+        }
+
+        response = requests.post(url, json=body, headers=headers, timeout=10)
+        
+        if response.status_code in [200, 201]:
+            result = response.json()
+            logger.info(f"Transfer initiated for withdrawal {withdrawal.id}: {result}")
+            return {
+                "success": True,
+                "transfer_id": result.get("transfer_id"),
+                "data": result
+            }
+        else:
+            logger.error(f"Transfer failed: {response.text}")
+            return {
+                "success": False,
+                "status_code": response.status_code,
+                "response": response.json() if response.text else {},
+                "error": response.text
+            }
+    except Exception as e:
+        logger.error(f"Error transferring amount: {str(e)}")
+        return {
+            "success": False,
+            "status_code": 500,
+            "error": str(e)
+        }
+
+async def handle_withdrawal_error(
+    withdrawal,
+    rider: Optional[RiderProfile],
+    error_message: str,
+    error_type: str
+):
+    """Handle withdrawal error and decide on retry"""
+    print("handle_withdrawal_error")
+    logger.error(f"Withdrawal {withdrawal.id} error: {error_message} ({error_type})")
+    
+    # Non-retryable errors
+    if error_type in [ErrorType.INVALID_ACCOUNT, ErrorType.INSUFFICIENT_BALANCE]:
+        withdrawal.status = WithdrawalStatus.FAILED
+        withdrawal.error_message = error_message
+        await withdrawal.save()
+
+        # Restore balance
+        if rider:
+            rider.current_balance += withdrawal.amount
+            await rider.save()
+    # Retryable errors
+    else:
+        withdrawal.status = WithdrawalStatus.FAILED
+        withdrawal.error_message = error_message
+        await withdrawal.save()
+        
+        if rider:
+            rider.current_balance += withdrawal.amount
+            await rider.save()
+
+        logger.warning(f"Withdrawal {withdrawal.id} marked as failed due to {error_type}")
+
+# ============================================================================
+# WEBHOOK ENDPOINT (Optional, for Cashfree callbacks)
+# ============================================================================
+
+@router.post("/webhook/cashfree")
+async def handle_cashfree_webhook(request: dict):
+    """
+    Handle Cashfree webhook callbacks
+    Cashfree will call this endpoint when transfer status changes
+    """
+    try:
+        # Extract transfer_id and status
+        transfer_id = request.get("transfer_id")
+        status = request.get("status")
+        logger.info(f"Webhook received for transfer {transfer_id}, status: {status}")
+
+        # Get withdrawal
+        withdrawal = await Withdrawal.get_or_none(id=transfer_id)
+        if not withdrawal:
+            logger.warning(f"Withdrawal {transfer_id} not found")
+            return {"success": False, "error": "Withdrawal not found"}
+
+        # Update status based on Cashfree response
+        status_map = {
+            "SUCCESS": WithdrawalStatus.SUCCESS,
+            "FAILED": WithdrawalStatus.FAILED,
+            "PROCESSING": WithdrawalStatus.PROCESSING,
+        }
+
+        withdrawal.status = status_map.get(status, WithdrawalStatus.FAILED)
+        await withdrawal.save()
+
+        logger.info(f"Withdrawal {transfer_id} updated to {withdrawal.status}")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Error handling webhook: {str(e)}")
+        return {"success": False, "error": str(e)}

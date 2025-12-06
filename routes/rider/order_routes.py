@@ -7,7 +7,7 @@ from applications.user.rider import RiderProfile, OrderOffer, RiderCurrentLocati
 from app.utils.file_manager import save_file, update_file, delete_file
 from tortoise.exceptions import IntegrityError
 from tortoise.contrib.pydantic import pydantic_model_creator
-from applications.customer.models import Order, OrderStatus, OrderItem
+from applications.customer.models import Order, OrderStatus, OrderItem, DeliveryTypeEnum
 from applications.items.models import Item
 from applications.user.vendor import VendorProfile
 from applications.user.customer import CustomerProfile
