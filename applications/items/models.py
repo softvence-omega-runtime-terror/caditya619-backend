@@ -63,7 +63,7 @@ class Item(models.Model):
     description = fields.TextField(null=True)
     image = fields.CharField(max_length=200, null=True)
     price = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    discount = fields.IntField(validators=[MinValueValidator(0), MaxValueValidator(5)], default=0)
+    discount = fields.IntField(validators=[MinValueValidator(0), MaxValueValidator(100)], default=0)
     
     ratings = fields.FloatField(default=0.0)
     stock = fields.IntField(default=0)
@@ -99,13 +99,10 @@ class Item(models.Model):
 
     async def get_rating_summary_percentage(self) -> dict:
         from applications.items.review import ItemReview
-
-        # Get counts grouped by rating
         qs = ItemReview.filter(item_id=self.id, parent_id__isnull=True).group_by("rating").annotate(
             count=Count("rating"))
         result = await qs.values("rating", "count")
 
-        # Initialize summary dictionary with 0 counts
         summary_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 
         total_reviews = 0
