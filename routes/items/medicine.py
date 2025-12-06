@@ -84,8 +84,8 @@ async def create_item(
 ):
     async with in_transaction() as conn:
         vendor_profile = await vendor.vendor_profile
-        category = await Category.filter(type='food').first()
-        if vendor_profile.type != 'food':
+        category = await Category.filter(type='medicine').first()
+        if vendor_profile.type != 'medicine':
             raise HTTPException(status_code=403, detail="Vendor type mismatch")
 
         subcategory = await SubCategory.get_or_none(id=subcategory_id, using_db=conn) if subcategory_id else None
