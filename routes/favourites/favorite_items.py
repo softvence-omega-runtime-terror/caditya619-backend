@@ -3,6 +3,7 @@ from typing import List
 from applications.favorites.schemas import (
     FavoriteItemCreate,
     FavoriteItemResponse,
+    FavoriteItemWithDetails,
     MessageResponse
 )
 from applications.favorites.models import CustomerFavoriteItem
@@ -10,6 +11,7 @@ from applications.favorites.dependencies import (
     get_customer_profile,
     verify_favorite_ownership
 )
+from applications.favorites.utils import serialize_item
 from applications.user.customer import CustomerProfile
 from applications.items.models import Item
 
@@ -70,35 +72,44 @@ async def add_favorite_item(
 
 @router.get(
     "/",
-    response_model=List[FavoriteItemResponse],
-    summary="Get all favorite items"
+    response_model=List[FavoriteItemWithDetails],
+    summary="Get all favorite items with full details"
 )
 async def get_favorite_items(
     customer: CustomerProfile = Depends(get_customer_profile)
 ):
     """
-    Get all favorite items for the authenticated customer.
+    Get all favorite items for the authenticated customer with complete item details.
     Only the customer can see their own favorites.
+    Returns all item fields including category, price, stock, ratings, etc.
     """
     favorites = await CustomerFavoriteItem.filter(
         customer=customer
-    ).prefetch_related("item").order_by("-created_at")
+    ).prefetch_related(
+        "item",
+        "item__category",
+        "item__subcategory",
+        "item__sub_subcategory"
+    ).order_by("-created_at")
     
-    return [
-        FavoriteItemResponse(
-            id=fav.id,
-            customer_id=customer.id,
-            item_id=fav.item_id,
-            created_at=fav.created_at
+    result = []
+    for fav in favorites:
+        item_detail = await serialize_item(fav.item)
+        result.append(
+            FavoriteItemWithDetails(
+                id=fav.id,
+                created_at=fav.created_at,
+                item=item_detail
+            )
         )
-        for fav in favorites
-    ]
+    
+    return result
 
 
 @router.get(
     "/{item_id}",
-    response_model=FavoriteItemResponse,
-    summary="Get specific favorite item"
+    response_model=FavoriteItemWithDetails,
+    summary="Get specific favorite item with full details"
 )
 async def get_favorite_item(
     item_id: int,
@@ -106,10 +117,16 @@ async def get_favorite_item(
 ):
     """
     Get a specific favorite item by item_id for the authenticated customer.
+    Returns complete item details.
     """
     favorite = await CustomerFavoriteItem.filter(
         customer=customer,
         item_id=item_id
+    ).prefetch_related(
+        "item",
+        "item__category",
+        "item__subcategory",
+        "item__sub_subcategory"
     ).first()
     
     if not favorite:
@@ -118,11 +135,12 @@ async def get_favorite_item(
             detail="Favorite item not found"
         )
     
-    return FavoriteItemResponse(
+    item_detail = await serialize_item(favorite.item)
+    
+    return FavoriteItemWithDetails(
         id=favorite.id,
-        customer_id=customer.id,
-        item_id=favorite.item_id,
-        created_at=favorite.created_at
+        created_at=favorite.created_at,
+        item=item_detail
     )
 
 
