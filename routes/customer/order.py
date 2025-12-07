@@ -1,6 +1,6 @@
 import httpx
 from applications.customer.services import OrderService
-from fastapi import APIRouter, HTTPException, Query, Request, status, Depends
+from fastapi import APIRouter, HTTPException, Query, Request, status, Depends, Form
 from typing import List, Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
@@ -13,7 +13,7 @@ from applications.customer.models import *
 from applications.customer.schemas import *
 from app.token import get_current_user
 from app.config import settings
-from applications.user.rider import RiderProfile
+from applications.user.rider import RiderReview, RiderProfile, Complaint
 from routes.payment.payment import CASHFREE_API_VERSION, CASHFREE_BASE, CASHFREE_CLIENT_PAYMENT_ID, CASHFREE_CLIENT_PAYMENT_SECRET
 from routes.rider.notifications import send_notification
 from app.redis import get_redis
@@ -663,3 +663,81 @@ async def create_payment_link_internal(order: Order):
         "payment_link": payment_link
     }
 
+
+
+
+
+
+
+#*****************************************
+#    Rider Ratings
+#*****************************************
+
+@router.post("/rider/ratings/{order_id}")
+async def create_rider_rating(
+        order_id : str,
+        rating : int = Form(None),
+        comment : str = Form(None),    
+        current_user: User = Depends(get_current_user)
+    ):
+    order = await Order.get(id=order_id)
+    if not order or order.status != OrderStatus.DELIVERED or order.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Order not found")
+    rider = await RiderProfile.get(id=order.rider_id)
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found")
+    rider_review = await RiderReview.create(
+        rating=rating,
+        comment=comment,
+        user=current_user,
+        rider=rider
+    )
+    await rider_review.save()
+    
+    return {
+        "success": True,
+        "message": "Rider Rating Created Successfully",
+        "retings": {
+            "id": rider_review.id,
+            "rating": rider_review.rating,
+            "comment": rider_review.comment,
+            "user": rider_review.user.name,
+            "created_at": rider_review.created_at.isoformat(),
+        }
+    }
+
+
+
+
+@router.post("/complaints/{order_id}")
+async def create_complaint(
+        order_id : str,
+        description : str = Form(...),
+        is_serious : bool = Form(False),
+        current_user: User = Depends(get_current_user)
+    ):
+    order = await Order.get(id=order_id)
+    if not order or order.status != OrderStatus.DELIVERED or order.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Order not found")
+    rider = await RiderProfile.get(id=order.rider_id)
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found")
+    complaint = await Complaint.create(
+        rider = rider,
+        user = current_user,
+        description=description,
+        is_serious=is_serious
+    )
+    await complaint.save()
+
+    return {
+        "success": True,
+        "message": "Complaint Created Successfully",
+        "complaint": {
+            "id": complaint.id,
+            "description": complaint.description,
+            "is_serious": complaint.is_serious,
+            "user": complaint.user.name,
+            "created_at": complaint.created_at.isoformat(),
+        }
+    }
