@@ -1,4 +1,3 @@
-# applications/favorites/models.py
 from tortoise import fields, models
 
 
@@ -18,4 +17,4 @@ class CustomerFavoriteItem(models.Model):
     
     class Meta:
         table = "customer_favorite_items"
-        unique_together = (("customer", "item"),) 
+        unique_together = (("customer", "item"),)
