@@ -17,10 +17,6 @@ class RiderProfile(models.Model):
     is_available = fields.BooleanField(default=False)
     online_start_time = fields.DatetimeField(null=True, default=None)
     is_verified = fields.BooleanField(default=False)
-    bank_account_number = fields.CharField(max_length=20, null=True, blank=True)
-    bank_ifsc = fields.CharField(max_length=11, null=True, blank=True)
-    bank_holder_name = fields.CharField(max_length=100, null=True, blank=True)
-    is_bank_verified = fields.BooleanField(default=False)
     fcm_token = fields.CharField(max_length=255, null=True, blank=True)
     referral_code = fields.CharField(max_length=20, unique=True, null=True)
     is_document_uploaded = fields.BooleanField(default=False)
@@ -407,3 +403,20 @@ class Withdrawal(models.Model):
 
     def __str__(self):
         return f"Withdrawal {self.id}: {self.amount} ({self.status})"
+    
+
+
+class BeneficiaryAccount(models.Model):
+    id = fields.IntField(pk=True)
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="beneficiary")
+    bank_account_number = fields.CharField(max_length=20, null=True, blank=True)
+    bank_ifsc = fields.CharField(max_length=11, null=True, blank=True)
+    bank_holder_name = fields.CharField(max_length=100, null=True, blank=True)
+    is_bank_verified = fields.BooleanField(default=False)
+
+    class Meta:
+        table = "beneficaryAccount"
+
+
+    def __str__(self):
+        return f"beneficiary {self.id}: {self.bank_holder_name}"

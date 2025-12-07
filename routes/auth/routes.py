@@ -121,7 +121,7 @@ async def send_otp(
 
     return {
         "status": "success",
-        "message": f"OTP sent to {phone}. Expires in 1 minute.{otp if settings.DEBUG else ""}",
+        "message": f'OTP sent to {phone}. Expires in 1 minute.{otp if settings.DEBUG else ""}',
         "purpose": purpose,
     }
 
