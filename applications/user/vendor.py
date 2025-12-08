@@ -29,8 +29,8 @@ class VendorProfile(models.Model):
     kyc_document = fields.CharField(max_length=500, null=True, blank=True)
     kyc_status = fields.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default=None, blank=True, null=True)
 
-    open_time = fields.TimeField(null=True, blank=True)
-    close_time = fields.TimeField(null=True, blank=True)
+    open_time = fields.CharField(null=True, max_length=60)
+    close_time = fields.CharField(null=True, max_length=60)
 
     class Meta:
         table = "vendor_profile"

@@ -194,9 +194,11 @@ async def update_vendor_profile(
 
     try:
         open_time_obj = time.fromisoformat(open_time)
+        open_time_obj = open_time_obj.replace(tzinfo=None)
         close_time_obj = time.fromisoformat(close_time)
+        close_time_obj = close_time_obj.replace(tzinfo=None)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM")
+        raise HTTPException(status_code=400, detail="Time format must be HH:MM")
 
     async with in_transaction() as conn:
         vendor_profile.owner_name = owner_name
@@ -206,10 +208,8 @@ async def update_vendor_profile(
         if photo:
             vendor_profile.photo = (
                 await update_file(photo, vendor_profile.photo, "vendor_photos")
-                if vendor_profile.photo
-                else await save_file(photo, "vendor_photos")
+                if vendor_profile.photo else await save_file(photo, "vendor_photos")
             )
-
         await vendor_profile.save(using_db=conn)
 
     return {
@@ -219,11 +219,12 @@ async def update_vendor_profile(
             "shop_name": current_user.name,
             "email": current_user.email,
             "photo": vendor_profile.photo,
-            "open_time": str(vendor_profile.open_time),
-            "close_time": str(vendor_profile.close_time),
+            "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
+            "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
             "is_completed": vendor_profile.is_completed,
             "kyc_status": vendor_profile.kyc_status,
         }
     }
+
 
 
