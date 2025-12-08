@@ -193,8 +193,8 @@ async def update_vendor_profile(
         raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
     try:
-        open_time_obj = time.fromisoformat(open_time)
-        close_time_obj = time.fromisoformat(close_time)
+        open_time_obj = time.fromisoformat(open_time) if open_time else None
+        close_time_obj = time.fromisoformat(close_time) if close_time else None
     except ValueError:
         raise HTTPException(status_code=400, detail="Time format must be HH:MM")
 
