@@ -11,6 +11,8 @@ import time
 from tortoise.models import Model
 from fastapi import Depends, HTTPException, status
 from tortoise.exceptions import DoesNotExist
+
+from applications.user.vendor import VendorProfile
 # from app.token import get_current_user
 # current_user = Depends(get_current_user)
 
@@ -200,14 +202,66 @@ class OrderService:
         user = current_user
         user_id = user.id
         
+        # NEW: Validate single vendor and collect vendor info
+        vendor_id = None
+        vendor_info = None
+
         # Process order items
         for item_input in order_data.items:
             try:
-                item = await Item.get(id=item_input.item_id)
+                item = await Item.get(id=item_input.item_id).prefetch_related('vendor__vendor_profile')
                 
+                # NEW: Validate that vendor exists and is active
+                if not item.vendor:
+                    raise ValueError(f"Item '{item.title}' has no associated vendor")
+                
+                if not item.vendor.is_vendor:
+                    raise ValueError(f"Item '{item.title}' vendor account is invalid")
+                
+                if not item.vendor.is_active:
+                    raise ValueError(f"Vendor for item '{item.title}' is currently inactive")
+
+
                 if item.stock < item_input.quantity:
                     raise ValueError(f"Insufficient stock for item: {item.title}")
                 
+                # NEW: Validate single vendor
+                if vendor_id is None:
+                    vendor_id = item.vendor_id
+                    
+                    # Store vendor info (will be preserved even if vendor deleted)
+                    vendor_profile = await VendorProfile.get_or_none(user=item.vendor)
+                    
+                    # Build vendor info with all available data
+                    vendor_info = {
+                        "vendor_id": vendor_id,
+                        "vendor_name": item.vendor.name,
+                        "vendor_phone": item.vendor.phone,
+                        "vendor_email": item.vendor.email or None,
+                        "is_vendor": item.vendor.is_vendor,
+                        "is_active": item.vendor.is_active
+                    }
+                    
+                    # Add vendor profile details if available
+                    if vendor_profile:
+                        vendor_info.update({
+                            "store_name": vendor_profile.owner_name,
+                            "store_type": vendor_profile.type,
+                            "store_latitude": vendor_profile.latitude,
+                            "store_longitude": vendor_profile.longitude,
+                            "kyc_status": vendor_profile.kyc_status,
+                            "profile_is_active": vendor_profile.is_active
+                        })
+                    
+                elif item.vendor_id != vendor_id:
+                    raise ValueError(
+                        f"All items must be from the same vendor. "
+                        f"Please create separate orders for items from different vendors."
+                    )
+
+
+
+
                 price = Decimal(str(item.price))
                 quantity = item_input.quantity
                 subtotal += price * quantity
@@ -226,6 +280,10 @@ class OrderService:
                 print(f"Error processing item {item_input.item_id}: {e}")
                 raise
         
+        if not vendor_id:
+            raise ValueError("No valid items in order")         
+
+
         delivery_fee = Decimal(str(order_data.delivery_option.price))
         discount = self._apply_coupon(subtotal, order_data.coupon_code)
         total = subtotal + delivery_fee - discount
@@ -256,12 +314,14 @@ class OrderService:
             "payment_method": {
                 "type": order_data.payment_method.type,
                 "name": getattr(order_data.payment_method, 'name', '')
-            }
+            },
+            "vendor_info": vendor_info
         }
         
         order = await Order.create(
             id=order_id,  
             user_id=user_id,
+            vendor_id=vendor_id,
             shipping_address_id=None,  # FIXED: No separate shipping address
             delivery_type=order_data.delivery_option.type, 
             payment_method=order_data.payment_method.type, 
