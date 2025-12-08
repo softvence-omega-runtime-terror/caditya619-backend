@@ -192,19 +192,6 @@ async def get_current_balance(user: User = Depends(get_current_user)):
     return {"current_balance": rider.current_balance}
 
 
-# Withdrawal
-@router.post("/wallet/withdraw/")
-async def withdraw(amount: float, user: User = Depends(get_current_user)):
-    rider = await Rider.get(user=user)
-    if not rider:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rider not found")
-    if amount > rider.current_balance or amount <= 0:
-        raise HTTPException(400, "Invalid amount")
-    withdrawal = Withdrawal(rider=rider, amount=amount)
-    await withdrawal.save()
-    rider.current_balance -= amount
-    await rider.save()
-    return {"status": "pending", "amount": amount}
 
 # Notifications
 @router.get("/notifications/", response_model=List[NotificationOut])
