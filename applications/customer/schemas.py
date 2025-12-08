@@ -266,6 +266,7 @@ class OrderUpdateSchema(BaseModel):
     tracking_number: Optional[str] = None
     transaction_id: Optional[str] = None
     estimated_delivery: Optional[datetime] = None
+    
 
 
 # ============================================================
@@ -348,6 +349,7 @@ class OrderResponseSchema(BaseModel):
     rider_info: Optional[RiderInfoSchema] = None
     payment_link: Optional[str] = None
     payment_status: str = "unpaid"
+    vendor_id: Optional[str] = None
      
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):

@@ -258,7 +258,8 @@ async def get_all_orders(
             "payment_status": order.payment_status,
             "payment_link": payment_link,
             "vendors": vendors_locations,
-            "rider_info": rider_info
+            "rider_info": rider_info,
+            "vendor_id": str(order.vendor_id) if order.vendor_id else None
         })
     
     # Return with pagination metadata
@@ -284,7 +285,8 @@ async def get_order_details(
     order = await Order.get_or_none(id=order_id).prefetch_related(
         'user',
         'items__item',
-        'rider__user'
+        'rider__user',
+        'vendor__vendor_profile'
     )
     
     if not order:
@@ -311,7 +313,31 @@ async def get_order_details(
     payment_method = order.metadata.get("payment_method", {}) if order.metadata else {
         "type": order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
     }
-    
+    # NEW: Get vendor info (preserved even if vendor deleted)
+    vendor_info = None
+    if order.metadata and "vendor_info" in order.metadata:
+        vendor_info = order.metadata["vendor_info"]
+    elif order.vendor:
+        # Fallback to live vendor data if metadata not available
+        vendor_profile = await VendorProfile.get_or_none(user=order.vendor)
+        vendor_info = {
+            "vendor_id": order.vendor_id,
+            "vendor_name": order.vendor.name,
+            "vendor_phone": order.vendor.phone,
+            "vendor_email": order.vendor.email or None,
+            "is_vendor": order.vendor.is_vendor,
+            "is_active": order.vendor.is_active
+        }
+        
+        if vendor_profile:
+            vendor_info.update({
+                "store_name": vendor_profile.owner_name,
+                "store_type": vendor_profile.type,
+                "store_latitude": vendor_profile.latitude,
+                "store_longitude": vendor_profile.longitude,
+                "kyc_status": vendor_profile.kyc_status,
+                "profile_is_active": vendor_profile.is_active
+            })
     # Build items list
     items = []
     for order_item in order.items:
@@ -360,7 +386,8 @@ async def get_order_details(
         "payment_status": order.payment_status,
         "payment_link": payment_link,
         "vendors": vendors_locations,
-        "rider_info": rider_info
+        "rider_info": rider_info,
+        "vendor_info": vendor_info
     }
 
 
