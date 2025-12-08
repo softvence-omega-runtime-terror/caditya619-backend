@@ -116,6 +116,68 @@ async def create_item(
     data = await serialize_item(item)
     return {"status": "success", "data": data}
 
+@router.get("/my-product", response_model=dict)
+async def get_all_items(
+    category: Optional[int] = None,
+    subcategory: Optional[int] = None,
+    vendor_id: Optional[int] = None,
+    isOTC: Optional[bool] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    new_arrival: Optional[bool] = None,
+    today_deals: Optional[bool] = None,
+    popular: Optional[bool] = None,
+    free_delivery: Optional[bool] = None,
+    hot_deals: Optional[bool] = None,
+    flash_sale: Optional[bool] = None,
+    name: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 20,
+    vendor: User = Depends(vendor_required),
+):
+    query = Item.filter(category__type='medicine', vendor=vendor).prefetch_related("category", "subcategory", "sub_subcategory")
+
+    if isOTC:
+        query = query.filter(isOTC=isOTC)
+    if category:
+        query = query.filter(category_id=category)
+    if subcategory:
+        query = query.filter(subcategory_id=subcategory)
+    if vendor_id:
+        query = query.filter(vendor_id=vendor_id)
+    if min_price is not None:
+        query = query.filter(price__gte=min_price)
+    if max_price is not None:
+        query = query.filter(price__lte=max_price)
+    if new_arrival is not None:
+        query = query.filter(new_arrival=new_arrival)
+    if today_deals is not None:
+        query = query.filter(today_deals=today_deals)
+    if popular is not None:
+        query = query.filter(popular=popular)
+    if free_delivery is not None:
+        query = query.filter(free_delivery=free_delivery)
+    if hot_deals is not None:
+        query = query.filter(hot_deals=hot_deals)
+    if flash_sale is not None:
+        query = query.filter(flash_sale=flash_sale)
+    if name:
+        query = query.filter(name__icontains=name)
+
+    total_count = await query.count()
+    items = await query.offset(offset).limit(limit)
+    data = [await serialize_item(item) for item in items]
+
+    return {
+        "status": "success",
+        "count": len(data),
+        "total": total_count,
+        "offset": offset,
+        "limit": limit,
+        "data": data
+    }
+
+
 
 # ----------------------- GET ALL -----------------------
 @router.get("/", response_model=dict)
@@ -123,6 +185,7 @@ async def get_all_items(
     category: Optional[int] = None,
     subcategory: Optional[int] = None,
     vendor_id: Optional[int] = None,
+    isOTC: Optional[bool] = False,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     new_arrival: Optional[bool] = None,
@@ -135,7 +198,7 @@ async def get_all_items(
     offset: int = 0,
     limit: int = 20
 ):
-    query = Item.filter(category__type='medicine', isOTC=False).prefetch_related("category", "subcategory", "sub_subcategory")
+    query = Item.filter(category__type='medicine', isOTC=isOTC).prefetch_related("category", "subcategory", "sub_subcategory")
 
     if category:
         query = query.filter(category_id=category)
@@ -245,7 +308,7 @@ async def get_item(item_id: int):
 
 
 # ----------------------- UPDATE -----------------------
-@router.put("/{item_id}", response_model=dict, dependencies=[Depends(permission_required("change_item"))])
+@router.put("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
 async def update_item(
         item_id: int,
         title: str = Form(...),
@@ -303,7 +366,7 @@ async def update_item(
 
 
 # ----------------------- PARTIAL UPDATE -----------------------
-@router.patch("/{item_id}", response_model=dict, dependencies=[Depends(permission_required("change_item"))])
+@router.patch("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
 async def patch_item(
         item_id: int,
         title: Optional[str] = Form(None),
@@ -353,7 +416,7 @@ async def patch_item(
 
 
 # ----------------------- DELETE -----------------------
-@router.delete("/{item_id}", response_model=dict, dependencies=[Depends(permission_required("delete_item"))])
+@router.delete("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
 async def delete_item(item_id: int):
     item = await Item.get_or_none(id=item_id)
     if not item:
