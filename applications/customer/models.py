@@ -84,8 +84,6 @@ class Order(models.Model):
 
     vendor = fields.ForeignKeyField("models.User", related_name="vendor_orders", on_delete=fields.RESTRICT, null=True)
 
-
-
     shipping_address = fields.ForeignKeyField(
         "models.CustomerShippingAddress",
         related_name="orders",
@@ -117,8 +115,6 @@ class Order(models.Model):
     estimated_delivery = fields.DatetimeField(null=True)
     
     metadata = fields.JSONField(null=True)
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
     prepire_time = fields.IntField(null=True)
     reason = fields.TextField(null=True)
     pickup_distance_km = fields.FloatField(null= True)
@@ -133,62 +129,19 @@ class Order(models.Model):
     is_on_time = fields.BooleanField(null=True)
     is_combined = fields.BooleanField(default=False)
     combined_pickups = fields.JSONField(null=True)  # list of dicts: [{"name": "Thai Spice", "amount": 44}]
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
 
     payment_status = fields.CharField(
         max_length=50, 
         default="unpaid"
     )  # Values: "unpaid", "paid", "failed", "expired", "cod"
-    
-    # shipping_address_id = fields.ForeignKeyField(
-    #     "models.CustomerShippingAddress",
-    #     related_name="orders",
-    #     null=True  # ← Make this nullable
-    # )
-    # Tracks if payment is done: "unpaid", "paid", "failed"
+
     
     cf_order_id = fields.CharField(max_length=255, null=True)
     # Cashfree's order ID (they give us this)
-    
     payment_session_id = fields.CharField(max_length=255, null=True)
     # Session ID to track the payment
-
-    async def get_all_vendors_locations(self):
-        """
-        Get ALL vendor locations if order has items from multiple vendors
-        """
-        
-        # Step 1: Load all data
-        await self.fetch_related("items__item__vendor__vendor_profile")
-        
-        # Step 2: Collect all unique vendors
-        vendors_locations = []
-        seen_vendor_ids = set()  # To avoid duplicates
-        
-        # Step 3: Loop through all order items
-        for order_item in self.items:
-            vendor = order_item.item.vendor
-            
-            # Skip if we already processed this vendor
-            if vendor.id in seen_vendor_ids:
-                continue
-            
-            # Check if vendor has profile and location
-            if hasattr(vendor, 'vendor_profile'):
-                profile = vendor.vendor_profile
-                
-                if profile.latitude and profile.longitude:
-                    vendors_locations.append({
-                        'vendor_id': vendor.id,
-                        'vendor_name': profile.owner_name,
-                        'latitude': profile.latitude,
-                        'longitude': profile.longitude,
-                        'is_active': profile.is_active
-                    })
-                    
-                    seen_vendor_ids.add(vendor.id)
-        
-        return vendors_locations
-
     class Meta:
         table = "orders"
         ordering = ["-order_date"]
