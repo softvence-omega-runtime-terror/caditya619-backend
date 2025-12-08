@@ -190,11 +190,11 @@ async def update_vendor_profile(
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
     if not vendor_profile:
-        raise HTTPException(status_code=404, detail="Vendor profile not found")
+        raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
     try:
-        open_time_obj = time.fromisoformat(open_time)
-        close_time_obj = time.fromisoformat(close_time)
+        open_time_obj = time.fromisoformat(open_time) if open_time else None
+        close_time_obj = time.fromisoformat(close_time) if close_time else None
     except ValueError:
         raise HTTPException(status_code=400, detail="Time format must be HH:MM")
 
@@ -206,30 +206,10 @@ async def update_vendor_profile(
         if photo:
             vendor_profile.photo = (
                 await update_file(photo, vendor_profile.photo, "vendor_photos")
-                if vendor_profile.photo
-                else await save_file(photo, "vendor_photos")
+                if vendor_profile.photo else await save_file(photo, "vendor_photos")
             )
-
-        if isinstance(vendor_profile.open_time, time):
-            vendor_profile.open_time = time(
-                vendor_profile.open_time.hour,
-                vendor_profile.open_time.minute
-            )
-
-        if isinstance(vendor_profile.close_time, time):
-            vendor_profile.close_time = time(
-                vendor_profile.close_time.hour,
-                vendor_profile.close_time.minute
-            )
-
-        # Force kyc_document to always be a string
-        if vendor_profile.kyc_document and not isinstance(vendor_profile.kyc_document, str):
-            vendor_profile.kyc_document = str(vendor_profile.kyc_document)
-
-        # ---- 6. Save safely ----
         await vendor_profile.save(using_db=conn)
 
-    # ---- 7. Response ----
     return {
         "message": "Vendor profile updated successfully",
         "vendor_profile": {
@@ -243,5 +223,6 @@ async def update_vendor_profile(
             "kyc_status": vendor_profile.kyc_status,
         }
     }
+
 
 
