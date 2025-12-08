@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field, field_validator
 from app.config import settings
-from applications.user.rider import RiderProfile, Withdrawal, WorkDay
+from applications.user.rider import RiderProfile, Withdrawal, WorkDay,BeneficiaryAccount
 from applications.user.models import User
 from app.token import get_current_user
 from cryptography.hazmat.primitives import serialization, hashes
@@ -174,11 +174,19 @@ async def add_beneficiary(
             )
 
         # 2. Update rider profile with bank details
-        rider.bank_account_number = payload.bank_account_number
-        rider.bank_ifsc = payload.bank_ifsc
-        rider.bank_holder_name = payload.bank_holder_name
-        rider.is_bank_verified = False
-        await rider.save()
+        # rider.bank_account_number = payload.bank_account_number
+        # rider.bank_ifsc = payload.bank_ifsc
+        # rider.bank_holder_name = payload.bank_holder_name
+        # rider.is_bank_verified = False
+        # await rider.save()
+        beneficiary = await BeneficiaryAccount.create(
+            rider = rider,
+            bank_account_number = payload.bank_account_number,
+            bank_ifsc = payload.bank_ifsc,
+            bank_holder_name = payload.bank_holder_name,
+            is_bank_verified = False
+        )
+        await beneficiary.save()
 
         logger.info(f"Bank details updated for rider {rider.id}")
         return {
@@ -187,7 +195,7 @@ async def add_beneficiary(
             "data": {
                 "bank_account_number": f"****{payload.bank_account_number[-4:]}",
                 "bank_ifsc": payload.bank_ifsc,
-                "is_verified": rider.is_bank_verified
+                "is_verified": beneficiary.is_bank_verified
             }
         }
     except HTTPException:
@@ -195,22 +203,28 @@ async def add_beneficiary(
     except Exception as e:
         logger.error(f"Error adding beneficiary: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to save bank details")
+    
+
+
 
 @router.get("/beneficiary")
 async def get_beneficiary(user: User = Depends(get_current_user)):
     """Get rider's bank details"""
     rider = await RiderProfile.get(user=user)
+    beneficiary = await BeneficiaryAccount.filter(rider=rider)
     try:
-        if not rider.bank_account_number:
+        if not beneficiary:
             raise HTTPException(status_code=404, detail="No bank details found")
         
-        return {
-            "bank_account_number": f"****{rider.bank_account_number[-4:]}",
-            "bank_ifsc": rider.bank_ifsc,
-            "bank_holder_name": rider.bank_holder_name,
-            "is_verified": rider.is_bank_verified,
-            "created_at": rider.updated_at
-        }
+        return beneficiary
+        
+        # return {
+        #     "bank_account_number": f"****{rider.bank_account_number[-4:]}",
+        #     "bank_ifsc": rider.bank_ifsc,
+        #     "bank_holder_name": rider.bank_holder_name,
+        #     "is_verified": rider.is_bank_verified,
+        #     "created_at": rider.updated_at
+        # }
     except HTTPException:
         raise
     except Exception as e:
@@ -219,6 +233,7 @@ async def get_beneficiary(user: User = Depends(get_current_user)):
 
 @router.post("/request", status_code=202)
 async def request_withdrawal(
+    ben_id: int,
     payload: WithdrawalRequest,
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user)
@@ -227,9 +242,10 @@ async def request_withdrawal(
     Request withdrawal (returns 202 Accepted, processes in background)
     """
     rider = await RiderProfile.get(user=user)
+    beneficiary = await BeneficiaryAccount.get(id = ben_id)
     try:
         # 1. Validate rider has bank details
-        if not rider.bank_account_number:
+        if not beneficiary:
             raise HTTPException(
                 status_code=400,
                 detail="Please add bank details before requesting withdrawal"
@@ -276,7 +292,7 @@ async def request_withdrawal(
 
         logger.info(f"Withdrawal {withdrawal.id} created for rider {rider.id}, amount: {payload.amount}")
 
-        await process_withdrawal(withdrawal_id=str(withdrawal.id), rider_id=rider.id)
+        await process_withdrawal(withdrawal_id=str(withdrawal.id), rider_id=rider.id, beneficiary=beneficiary)
 
         # 6. Process in background
         # background_tasks.add_task(
@@ -365,7 +381,7 @@ async def list_withdrawals(
 # BACKGROUND PROCESSING
 # ============================================================================
 
-async def process_withdrawal(withdrawal_id: str, rider_id: int):
+async def process_withdrawal(withdrawal_id: str, rider_id: int, beneficiary: BeneficiaryAccount):
     """
     Process withdrawal in background
     """
@@ -382,9 +398,9 @@ async def process_withdrawal(withdrawal_id: str, rider_id: int):
         await withdrawal.save()
 
         # Step 1: Add beneficiary (if not verified)
-        if not rider.is_bank_verified:
+        if not beneficiary.is_bank_verified:
             logger.info(f"Adding beneficiary for rider {rider.id}")
-            beneficiary_result = await add_beneficiary_to_cashfree(rider)
+            beneficiary_result = await add_beneficiary_to_cashfree(rider, beneficiary)
             if not beneficiary_result["success"]:
                 await handle_withdrawal_error(
                     withdrawal, rider,
@@ -392,8 +408,8 @@ async def process_withdrawal(withdrawal_id: str, rider_id: int):
                     ErrorType.INVALID_ACCOUNT
                 )
                 return
-            rider.is_bank_verified = True
-            await rider.save()
+            beneficiary.is_bank_verified = True
+            await beneficiary.save()
 
         # Step 2: Initiate transfer
         transfer_result = await transfer_amount_to_cashfree(
@@ -428,7 +444,7 @@ async def process_withdrawal(withdrawal_id: str, rider_id: int):
         except:
             pass
 
-async def add_beneficiary_to_cashfree(rider: RiderProfile) -> Dict[str, Any]:
+async def add_beneficiary_to_cashfree(rider: RiderProfile, beneficiary: BeneficiaryAccount) -> Dict[str, Any]:
     """Add beneficiary to Cashfree"""
     print("add_beneficiary_to_cashfree")
     try:
@@ -446,10 +462,10 @@ async def add_beneficiary_to_cashfree(rider: RiderProfile) -> Dict[str, Any]:
 
         body = {
             "beneficiary_id": f"rider_{rider.id}",
-            "beneficiary_name": rider.bank_holder_name,
+            "beneficiary_name": beneficiary.bank_holder_name,
             "beneficiary_instrument_details": {
-                "bank_account_number": rider.bank_account_number,
-                "bank_ifsc": rider.bank_ifsc,
+                "bank_account_number": beneficiary.bank_account_number,
+                "bank_ifsc": beneficiary.bank_ifsc,
             },
             "beneficiary_contact_details": {
                 "beneficiary_email": user.email,
