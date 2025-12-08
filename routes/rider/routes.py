@@ -155,6 +155,28 @@ async def update_rider_documents_me(
     return await RiderProfile_Pydantic.from_tortoise_orm(rider_profile)
 
 
+@router.get("/is-document-uploaded/")
+async def is_document_update(user: User = Depends(get_current_user)):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    return {"is_document_uploaded": rider_profile.is_document_uploaded}
+
+
+@router.put("/rider/is-document-uploaded/")
+async def update_is_document_uploaded(
+    is_document_uploaded: bool,
+    user: User = Depends(get_current_user)
+):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    rider_profile.is_document_uploaded = is_document_uploaded
+    await rider_profile.save()
+
+    return {"is_document_uploaded": is_document_uploaded}
+
+
 
 
 @router.get(
