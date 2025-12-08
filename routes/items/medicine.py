@@ -308,7 +308,7 @@ async def get_item(item_id: int):
 
 
 # ----------------------- UPDATE -----------------------
-@router.put("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
+@router.put("/{item_id}", response_model=dict)
 async def update_item(
         item_id: int,
         title: str = Form(...),
@@ -325,9 +325,10 @@ async def update_item(
         isOTC: bool = Form(False),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
-        image: Optional[UploadFile] = None
+        image: Optional[UploadFile] = None,
+        vendor: User = Depends(vendor_required),
 ):
-    item = await Item.get_or_none(id=item_id)
+    item = await Item.get_or_none(id=item_id, vendor=vendor)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
@@ -366,7 +367,7 @@ async def update_item(
 
 
 # ----------------------- PARTIAL UPDATE -----------------------
-@router.patch("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
+@router.patch("/{item_id}", response_model=dict)
 async def patch_item(
         item_id: int,
         title: Optional[str] = Form(None),
@@ -382,9 +383,10 @@ async def patch_item(
         isOTC: Optional[bool] = Form(None),
         weight: Optional[float] = Form(None),
         vendor_id: Optional[int] = Form(None),
-        image: Optional[UploadFile] = None
+        image: Optional[UploadFile] = None,
+        vendor: User = Depends(vendor_required),
 ):
-    item = await Item.get_or_none(id=item_id)
+    item = await Item.get_or_none(id=item_id, vendor=vendor)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
@@ -416,9 +418,9 @@ async def patch_item(
 
 
 # ----------------------- DELETE -----------------------
-@router.delete("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
-async def delete_item(item_id: int):
-    item = await Item.get_or_none(id=item_id)
+@router.delete("/{item_id}", response_model=dict)
+async def delete_item(item_id: int, vendor: User = Depends(vendor_required),):
+    item = await Item.get_or_none(id=item_id, vendor=vendor)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
