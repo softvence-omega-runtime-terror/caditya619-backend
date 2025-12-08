@@ -260,8 +260,6 @@ class OrderService:
                     )
 
 
-
-
                 price = Decimal(str(item.price))
                 quantity = item_input.quantity
                 subtotal += price * quantity
