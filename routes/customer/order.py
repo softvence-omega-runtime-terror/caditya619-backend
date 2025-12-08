@@ -193,7 +193,6 @@ async def get_all_orders(
     results = []
     for order in orders:
         # Get vendors locations
-        vendors_locations = await order.get_all_vendors_locations()
         
         # Get shipping address from metadata
         shipping_address = None
@@ -257,7 +256,6 @@ async def get_all_orders(
             "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
             "payment_status": order.payment_status,
             "payment_link": payment_link,
-            "vendors": vendors_locations,
             "rider_info": rider_info,
             "vendor_id": str(order.vendor_id) if order.vendor_id else None
         })
@@ -296,8 +294,8 @@ async def get_order_details(
     if order.user_id != current_user.id and not current_user.is_staff:
         raise HTTPException(status_code=403, detail="Not authorized to view this order")
     
-    # Get vendors locations
-    vendors_locations = await order.get_all_vendors_locations()
+    # # Get vendors locations
+    # vendors_locations = await order.get_all_vendors_locations()
     
     # Get shipping address from metadata
     shipping_address = None
@@ -385,9 +383,10 @@ async def get_order_details(
         "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
         "payment_status": order.payment_status,
         "payment_link": payment_link,
-        "vendors": vendors_locations,
+        # "vendors": vendors_locations,
         "rider_info": rider_info,
-        "vendor_info": vendor_info
+        "vendor_info": vendor_info,
+        "can_cancel": order_status.lower() == "pending"
     }
 
 
@@ -397,9 +396,9 @@ async def get_order_details(
 
 class OrderUpdateSchema(BaseModel):
     status: Optional[str] = None
-    rider_id: Optional[int] = None
-    tracking_number: Optional[str] = None
-    estimated_delivery: Optional[datetime] = None
+    # rider_id: Optional[int] = None
+    # tracking_number: Optional[str] = None
+    # estimated_delivery: Optional[datetime] = None
     reason: Optional[str] = None  # For cancellation reason
     
     class Config:
@@ -439,7 +438,7 @@ async def update_order(
             )
         
         current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        if current_status.lower() not in ["pending", "processing"]:
+        if current_status.lower() not in ["pending"]:
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot cancel order with status: {current_status}"
@@ -452,36 +451,40 @@ async def update_order(
         try:
             new_status = OrderStatus[update_data.status.upper()]
             old_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-            order.status = new_status
-            updated_fields.append('status')
+            if new_status != "cancelled":
+                raise HTTPException(status_code=400, detail="Only cancellation allowed")
+            else:
+                # Only staff can change status to cancelled
+                order.status = new_status
+                updated_fields.append('status')
             
-            # If cancelling, add reason
-            if update_data.status.lower() == "cancelled" and update_data.reason:
-                order.reason = update_data.reason
-                updated_fields.append('reason')
-            
-            print(f"[UPDATE] Order {order_id} status: {old_status} → {update_data.status}")
-            
+                # If cancelling, add reason
+                if update_data.status.lower() == "cancelled" and update_data.reason:
+                    order.reason = update_data.reason
+                    updated_fields.append('reason')
+                
+                print(f"[UPDATE] Order {order_id} status: {old_status} → {update_data.status}")
+                
         except KeyError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {update_data.status}")
     
-    if update_data.rider_id is not None:
-        # Verify rider exists
-        rider = await RiderProfile.get_or_none(id=update_data.rider_id)
-        if not rider:
-            raise HTTPException(status_code=404, detail="Rider not found")
+    # if update_data.rider_id is not None:
+    #     # Verify rider exists
+    #     rider = await RiderProfile.get_or_none(id=update_data.rider_id)
+    #     if not rider:
+    #         raise HTTPException(status_code=404, detail="Rider not found")
         
-        order.rider_id = update_data.rider_id
-        updated_fields.append('rider_id')
-        print(f"[UPDATE] Order {order_id} assigned to rider {update_data.rider_id}")
+    #     order.rider_id = update_data.rider_id
+    #     updated_fields.append('rider_id')
+    #     print(f"[UPDATE] Order {order_id} assigned to rider {update_data.rider_id}")
     
-    if update_data.tracking_number:
-        order.tracking_number = update_data.tracking_number
-        updated_fields.append('tracking_number')
+    # if update_data.tracking_number:
+    #     order.tracking_number = update_data.tracking_number
+    #     updated_fields.append('tracking_number')
     
-    if update_data.estimated_delivery:
-        order.estimated_delivery = update_data.estimated_delivery
-        updated_fields.append('estimated_delivery')
+    # if update_data.estimated_delivery:
+    #     order.estimated_delivery = update_data.estimated_delivery
+    #     updated_fields.append('estimated_delivery')
     
     if updated_fields:
         order.updated_at = datetime.utcnow()
@@ -500,7 +503,7 @@ async def update_order(
             )
             
             # If rider assigned and status is OUT_FOR_DELIVERY
-            if update_data.rider_id and update_data.status and update_data.status.lower() == "outfordelivery":
+            if update_data.status and update_data.status.lower() == "outfordelivery":
                 await send_notification(
                     order.user_id,
                     "Order Out for Delivery",
@@ -513,7 +516,7 @@ async def update_order(
             "success": True,
             "message": "Order updated successfully",
             "order_id": order_id,
-            "updated_fields": updated_fields
+            # "updated_fields": updated_fields
         }
     
     return {
@@ -552,7 +555,7 @@ async def cancel_order(
     # Check if order can be cancelled
     current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
     
-    if current_status.lower() in ["delivered", "cancelled"]:
+    if current_status.lower() != "pending":
         raise HTTPException(
             status_code=400,
             detail=f"Cannot cancel order with status: {current_status}"

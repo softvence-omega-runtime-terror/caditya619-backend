@@ -263,9 +263,9 @@ class OrderCreateSchema(BaseModel):
 
 class OrderUpdateSchema(BaseModel):
     status: Optional[str] = None
-    tracking_number: Optional[str] = None
-    transaction_id: Optional[str] = None
-    estimated_delivery: Optional[datetime] = None
+    # tracking_number: Optional[str] = None
+    # transaction_id: Optional[str] = None
+    # estimated_delivery: Optional[datetime] = None
     
 
 
@@ -345,7 +345,6 @@ class OrderResponseSchema(BaseModel):
     tracking_number: Optional[str] = None
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
-    vendors: List[VendorLocationSchema] = []
     rider_info: Optional[RiderInfoSchema] = None
     payment_link: Optional[str] = None
     payment_status: str = "unpaid"
