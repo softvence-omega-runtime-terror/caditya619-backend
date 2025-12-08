@@ -266,7 +266,7 @@ async def get_item(item_id: int):
 
 
 # ----------------------- UPDATE -----------------------
-@router.put("/{item_id}", response_model=dict, dependencies=[Depends(permission_required("change_item"))])
+@router.put("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
 async def update_item(
         item_id: int,
         title: str = Form(...),
@@ -323,7 +323,7 @@ async def update_item(
 
 
 # ----------------------- PARTIAL UPDATE -----------------------
-@router.patch("/{item_id}", response_model=dict, dependencies=[Depends(permission_required("change_item"))])
+@router.patch("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
 async def patch_item(
         item_id: int,
         title: Optional[str] = Form(None),
@@ -373,7 +373,7 @@ async def patch_item(
 
 
 # ----------------------- DELETE -----------------------
-@router.delete("/{item_id}", response_model=dict, dependencies=[Depends(permission_required("delete_item"))])
+@router.delete("/{item_id}", response_model=dict, dependencies=[Depends(vendor_required)])
 async def delete_item(item_id: int):
     item = await Item.get_or_none(id=item_id)
     if not item:
