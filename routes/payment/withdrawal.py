@@ -401,6 +401,7 @@ async def process_withdrawal(withdrawal_id: str, rider_id: int, beneficiary: Ben
         if not beneficiary.is_bank_verified:
             logger.info(f"Adding beneficiary for rider {rider.id}")
             beneficiary_result = await add_beneficiary_to_cashfree(rider, beneficiary)
+            print("beneficiary_result", beneficiary_result)
             if not beneficiary_result["success"]:
                 await handle_withdrawal_error(
                     withdrawal, rider,
@@ -461,7 +462,7 @@ async def add_beneficiary_to_cashfree(rider: RiderProfile, beneficiary: Benefici
         }
 
         body = {
-            "beneficiary_id": f"rider_{rider.id}",
+            "beneficiary_id": f"rider_{rider.id}_{beneficiary.id}",
             "beneficiary_name": beneficiary.bank_holder_name,
             "beneficiary_instrument_details": {
                 "bank_account_number": beneficiary.bank_account_number,
