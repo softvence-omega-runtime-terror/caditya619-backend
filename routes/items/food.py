@@ -299,7 +299,7 @@ async def update_item(
 
         img_path = item.image
         if image:
-            img_path = await update_file(image, "item_images", old_file=item.image)
+            img_path = await update_file(image, item.image, "item_images")
 
         item.title = title
         item.description = description
@@ -355,7 +355,7 @@ async def patch_item(
             item.subcategory = subcategory
 
         if image:
-            item.image = await update_file(image, "item_images", old_file=item.image)
+            item.image = await update_file(image, item.image, "item_images")
 
         # Dynamically update fields
         updates = {
