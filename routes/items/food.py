@@ -281,7 +281,6 @@ async def update_item(
         hot_deals: bool = Form(False),
         flash_sale: bool = Form(False),
         weight: Optional[float] = Form(None),
-        vendor_id: Optional[int] = Form(None),
         image: Optional[UploadFile] = None,
         isSignature: bool = Form(False),
         vendor: User = Depends(vendor_required),
@@ -313,7 +312,6 @@ async def update_item(
         item.hot_deals = hot_deals
         item.flash_sale = flash_sale
         item.weight = weight
-        item.vendor_id = vendor_id
         item.image = img_path,
         item.isSignature = isSignature
 
@@ -338,7 +336,6 @@ async def patch_item(
         hot_deals: Optional[bool] = Form(None),
         flash_sale: Optional[bool] = Form(None),
         weight: Optional[float] = Form(None),
-        vendor_id: Optional[int] = Form(None),
         image: Optional[UploadFile] = None,
         isSignature: bool = Form(False),
         vendor: User = Depends(vendor_required),
@@ -362,7 +359,7 @@ async def patch_item(
             "title": title, "description": description, "price": price, "discount": discount,
             "stock": stock, "popular": popular, "free_delivery": free_delivery,
             "hot_deals": hot_deals, "flash_sale": flash_sale,
-            "weight": weight, "vendor_id": vendor_id, "isSignature": isSignature
+            "weight": weight, "isSignature": isSignature
         }
         for k, v in updates.items():
             if v is not None:
