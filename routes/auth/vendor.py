@@ -184,29 +184,32 @@ async def vendor_details(
 async def update_vendor_profile(
     owner_name: str = Form(...),
     photo: UploadFile | None = File(None),
-    open_time: time | None = Form(default=time(9, 0)),
-    close_time: time | None = Form(default=time(22, 0)),
+    open_time: str = Form("09:00"),
+    close_time: str = Form("22:00"),
     current_user: User = Depends(vendor_required),
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
     if not vendor_profile:
-        raise HTTPException(status_code=200, detail="Vendor profile not found.")
+        raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
-    # Remove timezone if exists
-    open_time = open_time.replace(tzinfo=None) if open_time else None
-    close_time = close_time.replace(tzinfo=None) if close_time else None
+    try:
+        open_time_obj = time.fromisoformat(open_time)
+        close_time_obj = time.fromisoformat(close_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM")
 
     async with in_transaction() as conn:
-
         vendor_profile.owner_name = owner_name
-        vendor_profile.open_time = open_time
-        vendor_profile.close_time = close_time
+        vendor_profile.open_time = open_time_obj
+        vendor_profile.close_time = close_time_obj
 
         if photo:
             vendor_profile.photo = (
                 await update_file(photo, vendor_profile.photo, "vendor_photos")
-                if vendor_profile.photo else await save_file(photo, "vendor_photos")
+                if vendor_profile.photo
+                else await save_file(photo, "vendor_photos")
             )
+
         await vendor_profile.save(using_db=conn)
 
     return {
@@ -216,8 +219,8 @@ async def update_vendor_profile(
             "shop_name": current_user.name,
             "email": current_user.email,
             "photo": vendor_profile.photo,
-            "open_time": str(vendor_profile.open_time) if vendor_profile.open_time else None,
-            "close_time": str(vendor_profile.close_time) if vendor_profile.close_time else None,
+            "open_time": str(vendor_profile.open_time),
+            "close_time": str(vendor_profile.close_time),
             "is_completed": vendor_profile.is_completed,
             "kyc_status": vendor_profile.kyc_status,
         }
