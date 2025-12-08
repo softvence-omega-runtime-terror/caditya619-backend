@@ -118,7 +118,6 @@ async def create_item(
 
 @router.get("/my-product", response_model=dict)
 async def get_all_items(
-    category: Optional[int] = None,
     subcategory: Optional[int] = None,
     vendor_id: Optional[int] = None,
     isOTC: Optional[bool] = None,
@@ -135,12 +134,13 @@ async def get_all_items(
     limit: int = 20,
     vendor: User = Depends(vendor_required),
 ):
+    category = await Category.filter(type='medicine').first()
     query = Item.filter(category__type='medicine', vendor=vendor).prefetch_related("category", "subcategory", "sub_subcategory")
 
     if isOTC:
         query = query.filter(isOTC=isOTC)
     if category:
-        query = query.filter(category_id=category)
+        query = query.filter(category_id=category.id)
     if subcategory:
         query = query.filter(subcategory_id=subcategory)
     if vendor_id:
@@ -324,7 +324,6 @@ async def update_item(
         flash_sale: bool = Form(False),
         isOTC: bool = Form(False),
         weight: Optional[float] = Form(None),
-        vendor_id: Optional[int] = Form(None),
         image: Optional[UploadFile] = None,
         vendor: User = Depends(vendor_required),
 ):
@@ -341,7 +340,7 @@ async def update_item(
 
         img_path = item.image
         if image:
-            img_path = await update_file(image, "item_images", old_file=item.image)
+            img_path = await update_file(image, item.image, "item_images")
 
         item.title = title
         item.description = description
@@ -357,7 +356,6 @@ async def update_item(
         item.flash_sale = flash_sale
         item.isOTC = isOTC
         item.weight = weight
-        item.vendor_id = vendor_id
         item.image = img_path
 
         await item.save(using_db=conn)
@@ -382,7 +380,6 @@ async def patch_item(
         flash_sale: Optional[bool] = Form(None),
         isOTC: Optional[bool] = Form(None),
         weight: Optional[float] = Form(None),
-        vendor_id: Optional[int] = Form(None),
         image: Optional[UploadFile] = None,
         vendor: User = Depends(vendor_required),
 ):
@@ -398,14 +395,14 @@ async def patch_item(
             item.subcategory = subcategory
 
         if image:
-            item.image = await update_file(image, "item_images", old_file=item.image)
+            item.image = await update_file(image, item.image, "item_images")
 
         # Dynamically update fields
         updates = {
             "title": title, "description": description, "price": price, "discount": discount,
             "stock": stock, "popular": popular, "free_delivery": free_delivery,
             "hot_deals": hot_deals, "flash_sale": flash_sale, "isOTC": isOTC,
-            "weight": weight, "vendor_id": vendor_id
+            "weight": weight
         }
         for k, v in updates.items():
             if v is not None:
