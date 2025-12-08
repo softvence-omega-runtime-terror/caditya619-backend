@@ -184,26 +184,18 @@ async def vendor_details(
 async def update_vendor_profile(
     owner_name: str = Form(...),
     photo: UploadFile | None = File(None),
-    open_time: str = Form("09:00"),
-    close_time: str = Form("22:00"),
+    open_time: time = Form("09:00"),
+    close_time: time = Form("22:00"),
     current_user: User = Depends(vendor_required),
 ):
     vendor_profile = await VendorProfile.get_or_none(user=current_user)
     if not vendor_profile:
         raise HTTPException(status_code=404, detail="Vendor profile not found.")
 
-    try:
-        open_time_obj = time.fromisoformat(open_time)
-        open_time_obj = open_time_obj.replace(tzinfo=None)
-        close_time_obj = time.fromisoformat(close_time)
-        close_time_obj = close_time_obj.replace(tzinfo=None)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Time format must be HH:MM")
-
     async with in_transaction() as conn:
         vendor_profile.owner_name = owner_name
-        vendor_profile.open_time = open_time_obj
-        vendor_profile.close_time = close_time_obj
+        vendor_profile.open_time = open_time
+        vendor_profile.close_time = close_time
 
         if photo:
             vendor_profile.photo = (
