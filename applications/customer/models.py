@@ -82,6 +82,10 @@ class Order(models.Model):
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
     rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_orders", on_delete=fields.CASCADE, null=True)
 
+    vendor = fields.ForeignKeyField("models.User", related_name="vendor_orders", on_delete=fields.RESTRICT, null=True)
+
+
+
     shipping_address = fields.ForeignKeyField(
         "models.CustomerShippingAddress",
         related_name="orders",
@@ -115,7 +119,7 @@ class Order(models.Model):
     metadata = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
-    # prepire_time = fields.IntField(null=True)
+    prepire_time = fields.IntField(null=True)
     reason = fields.TextField(null=True)
     pickup_distance_km = fields.FloatField(null= True)
     pickup_time = fields.DatetimeField(null=True)
