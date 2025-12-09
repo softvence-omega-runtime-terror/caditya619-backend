@@ -18,8 +18,8 @@ def generate_signature_and_headers():
     encrypted = public_key.encrypt(
         sign_string,
         padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA1()),
-            algorithm=hashes.SHA1(),
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
             label=None,
         )
     )
