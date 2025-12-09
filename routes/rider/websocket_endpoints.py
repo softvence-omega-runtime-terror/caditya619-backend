@@ -5,6 +5,7 @@ Separate endpoints for 3 purposes and 4 client types
 """
 
 from fastapi import APIRouter, WebSocket, Depends
+from app.auth import login_required
 from starlette.websockets import WebSocketDisconnect
 from app.utils.websocket_manager import manager, ConnectionPurpose, ClientType
 from app.redis import get_redis
@@ -510,6 +511,21 @@ async def broadcast_notification(
         "total": len(results),
         "successful": sum(1 for v in results.values() if v)
     }
+
+
+@router.post("/location-subscribe/", dependencies=[Depends(login_required)])
+async def subscribe_to_riders_location(
+    action: str,
+    rider_id: str,
+    customer_id: str
+):
+    if action == "subscribe" and rider_id:
+        manager.add_location_subscriber(rider_id, customer_id)
+        return {"results": f"customer {customer_id} subscribed {rider_id}"}
+        
+    elif action == "unsubscribe" and rider_id:
+        manager.remove_location_subscriber(rider_id, customer_id)
+        return {"results": f"customer {customer_id} unsubscribed {rider_id}"}
 
 
 # ============================================================================
