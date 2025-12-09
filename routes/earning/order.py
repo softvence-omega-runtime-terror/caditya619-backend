@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Form, HTTPException, Depends
+from types import Optional
 from app.auth import permission_required, vendor_required
 from applications.user.models import User
 
@@ -121,7 +122,6 @@ async def order_status_management(
     status: str = Form(..., description="New status for the order 'confirmed', 'shipped', 'outForDelivery', 'cancelled', 'refunded'"),
     vendor: User = Depends(vendor_required)
 ):
-    # Fetch the order belonging to this vendor
     order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
     print("Vendor making the request:", vendor)
     print("Vendor making the request:", vendor.id)
@@ -130,10 +130,10 @@ async def order_status_management(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    # Validate status against OrderStatus enum
     allowed_statuses = [
         "confirmed",
         "shipped",
+        "prepared",
         "outForDelivery",
         "cancelled",
         "refunded"
@@ -163,24 +163,34 @@ async def order_status_management(
 async def get_all_orders(
     offset: int = 0,
     limit: int = 10,
+    status: Optional[str] = Form(None, description="e.g., 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
+    type: Optional[str] = Form(None, description="e.g., 'combined', 'split', 'urgent'"),
     vendor: User = Depends(vendor_required)
 ):
-    orders = await Order.filter(vendor_id=vendor.id) \
-        .offset(offset) \
-        .limit(limit) \
+    query = Order.filter(vendor_id=vendor.id)
+    if status:
+        query = query.filter(status=status)
+    if type:
+        query = query.filter(type=type)
+    total_orders = await query.count()
+    orders = (
+        await query
+        .offset(offset)
+        .limit(limit)
         .prefetch_related(
             "items__item__vendor__vendor_profile",
             "user",
             "rider",
             "shipping_address"
         )
-    total_orders = await Order.filter(vendor_id=vendor.id).count()
+    )
+    serialized_orders = [await serialize_order(order) for order in orders]
 
     return {
         "total_orders": total_orders,
         "offset": offset,
         "limit": limit,
-        "orders": [await serialize_order(order) for order in orders]
+        "orders": serialized_orders
     }
 
 
@@ -197,9 +207,6 @@ async def get_all_orders():
         "rider",
         "shipping_address"
     )
-
-    if not orders:
-        raise HTTPException(status_code=404, detail="No orders found")
 
     return {
         "total_orders": len(orders),
