@@ -163,7 +163,7 @@ async def order_status_management(
 async def get_all_orders(
     offset: int = 0,
     limit: int = 10,
-    status: Optional[str] = Query(None, description="e.g., 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
+    status: Optional[str] = Query(None, description="e.g., 'processing', 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
     type: Optional[str] = Query (None, description="e.g., 'combined', 'split', 'urgent'"),
     vendor: User = Depends(vendor_required)
 ):
