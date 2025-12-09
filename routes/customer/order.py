@@ -1,12 +1,12 @@
 import httpx
 from applications.customer.services import OrderService
-from fastapi import APIRouter, HTTPException, Query, Request, status, Depends, Form
+from fastapi import APIRouter, HTTPException, Query, Request, status, Depends, Form, Response
+from fastapi.responses import RedirectResponse
 from typing import List, Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import os
 import uuid
-from applications.user import vendor
 from applications.user.models import *
 from applications.items.models import *
 from applications.customer.models import *
@@ -23,37 +23,71 @@ from app.utils.websocket_manager import manager
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
+
+
 # ============================================================
 # ROUTER - applications.customer.routes.py
 # ============================================================
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def place_order(
-    order_data: OrderCreateSchema, 
+async def create_order(
+    order_data: OrderCreateSchema,
     current_user: User = Depends(get_current_user),
     redis = Depends(get_redis)
 ):
     """
-    STEP 1: Create order with PENDING status
-    STEP 2: Return payment link if payment method is Cashfree
-    STEP 3: Order progresses only after successful payment
+    Create order with automatic sub-order creation per vendor
     """
-    
     service = OrderService()
+    
     try:
-        # Create order with PENDING status
-        order = await service.create_order(order_data, current_user)
+        # Create parent order with sub-orders
+        order = await service.create_order_with_sub_orders(order_data, current_user)
         
-        payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
-        requires_payment = payment_method.lower() == "cashfree"
+        # Ensure tracking numbers are unique per vendor (not based on items)
+        try:
+            vendor_counts = {}
+            for sub_order in order.sub_orders:
+                # vendor_id may be an attribute or a relation
+                vid = getattr(sub_order, "vendor_id", None) or (getattr(sub_order, "vendor", None) and getattr(sub_order.vendor, "id", None))
+                if vid is None:
+                    # skip if vendor id can't be determined
+                    continue
+                vendor_counts[vid] = vendor_counts.get(vid, 0) + 1
+                new_tracking = f"{vid}-{str(order.id)[:8].upper()}-{vendor_counts[vid]}"
+                # update only if different to avoid unnecessary writes
+                if getattr(sub_order, "tracking_number", None) != new_tracking:
+                    sub_order.tracking_number = new_tracking
+                    try:
+                        await sub_order.save(update_fields=["tracking_number"])
+                    except Exception as e:
+                        print(f"[TRACKING] Failed to save tracking for sub_order {getattr(sub_order,'id', None)}: {e}")
+        except Exception as e:
+            print(f"[TRACKING] Error ensuring per-vendor tracking numbers: {e}")
+        
+        # Determine payment method (with fallback to metadata)
+        try:
+            payment_method = ""
+            if hasattr(order, 'payment_method') and order.payment_method is not None:
+                payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
+            elif getattr(order, "metadata", None):
+                # fallback if payment method stored in metadata
+                payment_method = str(order.metadata.get("payment_method", ""))
+            payment_method = (payment_method or "").strip()
+        except Exception:
+            payment_method = ""
+        
+        requires_payment = payment_method.lower() in ["cashfree", "online", "upi"]
+        # Only require payment if order total > 0
+        requires_payment = requires_payment and (float(order.total) > 0)
         
         response_data = {
             "success": True,
             "message": "Order created successfully",
             "data": {
                 "order_id": order.id,
-                "status": order.status.value if hasattr(order.status, 'value') else order.status,
-                "tracking_number": order.tracking_number,
+                "sub_orders_count": len(order.sub_orders),
+                "tracking_numbers": [so.tracking_number for so in order.sub_orders],
                 "total": float(order.total),
                 "payment_status": order.payment_status,
                 "requires_payment": requires_payment
@@ -61,44 +95,41 @@ async def place_order(
         }
         
         if requires_payment:
-            # Generate payment link using Cashfree
-            try:
-                payment_link_response = await create_payment_link_internal(order)
-                response_data["data"]["payment_link"] = payment_link_response["payment_link"]
-                response_data["data"]["cf_order_id"] = payment_link_response["cf_order_id"]
-                response_data["message"] = "Order created. Please complete payment to proceed."
-            except Exception as e:
-                print(f"Payment link creation error: {e}")
-                response_data["message"] = "Order created but payment link generation failed. Please try manual payment."
+            # Ensure cashfree credentials are present
+            if not (CASHFREE_CLIENT_PAYMENT_ID and CASHFREE_CLIENT_PAYMENT_SECRET and CASHFREE_BASE):
+                response_data["message"] = "Order created but payment configuration is missing."
+            else:
+                try:
+                    # Create payment link for entire order
+                    payment_link_response = await create_payment_link_for_order(order)
+                    if payment_link_response:
+                        response_data["data"]["payment_link"] = payment_link_response.get("payment_link", "")
+                        response_data["data"]["cf_order_id"] = payment_link_response.get("cf_order_id", "")
+                        response_data["message"] = "Order created. Please complete payment to proceed."
+                    else:
+                        response_data["message"] = "Order created but payment link generation returned no data."
+                except Exception as e:
+                    print(f"Payment link error: {e}")
+                    response_data["message"] = "Order created but payment link generation failed."
         else:
-            # COD order - notify immediately
-            payload = {
-                "type": "order_placed",
-                "order_id": order.id,
-                "customer_name": current_user.name,
-                "payment_method": "COD",
-                "created_at": datetime.utcnow().isoformat()
-            }
-            
+            # COD order - notify vendors
             try:
-                await redis.publish("order_updates", json.dumps(payload))
-                await manager.send_to(payload, "customers", str(current_user.id), "notifications")
-                
-                # Notify all vendors
-                order_items = await OrderItem.filter(order=order).prefetch_related('item__vendor')
-                vendor_ids = set()
-                for oi in order_items:
-                    vendor_ids.add(oi.item.vendor_id)
-                
-                for vendor_id in vendor_ids:
-                    vendor = await VendorProfile.get_or_none(id=vendor_id)
-                    if vendor:
-                        await manager.send_to(payload, "vendors", str(vendor.user_id), "notifications")
-                        await send_notification(
-                            vendor.user_id, 
-                            "New COD Order", 
-                            f"New order #{order.id} received"
-                        )
+                for sub_order in order.sub_orders:
+                    payload = {
+                        "type": "order_placed",
+                        "order_id": order.id,
+                        "sub_order_id": sub_order.id,
+                        "tracking_number": sub_order.tracking_number,
+                        "customer_name": current_user.name,
+                        "payment_method": "COD"
+                    }
+                    
+                    await manager.send_to(payload, "vendors", str(sub_order.vendor_id), "notifications")
+                    await send_notification(
+                        sub_order.vendor_id,
+                        "New Order",
+                        f"New order received: {sub_order.tracking_number}"
+                    )
             except Exception as e:
                 print(f"Notification error: {e}")
         
@@ -107,170 +138,11 @@ async def place_order(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================
-# COMPLETE ORDER CRUD - applications.customer.routes.py
-# ============================================================
-
-# from fastapi import APIRouter, HTTPException, Depends, Query, status
-# from typing import Optional, List
-# from datetime import datetime
-
-# router = APIRouter(prefix='/orders', tags=['Orders'])
-
-# # ============================================================
-# # 1. CREATE ORDER (Already Implemented)
-# # ============================================================
-
-# @router.post("/", status_code=status.HTTP_201_CREATED)
-# async def place_order(
-#     order_data: OrderCreateSchema, 
-#     current_user: User = Depends(get_current_user),
-#     redis = Depends(get_redis)
-# ):
-#     """Create new order with payment link if needed"""
-#     # Implementation already provided in previous artifacts
-#     pass
-
-
-# ============================================================
-# 2. GET ALL ORDERS (with filters and pagination)
-# ============================================================
-
-@router.get("/")  # ✅ NO response_model here!
-async def get_all_orders(
-    current_user: User = Depends(get_current_user),
-    status_filter: Optional[str] = Query(None, description="Filter by status: pending, processing, confirmed, etc."),
-    payment_status: Optional[str] = Query(None, description="Filter by payment status: unpaid, paid, failed"),
-    limit: int = Query(10, ge=1, le=100, description="Number of orders to return"),
-    offset: int = Query(0, ge=0, description="Number of orders to skip"),
-    sort_by: str = Query("created_at", description="Sort field: created_at, total, status"),
-    sort_order: str = Query("desc", description="Sort order: asc or desc")
-):
-    """
-    Get all orders for current user with filters and pagination.
-    Admins can see all orders, regular users see only their own.
-    """
-    
-    # Build query
-    if current_user.is_staff:
-        query = Order.all()
-    else:
-        query = Order.filter(user_id=current_user.id)
-    
-    # Apply status filter
-    if status_filter:
-        try:
-            status_enum = OrderStatus[status_filter.upper()]
-            query = query.filter(status=status_enum)
-        except KeyError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {status_filter}")
-    
-    # Apply payment status filter
-    if payment_status:
-        query = query.filter(payment_status=payment_status.lower())
-    
-    # Apply sorting
-    sort_field = sort_by if sort_by in ['created_at', 'total', 'order_date'] else 'created_at'
-    if sort_order.lower() == 'desc':
-        query = query.order_by(f'-{sort_field}')
-    else:
-        query = query.order_by(sort_field)
-    
-    # Get total count
-    total_count = await query.count()
-    
-    # Apply pagination
-    orders = await query.offset(offset).limit(limit).prefetch_related(
-        'user',
-        'items__item',
-        'rider__user'
-    )
-    
-    # Build response
-    results = []
-    for order in orders:
-        # Get vendors locations
-        
-        # Get shipping address from metadata
-        shipping_address = None
-        if order.metadata and "shipping_address" in order.metadata:
-            shipping_address = order.metadata["shipping_address"]
-        
-        # Get delivery and payment info
-        delivery_option = order.metadata.get("delivery_option", {}) if order.metadata else {
-            "type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else str(order.delivery_type),
-            "price": float(order.delivery_fee)
-        }
-        
-        payment_method = order.metadata.get("payment_method", {}) if order.metadata else {
-            "type": order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
-        }
-        
-        # Build items list
-        items = []
-        for order_item in order.items:
-            items.append({
-                "item_id": order_item.item_id,
-                "title": order_item.title,
-                "price": order_item.price,
-                "quantity": order_item.quantity,
-                "image_path": order_item.image_path
-            })
-        
-        # Rider info (only if OUT_FOR_DELIVERY)
-        rider_info = None
-        order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        if order_status.lower() == "outfordelivery" and order.rider:
-            rider_info = {
-                "rider_id": order.rider.id,
-                "rider_name": order.rider.user.name,
-                "rider_phone": order.rider.user.phone,
-                "rider_image": order.rider.profile_image
-            }
-        
-        # Payment link
-        payment_link = None
-        if order.payment_status == "unpaid" and order.metadata:
-            cashfree_data = order.metadata.get("cashfree", {})
-            payment_link = cashfree_data.get("payment_link")
-        
-        results.append({
-            "id": order.id,
-            "user_id": str(order.user_id),
-            "items": items,
-            "shipping_address": shipping_address,
-            "delivery_option": delivery_option,
-            "payment_method": payment_method,
-            "subtotal": float(order.subtotal),
-            "delivery_fee": float(order.delivery_fee),
-            "total": float(order.total),
-            "coupon_code": order.coupon_code,
-            "discount": float(order.discount),
-            "order_date": order.order_date.isoformat(),
-            "status": order_status,
-            "transaction_id": order.transaction_id,
-            "tracking_number": order.tracking_number,
-            "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
-            "payment_status": order.payment_status,
-            "payment_link": payment_link,
-            "rider_info": rider_info,
-            "vendor_id": str(order.vendor_id) if order.vendor_id else None
-        })
-    
-    # Return with pagination metadata
-    return {
-        "total": total_count,
-        "limit": limit,
-        "offset": offset,
-        "orders": results
-    }
-
-
-# ============================================================
-# 3. GET SINGLE ORDER
+# GET ORDER WITH SUB-ORDERS (Your Required Format)
 # ============================================================
 
 @router.get("/{order_id}")
@@ -278,13 +150,15 @@ async def get_order_details(
     order_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Get detailed information about a specific order"""
+    """
+    Get order with sub-orders in the specified format
+    """
     
     order = await Order.get_or_none(id=order_id).prefetch_related(
         'user',
-        'items__item',
-        'rider__user',
-        'vendor__vendor_profile'
+        'sub_orders__items__item',
+        'sub_orders__vendor__vendor_profile',
+        'sub_orders__rider__user'
     )
     
     if not order:
@@ -292,102 +166,134 @@ async def get_order_details(
     
     # Check authorization
     if order.user_id != current_user.id and not current_user.is_staff:
-        raise HTTPException(status_code=403, detail="Not authorized to view this order")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    # # Get vendors locations
-    # vendors_locations = await order.get_all_vendors_locations()
+    # Build sub-orders array
+    sub_orders_data = []
     
-    # Get shipping address from metadata
-    shipping_address = None
-    if order.metadata and "shipping_address" in order.metadata:
-        shipping_address = order.metadata["shipping_address"]
-    
-    # Get delivery and payment info
-    delivery_option = order.metadata.get("delivery_option", {}) if order.metadata else {
-        "type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else str(order.delivery_type),
-        "price": float(order.delivery_fee)
-    }
-    
-    payment_method = order.metadata.get("payment_method", {}) if order.metadata else {
-        "type": order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
-    }
-    # NEW: Get vendor info (preserved even if vendor deleted)
-    vendor_info = None
-    if order.metadata and "vendor_info" in order.metadata:
-        vendor_info = order.metadata["vendor_info"]
-    elif order.vendor:
-        # Fallback to live vendor data if metadata not available
-        vendor_profile = await VendorProfile.get_or_none(user=order.vendor)
-        vendor_info = {
-            "vendor_id": order.vendor_id,
-            "vendor_name": order.vendor.name,
-            "vendor_phone": order.vendor.phone,
-            "vendor_email": order.vendor.email or None,
-            "is_vendor": order.vendor.is_vendor,
-            "is_active": order.vendor.is_active
-        }
-        
-        if vendor_profile:
-            vendor_info.update({
-                "store_name": vendor_profile.owner_name,
-                "store_type": vendor_profile.type,
-                "store_latitude": vendor_profile.latitude,
-                "store_longitude": vendor_profile.longitude,
-                "kyc_status": vendor_profile.kyc_status,
-                "profile_is_active": vendor_profile.is_active
+    for sub_order in order.sub_orders:
+        # Build items array
+        items = []
+        for item in sub_order.items:
+            items.append({
+                "item_id": item.item_id,
+                "title": item.title,
+                "price": item.price,
+                "quantity": item.quantity,
+                "image_path": item.image_path
             })
-    # Build items list
-    items = []
-    for order_item in order.items:
-        items.append({
-            "item_id": order_item.item_id,
-            "title": order_item.title,
-            "price": order_item.price,
-            "quantity": order_item.quantity,
-            "image_path": order_item.image_path
+        
+        # Vendor info (from stored JSON)
+        vendor_info = sub_order.vendor_info
+        
+        # Rider info (only if assigned and status is OUT_FOR_DELIVERY)
+        rider_info = None
+        sub_order_status = sub_order.status.value if hasattr(sub_order.status, 'value') else str(sub_order.status)
+        
+        if sub_order_status.lower() == "outfordelivery" and sub_order.rider:
+            rider_info = {
+                "rider_id": sub_order.rider.id,
+                "name": sub_order.rider.user.name,
+                "phone": sub_order.rider.user.phone,
+                "vehicle": getattr(sub_order.rider, 'vehicle_type', 'Bike'),
+                "vehicle_number": getattr(sub_order.rider, 'vehicle_number', 'N/A')
+            }
+        
+        # Delivery option
+        delivery_option = sub_order.delivery_option or {}
+        
+        # Payment method (from parent order)
+        payment_method_data = order.metadata.get("payment_method", {}) if order.metadata else {}
+        
+        sub_orders_data.append({
+            "tracking_number": sub_order.tracking_number,
+            "items": items,
+            "vendor_info": vendor_info,
+            "rider_info": rider_info,
+            "delivery_option": delivery_option,
+            "payment_method": payment_method_data,
+            "status": sub_order_status,
+            "estimated_delivery": sub_order.estimated_delivery.strftime("%Y-%m-%d %H:%M") if sub_order.estimated_delivery else None
         })
     
-    # Rider info (only if OUT_FOR_DELIVERY)
-    rider_info = None
-    order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-    if order_status.lower() == "outfordelivery" and order.rider:
-        rider_info = {
-            "rider_id": order.rider.id,
-            "rider_name": order.rider.user.name,
-            "rider_phone": order.rider.user.phone,
-            "rider_image": order.rider.profile_image
-        }
+    # Get payment link if exists
+    payment_link = ""
+    if order.metadata and "cashfree" in order.metadata:
+        payment_link = order.metadata["cashfree"].get("payment_link", "")
     
-    # Payment link
-    payment_link = None
-    if order.payment_status == "unpaid" and order.metadata:
-        cashfree_data = order.metadata.get("cashfree", {})
-        payment_link = cashfree_data.get("payment_link")
-    
-    return {
+    # Build final response
+    response = {
         "order_id": order.id,
         "user_id": str(order.user_id),
-        "items": items,
-        "shipping_address": shipping_address,
-        "delivery_option": delivery_option,
-        "payment_method": payment_method,
+        "sub_orders": sub_orders_data,  # This is now an array!
+        "shipping_address": order.shipping_address,
         "subtotal": float(order.subtotal),
         "delivery_fee": float(order.delivery_fee),
         "total": float(order.total),
-        "coupon_code": order.coupon_code,
+        "coupon_code": order.coupon_code or "",
         "discount": float(order.discount),
-        "order_date": order.order_date.isoformat(),
-        "status": order_status,
-        "transaction_id": order.transaction_id,
-        "tracking_number": order.tracking_number,
-        "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
+        "order_date": order.order_date.strftime("%Y-%m-%d %H:%M"),
+        "transaction_id": order.transaction_id or "",
         "payment_status": order.payment_status,
         "payment_link": payment_link,
-        # "vendors": vendors_locations,
-        "rider_info": rider_info,
-        "vendor_info": vendor_info,
-        "can_cancel": order_status.lower() == "pending"
+        "can_cancel": order.can_cancel
     }
+    
+    return response
+
+
+# ============================================================
+# GET ALL ORDERS WITH SUB-ORDERS
+# ============================================================
+
+@router.get("/")
+async def get_all_orders(
+    current_user: User = Depends(get_current_user),
+    status_filter: Optional[str] = None,
+    limit: int = 10,
+    offset: int = 0
+):
+    """
+    Get all orders with sub-orders summary
+    """
+    
+    query = Order.filter(user_id=current_user.id) if not current_user.is_staff else Order.all()
+    
+    total = await query.count()
+    orders = await query.offset(offset).limit(limit).prefetch_related(
+        'sub_orders__vendor',
+        'sub_orders__items'
+    ).order_by('-created_at')
+    
+    results = []
+    for order in orders:
+        # Count sub-orders by status
+        sub_order_statuses = {}
+        for sub_order in order.sub_orders:
+            status = sub_order.status.value if hasattr(sub_order.status, 'value') else str(sub_order.status)
+            sub_order_statuses[status] = sub_order_statuses.get(status, 0) + 1
+        
+        results.append({
+            "order_id": order.id,
+            "sub_orders_count": len(order.sub_orders),
+            "sub_order_statuses": sub_order_statuses,
+            "total": float(order.total),
+            "payment_status": order.payment_status,
+            "order_date": order.order_date.isoformat(),
+            "can_cancel": order.can_cancel
+        })
+    
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "orders": results
+    }
+
+
+
+
+
 
 
 # ============================================================
@@ -624,150 +530,138 @@ async def cancel_order(
 # PAYMENT HELPER - Internal function
 # ============================================================
 
-async def create_payment_link_internal(order: Order):
-    """Internal function to create payment link"""
-    
-    customer_name = order.metadata.get("shipping_address", {}).get("full_name", "Customer")
-    customer_phone = order.metadata.get("shipping_address", {}).get("phone_number", order.user.phone)
-    customer_email = order.user.email or f"customer_{order.user.id}@example.com"
-    
+async def create_payment_link_for_order(order: Order):
+    # Ensure user relation loaded
+    if not hasattr(order, "user") or order.user is None:
+        await order.fetch_related("user")
+
+    customer_name = (order.shipping_address or {}).get("full_name", "Customer")
+    customer_phone = (order.shipping_address or {}).get("phone_number", getattr(order.user, "phone", ""))
+    customer_email = getattr(order.user, "email", None) or f"customer_{getattr(order.user, 'id', 'unknown')}@example.com"
+
     headers = {
         "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
         "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET,
         "x-api-version": CASHFREE_API_VERSION,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
+
     cf_order_id = f"CF_{order.id}_{uuid.uuid4().hex[:8].upper()}"
-    
-    payload = {
-        "link_id": cf_order_id,
-        "link_amount": float(order.total),
-        "link_currency": "INR",
-        "link_purpose": f"Payment for order {order.id}",
-        "customer_details": {
-            "customer_phone": customer_phone,
-            "customer_email": customer_email,
-            "customer_name": customer_name
+
+    # Prepare a few possible payload shapes (Cashfree variants differ by account/type)
+    payload_variants = [
+        # variant A (link based)
+        {
+            "link_id": cf_order_id,
+            "link_amount": float(order.total),
+            "link_currency": "INR",
+            "link_purpose": f"Payment for order {order.id}",
+            "customer_details": {
+                "customer_phone": customer_phone,
+                "customer_email": customer_email,
+                "customer_name": customer_name,
+            },
+            "link_notify": {"send_sms": True, "send_email": True},
+            "link_meta": {
+                "order_id": order.id,
+                "user_id": str(getattr(order.user, "id", "")),
+                "return_url": f"{settings.BACKEND_URL}/payment/test/webhook",
+            },
         },
-        "link_notify": {
-            "send_sms": True,
-            "send_email": True
+        # variant B (simple payment page)
+        {
+            "orderId": cf_order_id,
+            "orderAmount": float(order.total),
+            "orderCurrency": "INR",
+            "orderNote": f"Payment for order {order.id}",
+            "customerName": customer_name,
+            "customerPhone": customer_phone,
+            "customerEmail": customer_email,
+            "notifyCustomer": True,
+            "returnUrl": f"{settings.BACKEND_URL}/payment/test/webhook",
+            "metadata": {"order_id": order.id, "user_id": str(getattr(order.user, "id", ""))},
         },
-        "link_meta": {
-            "order_id": order.id,
-            "user_id": str(order.user.id),
-            "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last"
-        }
-    }
-    
+    ]
+
+    base = (CASHFREE_BASE or "").rstrip("/")
+    if not base:
+        raise Exception("Cashfree base URL not configured")
+
+    candidate_paths = [
+        "links", "v1/links", "api/v1/links", "v2/links", "order/create", "orders", "payments/links"
+    ]
+
+    raw_results = []
+    successful_data = None
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{CASHFREE_BASE}/links",
-            json=payload,
-            headers=headers
-        )
-    
-    data = resp.json()
-    
-    if resp.status_code not in [200, 201]:
-        raise Exception(f"Cashfree API error: {data.get('message', 'Unknown error')}")
-    
-    payment_link = data.get("link_url")
-    
-    # Save payment link to order metadata
+        for path in candidate_paths:
+            url = f"{base}/{path.lstrip('/')}"
+            for payload in payload_variants:
+                try:
+                    resp = await client.post(url, json=payload, headers=headers)
+                except Exception as e:
+                    raw_results.append({"url": url, "error": str(e)})
+                    continue
+
+                entry = {"url": url, "status_code": resp.status_code}
+                try:
+                    entry["body"] = resp.json()
+                except Exception:
+                    entry["body_text"] = resp.text[:1000]
+                raw_results.append(entry)
+
+                if resp.status_code in (200, 201):
+                    # try to extract link/id from multiple shapes
+                    data = None
+                    try:
+                        data = resp.json()
+                    except Exception:
+                        data = entry.get("body_text") or {}
+                    # multiple fallbacks for link url/id
+                    payment_link = (
+                        (data.get("link_url") if isinstance(data, dict) else None) or
+                        (data.get("payment_link") if isinstance(data, dict) else None) or
+                        (data.get("url") if isinstance(data, dict) else None) or
+                        (data.get("data", {}).get("link_url") if isinstance(data, dict) else None) or
+                        ""
+                    )
+                    link_id = (
+                        (data.get("link_id") if isinstance(data, dict) else None) or
+                        (data.get("id") if isinstance(data, dict) else None) or
+                        (data.get("data", {}).get("link_id") if isinstance(data, dict) else None) or
+                        cf_order_id
+                    )
+                    successful_data = {"cf_order_id": link_id, "payment_link": payment_link, "raw": data}
+                    break
+            if successful_data:
+                break
+
+    # persist raw results for debugging
     if order.metadata is None:
         order.metadata = {}
-    
-    order.metadata["cashfree"] = {
-        "cf_link_id": cf_order_id,
-        "payment_link": payment_link,
-        "link_status": data.get("link_status"),
-        "created_at": data.get("link_created_at")
-    }
-    
+    order.metadata.setdefault("cashfree", {})
+    order.metadata["cashfree"]["raw_attempts"] = raw_results
+    order.metadata["cashfree"].setdefault("created_at", datetime.utcnow().isoformat())
+
+    if not successful_data:
+        # save metadata and raise clear error
+        await order.save(update_fields=["metadata"])
+        raise Exception("Failed to create Cashfree payment link; see order.metadata.cashfree.raw_attempts for details")
+
+    # Save successful response into metadata and return concise info
+    order.metadata["cashfree"].update({
+        "cf_link_id": successful_data["cf_order_id"],
+        "payment_link": successful_data["payment_link"],
+        "last_success": successful_data["raw"],
+    })
     await order.save(update_fields=["metadata"])
-    
-    return {
-        "cf_order_id": cf_order_id,
-        "payment_link": payment_link
-    }
+
+    return {"cf_order_id": successful_data["cf_order_id"], "payment_link": successful_data["payment_link"]}
+
+
+# ============================================================
+# WEBHOOK - Cashfree Test Webhook
+# ============================================================
 
 
 
-
-
-
-
-#*****************************************
-#    Rider Ratings
-#*****************************************
-
-@router.post("/rider/ratings/{order_id}")
-async def create_rider_rating(
-        order_id : str,
-        rating : int = Form(None),
-        comment : str = Form(None),    
-        current_user: User = Depends(get_current_user)
-    ):
-    order = await Order.get(id=order_id)
-    if not order or order.status != OrderStatus.DELIVERED or order.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Order not found")
-    rider = await RiderProfile.get(id=order.rider_id)
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider not found")
-    rider_review = await RiderReview.create(
-        rating=rating,
-        comment=comment,
-        user=current_user,
-        rider=rider
-    )
-    await rider_review.save()
-    
-    return {
-        "success": True,
-        "message": "Rider Rating Created Successfully",
-        "retings": {
-            "id": rider_review.id,
-            "rating": rider_review.rating,
-            "comment": rider_review.comment,
-            "user": rider_review.user.name,
-            "created_at": rider_review.created_at.isoformat(),
-        }
-    }
-
-
-
-
-@router.post("/complaints/{order_id}")
-async def create_complaint(
-        order_id : str,
-        description : str = Form(...),
-        is_serious : bool = Form(False),
-        current_user: User = Depends(get_current_user)
-    ):
-    order = await Order.get(id=order_id)
-    if not order or order.status != OrderStatus.DELIVERED or order.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Order not found")
-    rider = await RiderProfile.get(id=order.rider_id)
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider not found")
-    complaint = await Complaint.create(
-        rider = rider,
-        user = current_user,
-        description=description,
-        is_serious=is_serious
-    )
-    await complaint.save()
-
-    return {
-        "success": True,
-        "message": "Complaint Created Successfully",
-        "complaint": {
-            "id": complaint.id,
-            "description": complaint.description,
-            "is_serious": complaint.is_serious,
-            "user": complaint.user.name,
-            "created_at": complaint.created_at.isoformat(),
-        }
-    }

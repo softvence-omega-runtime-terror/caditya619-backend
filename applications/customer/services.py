@@ -1,10 +1,9 @@
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from applications.user.models import User
 from applications.user.customer import CustomerShippingAddress
-from applications.items.models import *
-from applications.customer.models import *
-from applications.customer.schemas import *
+from applications.customer.models import Order, SubOrder, SubOrderItem, OrderStatus
+from applications.customer.schemas import OrderCreateSchema, OrderUpdateSchema
 from decimal import Decimal, InvalidOperation
 import uuid
 import time
@@ -192,104 +191,49 @@ class ShippingAddressService:
 # ============================================================
 
 class OrderService:
+    
     @staticmethod
     def _generate_order_id() -> str:
         return f"ORD_{uuid.uuid4().hex[:8].upper()}"
-
-    async def create_order(self, order_data: OrderCreateSchema, current_user) -> Order:
-        subtotal = Decimal("0")
-        order_items = []
-        user = current_user
-        user_id = user.id
+    
+    @staticmethod
+    def _generate_tracking_number() -> str:
+        import random
+        return f"TRK{random.randint(100000000, 999999999)}"
+    
+    async def create_order_with_sub_orders(
+        self, 
+        order_data: OrderCreateSchema, 
+        current_user
+    ) -> Order:
+        """
+        Create parent order with multiple sub-orders (one per vendor)
+        """
         
-        # NEW: Validate single vendor and collect vendor info
-        vendor_id = None
-        vendor_info = None
-
-        # Process order items
-        for item_input in order_data.items:
-            try:
-                item = await Item.get(id=item_input.item_id).prefetch_related('vendor__vendor_profile')
-                
-                # NEW: Validate that vendor exists and is active
-                if not item.vendor:
-                    raise ValueError(f"Item '{item.title}' has no associated vendor")
-                
-                if not item.vendor.is_vendor:
-                    raise ValueError(f"Item '{item.title}' vendor account is invalid")
-                
-                if not item.vendor.is_active:
-                    raise ValueError(f"Vendor for item '{item.title}' is currently inactive")
-
-
-                if item.stock < item_input.quantity:
-                    raise ValueError(f"Insufficient stock for item: {item.title}")
-                
-                # NEW: Validate single vendor
-                if vendor_id is None:
-                    vendor_id = item.vendor_id
-                    
-                    # Store vendor info (will be preserved even if vendor deleted)
-                    vendor_profile = await VendorProfile.get_or_none(user=item.vendor)
-                    
-                    # Build vendor info with all available data
-                    vendor_info = {
-                        "vendor_id": vendor_id,
-                        "vendor_name": item.vendor.name,
-                        "vendor_phone": item.vendor.phone,
-                        "vendor_email": item.vendor.email or None,
-                        "is_vendor": item.vendor.is_vendor,
-                        "is_active": item.vendor.is_active
-                    }
-                    
-                    # Add vendor profile details if available
-                    if vendor_profile:
-                        vendor_info.update({
-                            "store_name": vendor_profile.owner_name,
-                            "store_type": vendor_profile.type,
-                            "store_latitude": vendor_profile.latitude,
-                            "store_longitude": vendor_profile.longitude,
-                            "kyc_status": vendor_profile.kyc_status,
-                            "profile_is_active": vendor_profile.is_active
-                        })
-                    
-                elif item.vendor_id != vendor_id:
-                    raise ValueError(
-                        f"All items must be from the same vendor. "
-                        f"Please create separate orders for items from different vendors."
-                    )
-
-
-                price = Decimal(str(item.price))
-                quantity = item_input.quantity
-                subtotal += price * quantity
-                
-                order_items.append({
-                    'item': item,
-                    'title': item.title,
-                    'price': price,
-                    'quantity': quantity,
-                    'image_path': getattr(item, 'image', '')
-                })
-                
-            except Item.DoesNotExist:
-                raise ValueError(f"Item with id {item_input.item_id} not found")
-            except Exception as e:
-                print(f"Error processing item {item_input.item_id}: {e}")
-                raise
+        user_id = current_user.id
         
-        if not vendor_id:
-            raise ValueError("No valid items in order")         
-
-
-        delivery_fee = Decimal(str(order_data.delivery_option.price))
-        discount = self._apply_coupon(subtotal, order_data.coupon_code)
-        total = subtotal + delivery_fee - discount
+        # Step 1: Group items by vendor
+        vendor_groups = await self._group_items_by_vendor(order_data.items)
         
-        # FIXED: Create order with temporary shipping address data (not saved separately)
+        if not vendor_groups:
+            raise ValueError("No valid items to order")
+        
+        # Step 2: Calculate totals
+        grand_subtotal = Decimal("0")
+        grand_delivery_fee = Decimal("0")
+        
+        for vendor_id, items in vendor_groups.items():
+            for item_data in items:
+                grand_subtotal += item_data['price'] * item_data['quantity']
+            grand_delivery_fee += Decimal(str(order_data.delivery_option.price))
+        
+        # Apply discount
+        discount = self._apply_coupon(grand_subtotal, order_data.coupon_code)
+        grand_total = grand_subtotal + grand_delivery_fee - discount
+        
+        # Step 3: Create parent order
         order_id = self._generate_order_id()
         
-        # Store shipping address in metadata instead of creating separate record
         shipping_data = {
             "full_name": order_data.shipping_address.full_name or "",
             "address_line1": order_data.shipping_address.address_line1 or "",
@@ -301,74 +245,169 @@ class OrderService:
             "phone_number": order_data.shipping_address.phone_number or ""
         }
         
-        order_metadata = {
-            "shipping_address": shipping_data,
-            "delivery_option": {
-                "type": order_data.delivery_option.type,
-                "title": getattr(order_data.delivery_option, 'title', ''),
-                "description": getattr(order_data.delivery_option, 'description', ''),
-                "price": float(order_data.delivery_option.price)
-            },
-            "payment_method": {
-                "type": order_data.payment_method.type,
-                "name": getattr(order_data.payment_method, 'name', '')
-            },
-            "vendor_info": vendor_info
+        parent_order = await Order.create(
+            id=order_id,
+            user_id=user_id,
+            shipping_address=shipping_data,
+            subtotal=grand_subtotal,
+            delivery_fee=grand_delivery_fee,
+            total=grand_total,
+            coupon_code=order_data.coupon_code,
+            discount=discount,
+            payment_method=order_data.payment_method.type,
+            payment_status="unpaid",
+            metadata={
+                "payment_method": {
+                    "type": order_data.payment_method.type,
+                    "name": getattr(order_data.payment_method, 'name', '')
+                }
+            }
+        )
+        
+        # Step 4: Create sub-orders for each vendor
+        for vendor_id, items in vendor_groups.items():
+            await self._create_sub_order(
+                parent_order=parent_order,
+                vendor_id=vendor_id,
+                items=items,
+                delivery_option=order_data.delivery_option,
+                shipping_data=shipping_data
+            )
+        
+        # Fetch related data
+        await parent_order.fetch_related("sub_orders__items__item", "sub_orders__vendor")
+        
+        return parent_order
+    
+    async def _group_items_by_vendor(self, items_input) -> Dict[int, List]:
+        """Group order items by vendor"""
+        from applications.items.models import Item
+        
+        vendor_groups = {}
+        
+        for item_input in items_input:
+            item = await Item.get(id=item_input.item_id).prefetch_related('vendor__vendor_profile')
+            
+            # # Validate item
+            # if item.status != ItemStatus.ACTIVE:
+            #     raise ValueError(f"Item '{item.title}' is not available")
+            
+            if item.stock < item_input.quantity:
+                raise ValueError(f"Insufficient stock for '{item.title}'")
+            
+            # Validate vendor
+            if not item.vendor or not item.vendor.is_vendor or not item.vendor.is_active:
+                raise ValueError(f"Vendor for '{item.title}' is not available")
+            
+            # Group by vendor
+            vendor_id = item.vendor_id
+            if vendor_id not in vendor_groups:
+                vendor_groups[vendor_id] = []
+            
+            vendor_groups[vendor_id].append({
+                'item': item,
+                'title': item.title,
+                'price': Decimal(str(item.price)),
+                'quantity': item_input.quantity,
+                'image_path': getattr(item, 'image', '')
+            })
+        
+        return vendor_groups
+    
+    async def _create_sub_order(
+        self,
+        parent_order: Order,
+        vendor_id: int,
+        items: List,
+        delivery_option,
+        shipping_data: dict
+    ):
+        """Create a sub-order for one vendor"""
+        from applications.user.vendor import VendorProfile
+        from applications.user.models import User
+        
+        # Calculate sub-order totals
+        subtotal = sum(item['price'] * item['quantity'] for item in items)
+        delivery_fee = Decimal(str(delivery_option.price))
+        total = subtotal + delivery_fee
+        
+        # Get vendor info
+        vendor = await User.get(id=vendor_id).prefetch_related('vendor_profile')
+        vendor_profile = await VendorProfile.get_or_none(user=vendor)
+        
+        vendor_info = {
+            "vendor_id": vendor_id,
+            "vendor_name": vendor.name,
+            "vendor_email": vendor.email or None,
+            "vendor_phone": vendor.phone,
+            "is_vendor": vendor.is_vendor,
+            "is_active": vendor.is_active
         }
         
-        order = await Order.create(
-            id=order_id,  
-            user_id=user_id,
+        if vendor_profile:
+            vendor_info.update({
+                "store_name": vendor_profile.owner_name,
+                "store_type": vendor_profile.type,
+                "store_latitude": vendor_profile.latitude,
+                "store_longitude": vendor_profile.longitude,
+                "profile_is_active": vendor_profile.is_active
+            })
+        
+        delivery_option_data = {
+            "type": delivery_option.type,
+            "title": getattr(delivery_option, 'title', ''),
+            "description": getattr(delivery_option, 'description', ''),
+            "price": float(delivery_option.price)
+        }
+        
+        # Create sub-order
+        sub_order = await SubOrder.create(
+            parent_order=parent_order,
             vendor_id=vendor_id,
-            shipping_address_id=None,  # FIXED: No separate shipping address
-            delivery_type=order_data.delivery_option.type, 
-            payment_method=order_data.payment_method.type, 
+            vendor_info=vendor_info,
+            delivery_type=delivery_option.type,
+            delivery_option=delivery_option_data,
             subtotal=subtotal,
             delivery_fee=delivery_fee,
             total=total,
-            coupon_code=order_data.coupon_code,
-            discount=discount,
             status=OrderStatus.PENDING,
-            payment_status="unpaid",  # Always starts as unpaid
             tracking_number=self._generate_tracking_number(),
-            estimated_delivery=self._calculate_estimated_delivery(
-                order_data.delivery_option.type
-            ),
-            metadata=order_metadata
+            estimated_delivery=self._calculate_estimated_delivery(delivery_option.type)
         )
         
-        # Create order items
-        for item_data in order_items:
-            await OrderItem.create(
-                order_id=order.id,
-                item_id=item_data['item'].id,
+        # Create sub-order items and update stock
+        for item_data in items:
+            await SubOrderItem.create(
+                sub_order=sub_order,
+                item=item_data['item'],
                 title=item_data['title'],
-                price=str(item_data['price']),  
+                price=str(item_data['price']),
                 quantity=item_data['quantity'],
                 image_path=item_data['image_path']
             )
             
-            # Update stock
-            item_data['item'].stock -= item_data['quantity']
-            item_data['item'].total_sale += item_data['quantity']
+            # # Decrease stock
+            # item_data['item'].stock -= item_data['quantity']
+            # item_data['item'].total_sale += item_data['quantity']
+            
+            # if item_data['item'].stock == 0:
+            #     from applications.items.models import ItemStatus
+            #     item_data['item'].status = ItemStatus.OUT_OF_STOCK
+            
             await item_data['item'].save(update_fields=['stock', 'total_sale'])
         
-        await order.fetch_related("user", "items__item")
-        return order
-
-    def _generate_tracking_number(self) -> str:
-        import random
-        return f"TRK{random.randint(100000000, 999999999)}"
-
+        return sub_order
+    
     def _calculate_estimated_delivery(self, delivery_type: str) -> datetime:
-        days_map = {
-            "combined": 5,
-            "split": 2,
-            "urgent": 1
+        """Calculate estimated delivery time"""
+        minutes_map = {
+            "combined": 60,  # 60 minutes
+            "split": 30,   # 30 minutes
+            "urgent": 15     # 15 minutes
         }
-        days = days_map.get(delivery_type, 5)
-        return datetime.utcnow() + timedelta(days=days)
-
+        minutes = minutes_map.get(delivery_type, 60)
+        return datetime.utcnow() + timedelta(minutes=minutes)
+    
     @staticmethod
     def _apply_coupon(subtotal: Decimal, coupon_code: Optional[str]) -> Decimal:
         coupon_discounts = {
@@ -377,261 +416,268 @@ class OrderService:
             "WELCOME10": Decimal("10.0")
         }
         return coupon_discounts.get(coupon_code, Decimal("0.0"))
-
-    # ============= SERVICE METHODS FOR UPDATE & CANCEL =============
-    async def update_order(self, order_id: str, update_data: OrderUpdateSchema, current_user) -> dict:
-        """Update order - only if status is PENDING"""
-        try:
-            order = await Order.get(id=order_id, user_id=current_user.id).prefetch_related(
-                "items__item", "shipping_address", "user"
-            )
-            
-            # Check if order is in PENDING status
-            current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-            if current_status.lower() != "pending":
-                raise ValueError(f"Cannot update order. Order status is '{current_status}'. Only 'pending' orders can be updated.")
-            
-            # Update fields if provided
-            if update_data.status is not None:
-                order.status = update_data.status
-            if update_data.tracking_number is not None:
-                order.tracking_number = update_data.tracking_number
-            if update_data.transaction_id is not None:
-                order.transaction_id = update_data.transaction_id
-            if update_data.estimated_delivery is not None:
-                order.estimated_delivery = update_data.estimated_delivery
-            
-            await order.save()
-            await order.fetch_related("items__item", "shipping_address", "user")
-            
-            return self._format_order_response(order)
-            
-        except Order.DoesNotExist:
-            raise ValueError(f"Order with id {order_id} not found")
-
-
-    async def cancel_order(self, order_id: str, current_user) -> dict:
-        """Cancel order - only if status is PENDING"""
-        try:
-            order = await Order.get(id=order_id, user_id=current_user.id).prefetch_related(
-                "items__item", "shipping_address", "user"
-            )
-            
-            # Check if order is in PENDING status
-            current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-            if current_status.lower() != "pending":
-                raise ValueError(f"Cannot cancel order. Order status is '{current_status}'. Only 'pending' orders can be cancelled.")
-            
-            # Update status to cancelled
-            order.status = OrderStatus.CANCELLED
-            await order.save()
-            
-            # Restore stock for all items in the order
-            await order.fetch_related("items__item")
-            for order_item in order.items:
-                item = order_item.item
-                item.stock += order_item.quantity
-                item.total_sale -= order_item.quantity
-                await item.save(update_fields=['stock', 'total_sale'])
-            
-            await order.fetch_related("items__item", "shipping_address", "user")
-            
-            return self._format_order_response(order)
-            
-        except Order.DoesNotExist:
-            raise ValueError(f"Order with id {order_id} not found")
-
-
-    # ============= SERVICE METHODS FOR RETRIEVAL =============
-    async def get_all_orders(self, user: User, skip: int = 0, limit: int = 10):
-        """Get all orders for a user with vendor locations"""
-        
-        orders = await Order.filter(user=user).offset(skip).limit(limit).prefetch_related(
-            "items__item__vendor__vendor_profile",
-            "items__item",
-            "shipping_address"
-        )
-        
-        result = []
-        for order in orders:
-            # Get vendor locations
-            vendor_locations = await order.get_all_vendors_locations()
-            
-            # Get order items
-            items_data = []
-            for order_item in order.items:
-                items_data.append({
-                    "id": order_item.id,
-                    "item_id": order_item.item_id,
-                    "title": order_item.title,
-                    "price": order_item.price,
-                    "quantity": order_item.quantity,
-                    "image_path": order_item.image_path,
-                })
-            
-            # Prepare order data
-            order_data = {
-                "id": order.id,
-                "user_id": order.user_id,
-                "items": items_data,
-                "shipping_address": order.shipping_address,
-                "delivery_option": {
-                    "type": order.delivery_type.value if order.delivery_type else None,
-                    "title": order.delivery_type.value.replace('_', ' ').title() if order.delivery_type else None,
-                    "description": "",
-                    "price": float(order.delivery_fee),
-                },
-                "payment_method": {
-                    "type": order.payment_method.value if order.payment_method else None,
-                    "name": order.payment_method.value.upper() if order.payment_method else None,
-                },
-                "subtotal": order.subtotal,
-                "delivery_fee": order.delivery_fee,
-                "total": order.total,
-                "coupon_code": order.coupon_code,
-                "discount": order.discount,
-                "order_date": order.order_date,
-                "status": order.status.value,
-                "transaction_id": order.transaction_id,
-                "tracking_number": order.tracking_number,
-                "estimated_delivery": order.estimated_delivery,
-                "metadata": order.metadata,
-                "vendors": vendor_locations,  # ✅ Vendor locations
-            }
-            
-            result.append(order_data)
-        
-        return result
     
-    async def get_order_by_id(self, order_id: str, user: User):
-        """Get a specific order with vendor locations"""
+    async def update_order_with_sub_orders(
+        self,
+        order_id: str,
+        order_data: OrderUpdateSchema,
+        current_user
+    ) -> Order:
+        """
+        Update an existing order with granular sub-order modifications.
         
-        order = await Order.filter(id=order_id, user=user).prefetch_related(
-            "items__item__vendor__vendor_profile",
-            "items__item",
-            "shipping_address"
-        ).first()
+        Capabilities:
+          - Add/remove/modify items within a sub-order
+          - Change delivery_option and payment_method per sub-order
+          - Cancel individual sub-orders (removes from order)
+          - Add new sub-orders
+          - Update shipping_address
+          - Delete entire order if all sub-orders removed
+          
+        Only sends fields you wish to update - others remain unchanged.
+        """
         
+        # Fetch order and verify ownership
+        order = await Order.get_or_none(id=order_id, user_id=current_user.id)
         if not order:
-            raise ValueError(f"Order with id {order_id} not found")
+            raise ValueError("Order not found")
         
-        # Get vendor locations
-        vendor_locations = await order.get_all_vendors_locations()
+        # Validation: payment_status must be "unpaid"
+        if order.payment_status != "unpaid":
+            raise ValueError(f"Cannot update order with payment_status: {order.payment_status}")
         
-        # Get order items
-        items_data = []
-        for order_item in order.items:
-            items_data.append({
-                "id": order_item.id,
-                "item_id": order_item.item_id,
-                "title": order_item.title,
-                "price": order_item.price,
-                "quantity": order_item.quantity,
-                "image_path": order_item.image_path,
-            })
+        # Fetch sub-orders
+        await order.fetch_related("sub_orders")
+        existing_subs = order.sub_orders or []
         
-        # Prepare order data
-        order_data = {
-            "id": order.id,
-            "user_id": order.user_id,
-            "items": items_data,
-            "shipping_address": order.shipping_address,
-            "delivery_option": {
-                "type": order.delivery_type.value if order.delivery_type else None,
-                "title": order.delivery_type.value.replace('_', ' ').title() if order.delivery_type else None,
-                "description": "",
-                "price": float(order.delivery_fee),
-            },
-            "payment_method": {
-                "type": order.payment_method.value if order.payment_method else None,
-                "name": order.payment_method.value.upper() if order.payment_method else None,
-            },
-            "subtotal": order.subtotal,
-            "delivery_fee": order.delivery_fee,
-            "total": order.total,
-            "coupon_code": order.coupon_code,
-            "discount": order.discount,
-            "order_date": order.order_date,
-            "status": order.status.value,
-            "transaction_id": order.transaction_id,
-            "tracking_number": order.tracking_number,
-            "estimated_delivery": order.estimated_delivery,
-            "metadata": order.metadata,
-            "vendors": vendor_locations,  
-        }
+        if not existing_subs:
+            raise ValueError("Order has no sub-orders")
         
-        return order_data
-
-
-
-
-
-
-
-
-
-
-
-
-    def _format_order_response(self, order) -> dict:
-        """Format order object to match the required JSON structure"""
-        # Extract delivery and payment info from metadata
-        delivery_info = order.metadata.get('delivery_option', {}) if order.metadata else {}
-        payment_info = order.metadata.get('payment_method', {}) if order.metadata else {}
+        # Validation: all sub-orders must have tracking_status == "pending"
+        for sub_order in existing_subs:
+            tracking_status = getattr(sub_order, "tracking_number_status", None) or getattr(sub_order, "tracking_status", None) or "pending"
+            if tracking_status != "pending":
+                raise ValueError(f"Cannot update. Sub-order {sub_order.tracking_number} status is '{tracking_status}', not 'pending'")
         
-        # Format order items
-        items = []
-        if hasattr(order, 'items'):
-            for order_item in order.items:
-                items.append({
-                    "productId": str(order_item.item.id) if hasattr(order_item, 'item') else str(order_item.item_id),
-                    "title": order_item.title,
-                    "price": order_item.price,
-                    "quantity": order_item.quantity,
-                    "imagePath": order_item.image_path
-                })
-        
-        # Format shipping address
-        shipping_address = None
-        if order.shipping_address:
-            addr = order.shipping_address
-            shipping_address = {
-                "id": str(addr.id),
-                "fullName": addr.full_name,
-                "addressLine1": addr.address_line1,
-                "addressLine2": addr.address_line2,
-                "city": addr.city,
-                "state": addr.state,
-                "postalCode": addr.postal_code,
-                "country": addr.country,
-                "phoneNumber": addr.phone_number,
-                "isDefault": addr.is_default
+        # Update shipping address if provided (partial update)
+        if order_data.shipping_address is not None:
+            order.shipping_address = {
+                "full_name": order_data.shipping_address.full_name or (order.shipping_address.get("full_name") if order.shipping_address else ""),
+                "address_line1": order_data.shipping_address.address_line1 or (order.shipping_address.get("address_line1") if order.shipping_address else ""),
+                "address_line2": order_data.shipping_address.address_line2 or (order.shipping_address.get("address_line2") if order.shipping_address else ""),
+                "city": order_data.shipping_address.city or (order.shipping_address.get("city") if order.shipping_address else ""),
+                "state": order_data.shipping_address.state or (order.shipping_address.get("state") if order.shipping_address else ""),
+                "postal_code": order_data.shipping_address.postal_code or (order.shipping_address.get("postal_code") if order.shipping_address else ""),
+                "country": order_data.shipping_address.country or (order.shipping_address.get("country") if order.shipping_address else ""),
+                "phone_number": order_data.shipping_address.phone_number or (order.shipping_address.get("phone_number") if order.shipping_address else "")
             }
         
-        return {
-            "orderId": order.id,
-            "userId": str(order.user_id),
-            "items": items,
-            "shippingAddress": shipping_address,
-            "deliveryOption": {
-                "type": delivery_info.get('type', order.delivery_type.value if hasattr(order.delivery_type, 'value') else str(order.delivery_type)),
-                "title": delivery_info.get('title', ''),
-                "description": delivery_info.get('description', ''),
-                "price": delivery_info.get('price', float(order.delivery_fee))
-            },
-            "paymentMethod": {
-                "type": payment_info.get('type', order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)),
-                "name": payment_info.get('name', '')
-            },
-            "subtotal": float(order.subtotal),
-            "deliveryFee": float(order.delivery_fee),
-            "total": float(order.total),
-            "couponCode": order.coupon_code,
-            "discount": float(order.discount),
-            "orderDate": order.order_date.isoformat(),
-            "status": order.status.value if hasattr(order.status, 'value') else str(order.status),
-            "transactionId": order.transaction_id,
-            "trackingNumber": order.tracking_number,
-            "estimatedDelivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
-            "metadata": order.metadata
-        }
+        # Update notes and metadata (only if provided)
+        if order_data.notes is not None:
+            order.notes = order_data.notes
+        
+        if order_data.metadata is not None:
+            if order.metadata is None:
+                order.metadata = {}
+            order.metadata.update(order_data.metadata)
+        
+        # Track changes
+        updated_sub_orders = []
+        removed_sub_orders = []
+        added_sub_orders = []
+        
+        # Process sub-order updates (only if provided)
+        if order_data.sub_orders is not None:
+            for sub_update in order_data.sub_orders:
+                # Find matching sub-order by tracking_number
+                matching_sub = None
+                for sub in existing_subs:
+                    if sub.tracking_number == sub_update.tracking_number:
+                        matching_sub = sub
+                        break
+                
+                # Handle cancellation (removes sub-order)
+                if sub_update.status and sub_update.status.lower() == "cancelled":
+                    if matching_sub:
+                        # Hard delete the sub-order
+                        await matching_sub.delete()
+                        removed_sub_orders.append(sub_update.tracking_number)
+                        existing_subs.remove(matching_sub)
+                    continue
+                
+                if matching_sub:
+                    # Update items if provided
+                    if sub_update.items is not None:
+                        await matching_sub.fetch_related("items")
+                        
+                        # Delete existing items and recreate
+                        existing_items = matching_sub.items or []
+                        for item in existing_items:
+                            await item.delete()
+                        
+                        # Create new items
+                        from applications.items.models import Item
+                        new_items_count = 0
+                        for item_data in sub_update.items:
+                            item = await Item.get_or_none(id=item_data.item_id)
+                            if item:
+                                await SubOrderItem.create(
+                                    sub_order=matching_sub,
+                                    item=item,
+                                    title=item_data.title,
+                                    price=str(item_data.price),
+                                    quantity=item_data.quantity,
+                                    image_path=item_data.image_path
+                                )
+                                new_items_count += 1
+                        
+                        # Recalculate sub-order subtotal
+                        subtotal = sum(
+                            Decimal(str(item_data.price)) * item_data.quantity
+                            for item_data in sub_update.items
+                        )
+                        matching_sub.subtotal = subtotal
+                    
+                    # Update delivery option if provided
+                    if sub_update.delivery_option is not None:
+                        matching_sub.delivery_type = sub_update.delivery_option.type
+                        matching_sub.delivery_option = {
+                            "type": sub_update.delivery_option.type,
+                            "title": getattr(sub_update.delivery_option, 'title', ''),
+                            "description": getattr(sub_update.delivery_option, 'description', ''),
+                            "price": float(sub_update.delivery_option.price)
+                        }
+                        matching_sub.delivery_fee = Decimal(str(sub_update.delivery_option.price))
+                    
+                    # Update payment method if provided
+                    if sub_update.payment_method is not None:
+                        matching_sub.payment_method = {
+                            "type": sub_update.payment_method.type,
+                            "name": getattr(sub_update.payment_method, 'name', '')
+                        }
+                    
+                    # Recalculate total
+                    matching_sub.total = matching_sub.subtotal + matching_sub.delivery_fee
+                    await matching_sub.save()
+                    
+                    updated_sub_orders.append({
+                        "tracking_number": matching_sub.tracking_number,
+                        "subtotal": float(matching_sub.subtotal),
+                        "total": float(matching_sub.total)
+                    })
+                else:
+                    # New sub-order to add
+                    try:
+                        # Get vendor info
+                        from applications.user.models import User
+                        from applications.user.vendor import VendorProfile
+                        
+                        vendor_id = None
+                        if sub_update.items and len(sub_update.items) > 0:
+                            from applications.items.models import Item
+                            first_item = await Item.get_or_none(id=sub_update.items[0].item_id)
+                            if first_item:
+                                vendor_id = first_item.vendor_id
+                        
+                        if not vendor_id:
+                            continue
+                        
+                        vendor = await User.get(id=vendor_id).prefetch_related('vendor_profile')
+                        vendor_profile = await VendorProfile.get_or_none(user=vendor)
+                        
+                        vendor_info = {
+                            "vendor_id": vendor_id,
+                            "vendor_name": vendor.name,
+                            "vendor_email": vendor.email or None,
+                            "vendor_phone": vendor.phone,
+                            "is_vendor": vendor.is_vendor,
+                            "is_active": vendor.is_active
+                        }
+                        
+                        if vendor_profile:
+                            vendor_info.update({
+                                "store_name": vendor_profile.owner_name,
+                                "store_type": vendor_profile.type,
+                                "store_latitude": vendor_profile.latitude,
+                                "store_longitude": vendor_profile.longitude,
+                                "profile_is_active": vendor_profile.is_active
+                            })
+                        
+                        # Calculate subtotal for new items
+                        subtotal = sum(
+                            Decimal(str(item.price)) * item.quantity
+                            for item in sub_update.items
+                        )
+                        
+                        delivery_fee = Decimal(str(sub_update.delivery_option.price)) if sub_update.delivery_option else Decimal("0")
+                        total = subtotal + delivery_fee
+                        
+                        # Generate unique tracking number
+                        vendor_counts = {}
+                        for sub in existing_subs:
+                            vid = getattr(sub, "vendor_id", None)
+                            if vid:
+                                vendor_counts[vid] = vendor_counts.get(vid, 0) + 1
+                        vendor_counts[vendor_id] = vendor_counts.get(vendor_id, 0) + 1
+                        new_tracking = f"{vendor_id}-{str(order.id)[:8].upper()}-{vendor_counts[vendor_id]}"
+                        
+                        # Create sub-order
+                        new_sub = await SubOrder.create(
+                            parent_order=order,
+                            vendor_id=vendor_id,
+                            vendor_info=vendor_info,
+                            delivery_type=sub_update.delivery_option.type if sub_update.delivery_option else "combined",
+                            delivery_option=sub_update.delivery_option.dict() if sub_update.delivery_option else {},
+                            subtotal=subtotal,
+                            delivery_fee=delivery_fee,
+                            total=total,
+                            status=OrderStatus.PENDING,
+                            tracking_number=new_tracking,
+                            estimated_delivery=self._calculate_estimated_delivery(sub_update.delivery_option.type if sub_update.delivery_option else "combined")
+                        )
+                        
+                        # Create items
+                        from applications.items.models import Item
+                        for item_data in sub_update.items:
+                            item = await Item.get_or_none(id=item_data.item_id)
+                            if item:
+                                await SubOrderItem.create(
+                                    sub_order=new_sub,
+                                    item=item,
+                                    title=item_data.title,
+                                    price=str(item_data.price),
+                                    quantity=item_data.quantity,
+                                    image_path=item_data.image_path
+                                )
+                        
+                        existing_subs.append(new_sub)
+                        added_sub_orders.append(new_tracking)
+                        
+                    except Exception as e:
+                        print(f"[UPDATE] Failed to add new sub-order: {e}")
+        
+        # Check if all sub-orders are removed
+        if not existing_subs or len(existing_subs) == 0:
+            # Delete the entire parent order
+            await order.delete()
+            return None
+        
+        # Recalculate order totals
+        new_subtotal = Decimal("0")
+        new_delivery_fee = Decimal("0")
+        
+        for sub in existing_subs:
+            new_subtotal += Decimal(str(getattr(sub, "subtotal", 0) or 0))
+            new_delivery_fee += Decimal(str(getattr(sub, "delivery_fee", 0) or 0))
+        
+        order.subtotal = float(new_subtotal)
+        order.delivery_fee = float(new_delivery_fee)
+        order.total = float(new_subtotal + new_delivery_fee - Decimal(str(order.discount or 0)))
+        order.updated_at = datetime.utcnow()
+        
+        await order.save()
+        
+        return order
+
+
+

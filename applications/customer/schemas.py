@@ -4,7 +4,7 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from pydantic import BaseModel, Field, EmailStr, validator, condecimal
 from typing import List, Optional
 from datetime import datetime
-from applications.customer.models import Cart, CartItem, Order, OrderItem, DeliveryOption, PaymentMethod
+from applications.customer.models import Cart, CartItem, Order, DeliveryOption, PaymentMethod, SubOrderItem
 from decimal import Decimal
 import re
 from enum import Enum
@@ -59,7 +59,7 @@ CartItem_Pydantic = pydantic_model_creator(CartItem, name="CartItem")
 
 # Order Schemas
 Order_Pydantic = pydantic_model_creator(Order, name="Order")
-OrderItem_Pydantic = pydantic_model_creator(OrderItem, name="OrderItem")
+OrderItem_Pydantic = pydantic_model_creator(SubOrderItem, name="OrderItem")
 
 # Create Pydantic models from Tortoise model
 DeliveryOption_Pydantic = pydantic_model_creator(
@@ -261,12 +261,6 @@ class OrderCreateSchema(BaseModel):
     payment_method: PaymentMethod_Pydantic_In
     coupon_code: Optional[str] = None
 
-class OrderUpdateSchema(BaseModel):
-    status: Optional[str] = None
-    # tracking_number: Optional[str] = None
-    # transaction_id: Optional[str] = None
-    # estimated_delivery: Optional[datetime] = None
-    
 
 
 # ============================================================
@@ -363,6 +357,58 @@ class OrderResponseSchema(BaseModel):
     class Config:
         from_attributes = True
         populate_by_name = True       
+
+# ============================================================
+# Order Update Schema
+# ============================================================
+
+class OrderItemUpdateSchema(BaseModel):
+    item_id: int
+    title: str
+    price: str
+    quantity: int
+    image_path: str
+
+
+class SubOrderUpdateSchema(BaseModel):
+    tracking_number: str
+    items: Optional[List[OrderItemUpdateSchema]] = None
+    delivery_option: Optional[DeliveryOption_Pydantic_In] = None
+    payment_method: Optional[PaymentMethod_Pydantic_In] = None
+    status: Optional[str] = Field(None, description="Only 'cancelled' allowed to remove sub-order")
+    
+    class Config:
+        from_attributes = True
+
+
+class OrderUpdateSchema(BaseModel):
+    shipping_address: Optional[ShippingAddressSchema] = None
+    sub_orders: Optional[List[SubOrderUpdateSchema]] = None
+    notes: Optional[str] = Field(None, max_length=500, description="Order notes or special instructions")
+    metadata: Optional[dict] = Field(None, description="Additional metadata for the order")
+    
+    class Config:
+        from_attributes = True
+
+
+class OrderResponseSchema(BaseModel):
+    order_id: str
+    user_id: str
+    subtotal: float
+    delivery_fee: float
+    total: float
+    discount: float
+    coupon_code: Optional[str] = None
+    payment_status: str
+    payment_link: Optional[str] = None
+    order_date: str
+    transaction_id: Optional[str] = None
+    shipping_address: ShippingAddressResponseSchema
+    sub_orders: List[dict]
+    can_cancel: bool
+    
+    class Config:
+        from_attributes = True
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
     first_name: Optional[str] = None
