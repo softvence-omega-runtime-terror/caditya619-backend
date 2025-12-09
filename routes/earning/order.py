@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Form, HTTPException, Depends
-from types import Optional
+from fastapi import APIRouter, Form, HTTPException, Depends, Query
+from typing import Optional
 from app.auth import permission_required, vendor_required
 from applications.user.models import User
 
@@ -163,8 +163,8 @@ async def order_status_management(
 async def get_all_orders(
     offset: int = 0,
     limit: int = 10,
-    status: Optional[str] = Form(None, description="e.g., 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
-    type: Optional[str] = Form(None, description="e.g., 'combined', 'split', 'urgent'"),
+    status: Optional[str] = Query(None, description="e.g., 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
+    type: Optional[str] = Query (None, description="e.g., 'combined', 'split', 'urgent'"),
     vendor: User = Depends(vendor_required)
 ):
     query = Order.filter(vendor_id=vendor.id)
