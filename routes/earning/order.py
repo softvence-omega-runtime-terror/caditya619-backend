@@ -168,8 +168,8 @@ async def get_all_orders(vendor: User = Depends(vendor_required)):
         "shipping_address"
     )
 
-    if not orders:
-        raise HTTPException(status_code=404, detail="No orders found")
+    # if not orders:
+    #     raise HTTPException(status_code=404, detail="No orders found")
 
     return {
         "total_orders": len(orders),
