@@ -81,6 +81,7 @@ async def login_auth2(form_data: OAuth2EmailPasswordForm = Depends()):
 - **Vendor Ten** — `+919876543221` — Vendor (Food)  
 - **Rider Two** — `+919876543222` — Rider  
 - **Mix One** — `+919876543223` — Rider / Vendor (Grocery)  
+- **Moynul** — `914189491093` — Customer Only  
 """)
 async def send_otp(
         phone: str = Form('', description="Enter a valid phone number +91XXXXXXXXXX"),
