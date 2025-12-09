@@ -9,6 +9,7 @@ class OrderStatus(str, Enum):
     PROCESSING = "processing"
     CONFIRMED = "confirmed"
     SHIPPED = "shipped"
+    PREPARED = "prepared"
     OUT_FOR_DELIVERY = "outForDelivery"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
