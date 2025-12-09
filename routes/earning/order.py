@@ -3,7 +3,7 @@ from typing import Optional
 from app.auth import permission_required, vendor_required
 from applications.user.models import User
 
-from applications.customer.models import Order, OrderItem, OrderStatus
+from applications.customer.models import Order, OrderItem, OrderStatus, DeliveryTypeEnum
 from applications.items.models import Item
 
 router = APIRouter(prefix="/order", tags=["Order Management"])
@@ -119,7 +119,7 @@ async def serialize_order(order: Order):
 @router.post("/manage-order-status", dependencies=[Depends(vendor_required)])
 async def order_status_management(
     order_id: str = Form(...),
-    status: str = Form(..., description="New status for the order 'confirmed', 'shipped', 'outForDelivery', 'cancelled', 'refunded'"),
+    status: str = Form(..., description="New status for the order 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
     vendor: User = Depends(vendor_required)
 ):
     order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
@@ -171,7 +171,7 @@ async def get_all_orders(
     if status:
         query = query.filter(status=status)
     if type:
-        query = query.filter(type=type)
+        query = query.filter(delivery_type=type)
     total_orders = await query.count()
     orders = (
         await query
