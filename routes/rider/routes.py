@@ -177,6 +177,14 @@ async def update_is_document_uploaded(
     return {"is_document_uploaded": is_document_uploaded}
 
 
+@router.get("/is-verified")
+async def is_verified(user: User = Depends(get_current_user)):
+    rider_profile = await RiderProfile.get_or_none(user=user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    return {"is_verified": rider_profile.is_verified}
+
+
 
 
 @router.get(
