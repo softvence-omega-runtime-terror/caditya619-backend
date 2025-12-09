@@ -179,8 +179,8 @@ async def get_all_orders(vendor: User = Depends(vendor_required)):
 # ----------------------- GET ALL ORDERS -----------------------
 @router.get(
     "/all_orders",
-    summary="Get full details of all orders with their items",
-    # dependencies=[Depends(permission_required("view_order"))]
+    summary="Get full details of all orders with their items only superadmin can access",
+    dependencies=[Depends(permission_required("view_order"))]
 )
 async def get_all_orders():
     orders = await Order.all().prefetch_related(
@@ -201,8 +201,8 @@ async def get_all_orders():
 
 # ----------------------- GET SINGLE ORDER -----------------------
 @router.get("/{order_id}", summary="Get full order details with all items")
-async def get_order_details(order_id: str):
-    order = await Order.filter(id=order_id).prefetch_related(
+async def get_order_details(order_id: str, vendor: User = Depends(vendor_required)):
+    order = await Order.filter(id=order_id, vendor_id=vendor.id).prefetch_related(
         "items__item__vendor__vendor_profile",
         "user",
         "rider",
