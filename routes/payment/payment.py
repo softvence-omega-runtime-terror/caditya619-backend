@@ -172,7 +172,7 @@ async def create_payment_link(req: PaymentInitiateRequest):
             "order_ids": req.order_ids,  # Store all order IDs
             "user_id": str(customer_id),
             "orders_count": len(orders),
-            "return_url": f"{settings.FRONTEND_URL}/payment-status"
+            "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last"
         }
     }
     
@@ -400,80 +400,108 @@ async def create_payment_link(req: PaymentInitiateRequest):
 # ============================================================
 
 
-# @router.get("/test/pay-last")
-# @router.post("/test/pay-last")
-# async def pay_last_order_no_auth():
-#     """
-#     TEST ONLY: Find and pay the most recent unpaid order.
-#     Just open in browser: /payment/test/pay-last
+@router.get("/test/pay-last")
+@router.post("/test/pay-last")
+async def pay_last_order_no_auth():
+    """Test endpoint to mark the most recent unpaid order(s) as paid"""
     
-#     ⚠️ REMOVE THIS ENDPOINT IN PRODUCTION!
-#     """
+    order = await Order.filter(
+        payment_status="unpaid"
+    ).order_by('-created_at').first().prefetch_related('user', 'items__item__vendor')
     
-#     # Find most recent unpaid order
-#     order = await Order.filter(
-#         payment_status="unpaid"
-#     ).order_by('-created_at').first().prefetch_related('user', 'items__item__vendor')
+    if not order:
+        return {
+            "success": False,
+            "message": "No unpaid orders found in the system"
+        }
     
-#     if not order:
-#         return {
-#             "success": False,
-#             "message": "No unpaid orders found in the system"
-#         }
+    # Check if this order is part of a combined payment
+    orders_to_process = [order]
+    is_combined = False
+    cf_payment_id = None
     
-#     # Update order
-#     old_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
+    if order.metadata and "cashfree" in order.metadata:
+        cashfree_data = order.metadata["cashfree"]
+        
+        # Check if this is a combined payment
+        if cashfree_data.get("is_combined_payment") and cashfree_data.get("combined_order_ids"):
+            is_combined = True
+            cf_payment_id = cashfree_data.get("cf_payment_id")
+            combined_order_ids = cashfree_data["combined_order_ids"]
+            
+            # Fetch all orders in the combined payment
+            orders_to_process = await Order.filter(
+                id__in=combined_order_ids
+            ).prefetch_related('user', 'items__item__vendor')
+            
+            print(f"[NO-AUTH LAST] Found combined payment with {len(orders_to_process)} orders")
     
-#     order.status = OrderStatus.PROCESSING
-#     order.payment_status = "paid"
+    # Process all orders
+    processed_orders = []
+    total_amount = Decimal("0")
     
-#     if order.metadata is None:
-#         order.metadata = {}
+    for ord in orders_to_process:
+        old_status = ord.status.value if hasattr(ord.status, 'value') else str(ord.status)
+        
+        ord.status = OrderStatus.PROCESSING
+        ord.payment_status = "paid"
+        
+        if ord.metadata is None:
+            ord.metadata = {}
+        
+        if "cashfree" not in ord.metadata:
+            ord.metadata["cashfree"] = {}
+        
+        # Update payment metadata
+        ord.metadata["cashfree"]["payment_status"] = "PAID"
+        ord.metadata["cashfree"]["paid_at"] = datetime.utcnow().isoformat()
+        ord.metadata["cashfree"]["payment_amount"] = float(ord.total)
+        ord.metadata["cashfree"]["test_no_auth_last"] = True
+        
+        # Preserve combined payment info if exists
+        if is_combined and cf_payment_id:
+            ord.metadata["cashfree"]["is_combined_payment"] = True
+            ord.metadata["cashfree"]["cf_payment_id"] = cf_payment_id
+        
+        await ord.save()
+        
+        total_amount += ord.total
+        
+        print(f"[NO-AUTH LAST] ✅ Order {ord.id}: {old_status} → PROCESSING")
+        
+        # Send notification to customer
+        try:
+            await send_notification(
+                ord.user.id,
+                "Payment Successful (TEST)",
+                f"Order #{ord.id} payment confirmed."
+            )
+        except Exception as e:
+            print(f"[NO-AUTH LAST] Notification error for order {ord.id}: {e}")
+        
+        processed_orders.append({
+            "order_id": ord.id,
+            "old_status": old_status,
+            "total": float(ord.total)
+        })
     
-#     if "cashfree" not in order.metadata:
-#         order.metadata["cashfree"] = {}
+    # Prepare response
+    response = {
+        "success": True,
+        "message": f"✅ {'Combined payment' if is_combined else 'Order'} marked as paid!",
+        "orders_count": len(processed_orders),
+        "total_amount": float(total_amount),
+        "processed_orders": processed_orders,
+        "customer_name": order.user.name,
+        "payment_status": "paid",
+        "is_combined_payment": is_combined,
+        "note": "⚠️ This is a TEST payment - remove this endpoint in production!"
+    }
     
-#     order.metadata["cashfree"]["payment_status"] = "PAID"
-#     order.metadata["cashfree"]["paid_at"] = datetime.utcnow().isoformat()
-#     order.metadata["cashfree"]["payment_amount"] = float(order.total)
-#     order.metadata["cashfree"]["test_no_auth_last"] = True
+    if is_combined and cf_payment_id:
+        response["cf_payment_id"] = cf_payment_id
     
-#     await order.save()
-    
-#     print(f"[NO-AUTH LAST] ✅ Order {order.id}: {old_status} → PROCESSING")
-    
-#     # Send notifications
-#     try:
-#         await send_notification(
-#             order.user.id,
-#             "Payment Successful (TEST)",
-#             f"Order #{order.id} payment confirmed."
-#         )
-#     except Exception as e:
-#         print(f"[NO-AUTH LAST] Notification error: {e}")
-    
-#     return {
-#         "success": True,
-#         "message": "✅ Most recent order marked as paid!",
-#         "order_id": order.id,
-#         "customer_name": order.user.name,
-#         "old_status": old_status,
-#         "new_status": "processing",
-#         "payment_status": "paid",
-#         "total": float(order.total),
-#         "order_date": order.order_date.isoformat(),
-#         "note": "⚠️ This is a TEST payment - remove this endpoint in production!"
-#     }
-
-
-#     return {
-#         "success": True,
-#         "message": "Last order marked as paid",
-#         "order_id": order.id,
-#         "old_status": old_status,
-#         "new_status": "processing",
-#         "total": float(order.total)
-#     }
+    return response
 
 
 @router.get("/verify/{cf_payment_id}")

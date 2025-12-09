@@ -44,6 +44,7 @@ USERS_DATA = [
     # Riders or mixed users
     {"phone": "+919876543222", "email": "rider2@gmail.com", "name": "Rider Two", "is_rider": True},
     {"phone": "+919876543223", "email": "mix1@gmail.com", "name": "Mix One", "is_rider": True, "is_vendor": True, "vendor_type": "grocery"},
+    {"phone": "919876543221", "email": "moynul@gmail.com", "name": "Moynul"},
 ]
 
 async def create_test_users():
