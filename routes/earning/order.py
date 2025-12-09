@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Form, HTTPException, Depends
-from app.auth import permission_required
+from app.auth import permission_required, vendor_required
+from applications.user.models import User
 
-from applications.customer.models import Order, OrderItem
+from applications.customer.models import Order, OrderItem, OrderStatus
 from applications.items.models import Item
 
 router = APIRouter(prefix="/order", tags=["Order Management"])
@@ -68,10 +69,7 @@ async def serialize_order_item(order_item: OrderItem):
         "price": format_float(order_item.price),
         "title": order_item.title,
         "image": order_item.image_path,
-        "vendor_id": vendor.id if vendor else None,
-        "vendor_name": vendor.name if vendor else None,
-        "vendor_image": vendor_profile.photo if vendor_profile else None,
-        "item_details": await serialize_item(item) if item else None
+        # "item_details": await serialize_item(item) if item else None
     }
 
 
@@ -91,6 +89,7 @@ async def serialize_order(order: Order):
         "user_id": order.user_id,
         "user_name": getattr(order.user, "name", None),
         "rider_id": order.rider_id,
+        "vendor_id": order.vendor_id,
         "shipping_address": {
             "id": order.shipping_address.id,
             "address": getattr(order.shipping_address, "address", None),
@@ -116,47 +115,72 @@ async def serialize_order(order: Order):
     }
 
 
-# ----------------------- UPDATE ORDER STATUS -----------------------
-@router.post("/manage-order-status")
+@router.post("/manage-order-status", dependencies=[Depends(vendor_required)])
 async def order_status_management(
     order_id: str = Form(...),
-    status: str = Form(...)
+    status: str = Form(..., description="New status for the order 'confirmed', 'shipped', 'outForDelivery', 'cancelled', 'refunded'"),
+    vendor: User = Depends(vendor_required)
 ):
-    order = await Order.get_or_none(id=order_id)
+    # Fetch the order belonging to this vendor
+    order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
+    print("Vendor making the request:", vendor)
+    print("Vendor making the request:", vendor.id)
+    print("Order making the request:", order.vendor_id)
+    
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    # Validate status against OrderStatus enum
     allowed_statuses = [
-        "pending",
-        "processing",
         "confirmed",
         "shipped",
         "outForDelivery",
-        "delivered",
         "cancelled",
         "refunded"
     ]
-
+    
     if status not in allowed_statuses:
         raise HTTPException(status_code=400, detail="Invalid order status")
 
-    # Works for CharEnumField
-    order.status = status
+    try:
+        new_status = OrderStatus(status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid order status")
+
+    order.status = new_status
     await order.save(update_fields=["status"])
 
     return {
         "success": True,
         "message": "Order status updated successfully",
         "order_id": order.id,
-        "status": order.status
+        "status": order.status.value
     }
 
 
 # ----------------------- GET ALL ORDERS -----------------------
+@router.get("/my_orders", summary="Get full details of all orders with their items",)
+async def get_all_orders(vendor: User = Depends(vendor_required)):
+    orders = await Order.filter(vendor_id=vendor.id).prefetch_related(
+        "items__item__vendor__vendor_profile",
+        "user",
+        "rider",
+        "shipping_address"
+    )
+
+    if not orders:
+        raise HTTPException(status_code=404, detail="No orders found")
+
+    return {
+        "total_orders": len(orders),
+        "orders": [await serialize_order(order) for order in orders]
+    }
+
+# ----------------------- GET ALL ORDERS -----------------------
 @router.get(
     "/all_orders",
-    summary="Get full details of all orders with their items",
-    # dependencies=[Depends(permission_required("view_order"))]
+    summary="Get full details of all orders with their items only superadmin can access",
+    dependencies=[Depends(permission_required("view_order"))]
 )
 async def get_all_orders():
     orders = await Order.all().prefetch_related(
@@ -177,8 +201,8 @@ async def get_all_orders():
 
 # ----------------------- GET SINGLE ORDER -----------------------
 @router.get("/{order_id}", summary="Get full order details with all items")
-async def get_order_details(order_id: str):
-    order = await Order.filter(id=order_id).prefetch_related(
+async def get_order_details(order_id: str, vendor: User = Depends(vendor_required)):
+    order = await Order.filter(id=order_id, vendor_id=vendor.id).prefetch_related(
         "items__item__vendor__vendor_profile",
         "user",
         "rider",
