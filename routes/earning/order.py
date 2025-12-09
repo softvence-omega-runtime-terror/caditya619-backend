@@ -3,7 +3,7 @@ from typing import Optional
 from app.auth import permission_required, vendor_required
 from applications.user.models import User
 
-from applications.customer.models import Order, OrderItem, OrderStatus
+from applications.customer.models import Order, OrderItem, OrderStatus, DeliveryTypeEnum
 from applications.items.models import Item
 
 router = APIRouter(prefix="/order", tags=["Order Management"])
@@ -171,7 +171,7 @@ async def get_all_orders(
     if status:
         query = query.filter(status=status)
     if type:
-        query = query.filter(type=type)
+        query = query.filter(delivery_type=type)
     total_orders = await query.count()
     orders = (
         await query
