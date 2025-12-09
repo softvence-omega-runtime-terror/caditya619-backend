@@ -160,21 +160,29 @@ async def order_status_management(
 
 # ----------------------- GET ALL ORDERS -----------------------
 @router.get("/my_orders", summary="Get full details of all orders with their items",)
-async def get_all_orders(vendor: User = Depends(vendor_required)):
-    orders = await Order.filter(vendor_id=vendor.id).prefetch_related(
-        "items__item__vendor__vendor_profile",
-        "user",
-        "rider",
-        "shipping_address"
-    )
-
-    # if not orders:
-    #     raise HTTPException(status_code=404, detail="No orders found")
+async def get_all_orders(
+    offset: int = 0,
+    limit: int = 10,
+    vendor: User = Depends(vendor_required)
+):
+    orders = await Order.filter(vendor_id=vendor.id) \
+        .offset(offset) \
+        .limit(limit) \
+        .prefetch_related(
+            "items__item__vendor__vendor_profile",
+            "user",
+            "rider",
+            "shipping_address"
+        )
+    total_orders = await Order.filter(vendor_id=vendor.id).count()
 
     return {
-        "total_orders": len(orders),
+        "total_orders": total_orders,
+        "offset": offset,
+        "limit": limit,
         "orders": [await serialize_order(order) for order in orders]
     }
+
 
 # ----------------------- GET ALL ORDERS -----------------------
 @router.get(
