@@ -119,7 +119,7 @@ async def serialize_order(order: Order):
 @router.post("/manage-order-status", dependencies=[Depends(vendor_required)])
 async def order_status_management(
     order_id: str = Form(...),
-    status: str = Form(..., description="New status for the order 'confirmed', 'shipped', 'outForDelivery', 'cancelled', 'refunded'"),
+    status: str = Form(..., description="New status for the order 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
     vendor: User = Depends(vendor_required)
 ):
     order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
