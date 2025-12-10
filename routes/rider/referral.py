@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from applications.user.models import User
 from applications.user.rider import RiderProfile, Referral
 from app.token import get_current_user
@@ -10,6 +10,7 @@ from PIL import Image
 import qrcode
 from starlette.responses import StreamingResponse
 from .notifications import send_notification
+from app.utils.translator import translate
 
 
 
@@ -29,7 +30,8 @@ async def generate_code() -> str:
     return code
 
 @router.get("/referral/dashboard")
-async def referral_dashboard(current_user: User = Depends(get_current_user)):
+async def referral_dashboard(request:Request, current_user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=current_user)
 
     # Generate code if missing
@@ -41,7 +43,7 @@ async def referral_dashboard(current_user: User = Depends(get_current_user)):
     referrals = await Referral.filter(referrer=rider)
     active_count = len([r for r in referrals if r.status == "active"])
 
-    return {
+    return translate({
         "referral_code": rider.referral_code,
         "qr_data": rider.referral_code,  # Frontend makes QR from this
         "active_count": active_count,
@@ -54,7 +56,7 @@ async def referral_dashboard(current_user: User = Depends(get_current_user)):
             }
             for r in referrals
         ]
-    }
+    }, lang)
 
 @router.get("/referral/qr")
 async def referral_qr(current_user: User = Depends(get_current_user)):
@@ -71,21 +73,22 @@ async def referral_qr(current_user: User = Depends(get_current_user)):
     return StreamingResponse(buffer, media_type="image/png")
 
 @router.post("/referral/apply/{code}")
-async def apply_referral(code: str, current_user: User = Depends(get_current_user)):
+async def apply_referral(request:Request, code: str, current_user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=current_user)
     if rider.referral_code:
-        raise HTTPException(400, "Already used a referral code")
+        raise HTTPException(400, translate("Already used a referral code", lang))
 
     referrer = await RiderProfile.get_or_none(referral_code=code.upper())
     if not referrer or referrer.id == rider.id:
-        raise HTTPException(404, "Invalid referral code")
+        raise HTTPException(404, translate("Invalid referral code", lang))
 
     await Referral.create(
         referrer=referrer,
         code_used=code.upper(),
         status="pending"
     )
-    return {"success": True, "message": "Referral applied!"}
+    return translate({"success": True, "message": "Referral applied!"}, lang)
 
 # CALL THIS WHEN REFERRED RIDER COMPLETES FIRST RIDE
 async def activate_referral(referred_rider_id: int):

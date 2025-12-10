@@ -357,7 +357,7 @@ async def notifications_endpoint(
 # MANAGEMENT ENDPOINTS (HTTP) - Chat Session Management
 # ============================================================================
 
-@router.post("/chat/start/{from_type}/{from_id}/{to_type}/{to_id}")
+@router.post("/chat/start/{from_type}/{from_id}/{to_type}/{to_id}", dependencies=[Depends(login_required)])
 async def start_chat(from_type: str, from_id: str, to_type: str, to_id: str):
     """
     Start a new chat session between two users.
@@ -373,7 +373,7 @@ async def start_chat(from_type: str, from_id: str, to_type: str, to_id: str):
     return {"error": "Failed to start chat"}
 
 
-@router.post("/chat/end/{from_type}/{from_id}/{to_type}/{to_id}")
+@router.post("/chat/end/{from_type}/{from_id}/{to_type}/{to_id}", dependencies=[Depends(login_required)])
 async def end_chat(from_type: str, from_id: str, to_type: str, to_id: str):
     """End a chat session"""
     success = await manager.end_chat(from_type, from_id, to_type, to_id)
@@ -382,7 +382,7 @@ async def end_chat(from_type: str, from_id: str, to_type: str, to_id: str):
     return {"error": "Failed to end chat"}
 
 
-@router.get("/chat/history/{from_type}/{from_id}/{to_type}/{to_id}")
+@router.get("/chat/history/{from_type}/{from_id}/{to_type}/{to_id}", dependencies=[Depends(login_required)])
 async def get_chat_history(
     from_type: str,
     from_id: str,
@@ -430,33 +430,33 @@ async def get_chat_history(
         return {"error": str(e)}
 
 
-@router.get("/chat/partners/{client_type}/{user_id}")
+@router.get("/chat/partners/{client_type}/{user_id}", dependencies=[Depends(login_required)])
 async def get_chat_partners(client_type: str, user_id: str):
     """Get all active chat partners for a user"""
     partners = manager.get_chat_partners(client_type, user_id)
     return {"partners": [{"type": t, "id": id} for t, id in partners]}
 
 
-@router.get("/location/subscribers/{rider_id}")
+@router.get("/location/subscribers/{rider_id}", dependencies=[Depends(login_required)])
 async def get_location_subscribers(rider_id: str):
     """Get all customers tracking a rider"""
     subscribers = manager.get_location_subscribers(rider_id)
     return {"rider_id": rider_id, "subscribers": list(subscribers)}
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(login_required)])
 async def get_stats():
     """Get connection statistics"""
     return manager.get_stats()
 
 
-@router.get("/active-users")
+@router.get("/active-users", dependencies=[Depends(login_required)])
 async def get_active_users(client_type: str = None, purpose: str = None):
     """Get list of active users"""
     return manager.get_active_users(client_type, purpose)
 
 
-@router.post("/notifications/send/{to_type}/{to_id}")
+@router.post("/notifications/send/{to_type}/{to_id}", dependencies=[Depends(login_required)])
 async def send_notification(
     to_type: str,
     to_id: str,
@@ -485,7 +485,7 @@ async def send_notification(
     return {"error": "Failed to send notification"}
 
 
-@router.post("/notifications/broadcast/{to_type}")
+@router.post("/notifications/broadcast/{to_type}", dependencies=[Depends(login_required)])
 async def broadcast_notification(
     to_type: str,
     title: str,
@@ -532,7 +532,7 @@ async def subscribe_to_riders_location(
 # UTILITY ENDPOINTS
 # ============================================================================
 
-@router.get("/chat/unread/{client_type}/{user_id}")
+@router.get("/chat/unread/{client_type}/{user_id}", dependencies=[Depends(login_required)])
 async def get_unread_messages(client_type: str, user_id: str):
     """Get count of unread messages"""
     try:
@@ -549,7 +549,7 @@ async def get_unread_messages(client_type: str, user_id: str):
         return {"error": str(e)}
 
 
-@router.post("/chat/mark-read/{to_type}/{to_id}/{from_type}/{from_id}")
+@router.post("/chat/mark-read/{to_type}/{to_id}/{from_type}/{from_id}", dependencies=[Depends(login_required)])
 async def mark_messages_read(to_type: str, to_id: str, from_type: str, from_id: str):
     """Mark all messages from a sender as read"""
     try:

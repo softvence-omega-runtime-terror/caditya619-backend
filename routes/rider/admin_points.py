@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, Request
 from applications.user.rider import RiderFeesAndBonuses, RiderProfile
 from applications.user.models import User
 from app.token import get_current_user
@@ -21,22 +21,21 @@ router = APIRouter(tags=['Admin Rider Points'])
 RiderFeesAndBonuses_Pydantic = pydantic_model_creator(RiderFeesAndBonuses, name="RiderFeesAndBonuses")
 
 
-@router.get("/test-admin-points/")
-async def test_admin_points(lang:str = "eng"):
-    return {"message": translate("Admin Rider Points route is working!", lang)}
 
 
 
 @router.post("/rider-fees-and-bonus-rate", response_model=RiderFeesAndBonuses_Pydantic)
 async def rider_fees_and_bonus_rate(
+    request:Request,
     base_salary : float = Form(),
     delivery_fee: float = Form(),
     distance_bonus_per_km: float = Form(),
     weekly_bonus: float = Form(),
     referral_bonus: float = Form(),
     excellence_bonus: float = Form(),
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
     ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     fees_obj, created = await RiderFeesAndBonuses.get_or_create(id=1)
@@ -54,22 +53,27 @@ async def rider_fees_and_bonus_rate(
         fees_obj.excellence_bonus = excellence_bonus
     await fees_obj.save()
 
-    return await RiderFeesAndBonuses_Pydantic.from_tortoise_orm(fees_obj)
+    result = await RiderFeesAndBonuses_Pydantic.from_tortoise_orm(fees_obj)
+
+    return translate(result.dict(),lang)
 
 
 @router.get("/rider-fees-and-bonus-rate", response_model=RiderFeesAndBonuses_Pydantic)
-async def get_rider_fees_and_bonus_rate(user: User = Depends(get_current_user)):
+async def get_rider_fees_and_bonus_rate(request:Request, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     fees_obj = await RiderFeesAndBonuses.filter(id=1).first()
     if fees_obj is None:
         raise HTTPException(status_code=404, detail="No data found")
-    return await RiderFeesAndBonuses_Pydantic.from_tortoise_orm(fees_obj)
+    result = await RiderFeesAndBonuses_Pydantic.from_tortoise_orm(fees_obj)
+    return translate(result.dict(),lang)
 
 
 
 @router.put("/rider-fees-and-bonus-rate/{id}", response_model=RiderFeesAndBonuses_Pydantic)
-async def update_rider_fees_and_bonus_rate(id:int,
+async def update_rider_fees_and_bonus_rate(request:Request,
+                                            id:int,
                                             base_salary : float = Form(None),
                                             delivery_fee: float = Form(None),
                                             distance_bonus_per_km: float = Form(None),
@@ -78,6 +82,7 @@ async def update_rider_fees_and_bonus_rate(id:int,
                                             excellence_bonus: float = Form(None),
                                             user: User = Depends(get_current_user)
                                         ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     fees_obj = await RiderFeesAndBonuses.filter(id=id).first()
@@ -99,31 +104,35 @@ async def update_rider_fees_and_bonus_rate(id:int,
     await fees_obj.save()
 
 
-    return await RiderFeesAndBonuses_Pydantic.from_tortoise_orm(fees_obj)
+    result = await RiderFeesAndBonuses_Pydantic.from_tortoise_orm(fees_obj)
+    return translate(result.dict(),lang)
     
     
 
 
 @router.get("/rider-document-check/{rider_id}", response_model=dict)
-async def check_rider_document(rider_id:str, user:User = Depends(get_current_user)):
+async def check_rider_document(request:Request, rider_id:str, user:User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     rider_profile = await RiderProfile.filter(user=rider_id).first()
     if not rider_profile:
         raise HTTPException(status_code=404, detail=f"No profile found for {rider_id}")
     
-    return {
+    return translate({
         "profile_image":rider_profile.profile_image,
         "driving_license":rider_profile.driving_license_document,
         "nid":rider_profile.national_id_document,
         "vehicle_registration":rider_profile.vehicle_registration_document,
         "vehicle_insurance":rider_profile.vehicle_insurance_document
-    }
+    }, lang)
 
 
 
 @router.put("/rider-document-approve/{rider_id}", response_model=dict)
-async def approve_rider_document(rider_id:str, is_verified:bool = Form(), user:User = Depends(get_current_user)):
+async def approve_rider_document(request:Request, rider_id:str, is_verified:bool = Form(), user:User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = "bn"
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     rider_profile = await RiderProfile.filter(user=rider_id).first()
@@ -136,7 +145,7 @@ async def approve_rider_document(rider_id:str, is_verified:bool = Form(), user:U
             await send_notification(rider_id,"Your document has been verified","You are now eligible to earn points.")
         except Exception as e:
             print(e)
-        return {"message":"Document approved successfully"}
+        return translate({"message":"Document approved successfully"}, lang)
     else:
         rider_profile.is_verified = False
         await rider_profile.save()
@@ -144,5 +153,5 @@ async def approve_rider_document(rider_id:str, is_verified:bool = Form(), user:U
             await send_notification(rider_id,"Your document has been rejected","Please upload valid documents.")
         except Exception as e:
             print(e)
-        return {"message":"Document rejected successfully"}
+        return translate({"message":"Document rejected successfully"}, lang)
 
