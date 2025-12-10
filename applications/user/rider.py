@@ -197,11 +197,22 @@ class WorkDay(models.Model):
         table = "work_days"
         unique_together = (("rider", "date"),)
 
-class Notification(models.Model):
+# class Notification(models.Model):
+#     id = fields.UUIDField(pk=True, default=uuid.uuid4)
+#     rider = fields.ForeignKeyField("models.RiderProfile", related_name="notifications")
+#     message = fields.TextField()
+#     type = fields.CharField(max_length=50)
+#     created_at = fields.DatetimeField(auto_now_add=True)
+#     is_read = fields.BooleanField(default=False)
+
+#     class Meta:
+#         table = "notifications"
+
+class PushNotification(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
-    rider = fields.ForeignKeyField("models.RiderProfile", related_name="notifications")
-    message = fields.TextField()
-    type = fields.CharField(max_length=50)
+    user = fields.ForeignKeyField("models.User", related_name="notifications")
+    title = fields.CharField(max_length=255, null=True)
+    body = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     is_read = fields.BooleanField(default=False)
 
