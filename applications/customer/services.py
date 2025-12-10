@@ -181,22 +181,28 @@ class OrderService:
     def _generate_order_id() -> str:
         return f"ORD_{uuid.uuid4().hex[:8].upper()}"
 
-    async def create_order(self, order_data: OrderCreateSchema, current_user) -> Order:
-        subtotal = Decimal("0")
-        order_items = []
+    async def create_orders(
+        self, 
+        order_data: OrderCreateSchema, 
+        current_user
+    ) -> List[Order]:
+        """
+        Create multiple orders grouped by vendor from a single request.
+        Returns a list of Order objects.
+        """
         user = current_user
         user_id = user.id
         
-        # NEW: Validate single vendor and collect vendor info
-        vendor_id = None
-        vendor_info = None
-
-        # Process order items
+        # Group items by vendor
+        vendor_items_map: Dict[int, List[Dict]] = {}
+        
         for item_input in order_data.items:
             try:
-                item = await Item.get(id=item_input.item_id).prefetch_related('vendor__vendor_profile')
+                item = await Item.get(id=item_input.item_id).prefetch_related(
+                    'vendor__vendor_profile'
+                )
                 
-                # NEW: Validate that vendor exists and is active
+                # Validate vendor
                 if not item.vendor:
                     raise ValueError(f"Item '{item.title}' has no associated vendor")
                 
@@ -205,142 +211,141 @@ class OrderService:
                 
                 if not item.vendor.is_active:
                     raise ValueError(f"Vendor for item '{item.title}' is currently inactive")
-
-
+                
                 if item.stock < item_input.quantity:
                     raise ValueError(f"Insufficient stock for item: {item.title}")
                 
-                # NEW: Validate single vendor
-                if vendor_id is None:
-                    vendor_id = item.vendor_id
-                    
-                    # Store vendor info (will be preserved even if vendor deleted)
-                    vendor_profile = await VendorProfile.get_or_none(user=item.vendor)
-                    
-                    # Build vendor info with all available data
-                    vendor_info = {
-                        "vendor_id": vendor_id,
-                        "vendor_name": item.vendor.name,
-                        "vendor_phone": item.vendor.phone,
-                        "vendor_email": item.vendor.email or None,
-                        "is_vendor": item.vendor.is_vendor,
-                        "is_active": item.vendor.is_active
-                    }
-                    
-                    # Add vendor profile details if available
-                    if vendor_profile:
-                        vendor_info.update({
-                            "store_name": vendor_profile.owner_name,
-                            "store_type": vendor_profile.type,
-                            "store_latitude": vendor_profile.latitude,
-                            "store_longitude": vendor_profile.longitude,
-                            "kyc_status": vendor_profile.kyc_status,
-                            "profile_is_active": vendor_profile.is_active
-                        })
-                    
-                elif item.vendor_id != vendor_id:
-                    raise ValueError(
-                        f"All items must be from the same vendor. "
-                        f"Please create separate orders for items from different vendors."
-                    )
-
-
+                # Group by vendor
+                vendor_id = item.vendor_id
+                if vendor_id not in vendor_items_map:
+                    vendor_items_map[vendor_id] = []
+                
                 price = Decimal(str(item.price))
                 quantity = item_input.quantity
-                subtotal += price * quantity
                 
-                order_items.append({
+                vendor_items_map[vendor_id].append({
                     'item': item,
                     'title': item.title,
                     'price': price,
                     'quantity': quantity,
-                    'image_path': getattr(item, 'image', '')
+                    'image_path': getattr(item, 'image', ''),
+                    'vendor': item.vendor
                 })
                 
             except DoesNotExist:
                 raise ValueError(f"Item with id {item_input.item_id} not found")
-
             except Exception as e:
                 print(f"Error processing item {item_input.item_id}: {e}")
                 raise
         
-        if not vendor_id:
-            raise ValueError("No valid items in order")         
-
-
-        delivery_fee = Decimal(str(order_data.delivery_option.price))
-        discount = self._apply_coupon(subtotal, order_data.coupon_code)
-        total = subtotal + delivery_fee - discount
+        if not vendor_items_map:
+            raise ValueError("No valid items in order")
         
-        # FIXED: Create order with temporary shipping address data (not saved separately)
-        order_id = self._generate_order_id()
+        # Create one order per vendor
+        created_orders = []
         
-        # Store shipping address in metadata instead of creating separate record
-        shipping_data = {
-            "full_name": order_data.shipping_address.full_name or "",
-            "address_line1": order_data.shipping_address.address_line1 or "",
-            "address_line2": order_data.shipping_address.address_line2 or "",
-            "city": order_data.shipping_address.city or "",
-            "state": order_data.shipping_address.state or "",
-            "postal_code": order_data.shipping_address.postal_code or "",
-            "country": order_data.shipping_address.country or "",
-            "phone_number": order_data.shipping_address.phone_number or ""
-        }
-        
-        order_metadata = {
-            "shipping_address": shipping_data,
-            "delivery_option": {
-                "type": order_data.delivery_option.type,
-                "title": getattr(order_data.delivery_option, 'title', ''),
-                "description": getattr(order_data.delivery_option, 'description', ''),
-                "price": float(order_data.delivery_option.price)
-            },
-            "payment_method": {
-                "type": order_data.payment_method.type,
-                "name": getattr(order_data.payment_method, 'name', '')
-            },
-            "vendor_info": vendor_info
-        }
-        
-        order = await Order.create(
-            id=order_id,  
-            user_id=user_id,
-            vendor_id=vendor_id,
-            shipping_address_id=None,  # FIXED: No separate shipping address
-            delivery_type=order_data.delivery_option.type, 
-            payment_method=order_data.payment_method.type, 
-            subtotal=subtotal,
-            delivery_fee=delivery_fee,
-            total=total,
-            coupon_code=order_data.coupon_code,
-            discount=discount,
-            status=OrderStatus.PENDING,
-            payment_status="unpaid",  # Always starts as unpaid
-            tracking_number=self._generate_tracking_number(),
-            estimated_delivery=self._calculate_estimated_delivery(
-                order_data.delivery_option.type
-            ),
-            metadata=order_metadata
-        )
-        
-        # Create order items
-        for item_data in order_items:
-            await OrderItem.create(
-                order_id=order.id,
-                item_id=item_data['item'].id,
-                title=item_data['title'],
-                price=str(item_data['price']),  
-                quantity=item_data['quantity'],
-                image_path=item_data['image_path']
+        for vendor_id, items in vendor_items_map.items():
+            # Calculate subtotal for this vendor
+            subtotal = sum(item['price'] * item['quantity'] for item in items)
+            
+            # Apply delivery fee and discount
+            delivery_fee = Decimal(str(order_data.delivery_option.price))
+            discount = self._apply_coupon(subtotal, order_data.coupon_code)
+            total = subtotal + delivery_fee - discount
+            
+            # Get vendor info
+            first_item_vendor = items[0]['vendor']
+            vendor_profile = await VendorProfile.get_or_none(user=first_item_vendor)
+            
+            vendor_info = {
+                "vendor_id": vendor_id,
+                "vendor_name": first_item_vendor.name,
+                "vendor_phone": first_item_vendor.phone,
+                "vendor_email": first_item_vendor.email or None,
+                "is_vendor": first_item_vendor.is_vendor,
+                "is_active": first_item_vendor.is_active
+            }
+            
+            if vendor_profile:
+                vendor_info.update({
+                    "store_name": vendor_profile.owner_name,
+                    "store_type": vendor_profile.type,
+                    "store_latitude": vendor_profile.latitude,
+                    "store_longitude": vendor_profile.longitude,
+                    "kyc_status": vendor_profile.kyc_status,
+                    "profile_is_active": vendor_profile.is_active
+                })
+            
+            # Store shipping address in metadata
+            shipping_data = {
+                "full_name": order_data.shipping_address.full_name or "",
+                "address_line1": order_data.shipping_address.address_line1 or "",
+                "address_line2": order_data.shipping_address.address_line2 or "",
+                "city": order_data.shipping_address.city or "",
+                "state": order_data.shipping_address.state or "",
+                "postal_code": order_data.shipping_address.postal_code or "",
+                "country": order_data.shipping_address.country or "",
+                "phone_number": order_data.shipping_address.phone_number or ""
+            }
+            
+            order_metadata = {
+                "shipping_address": shipping_data,
+                "delivery_option": {
+                    "type": order_data.delivery_option.type,
+                    "title": getattr(order_data.delivery_option, 'title', ''),
+                    "description": getattr(order_data.delivery_option, 'description', ''),
+                    "price": float(order_data.delivery_option.price)
+                },
+                "payment_method": {
+                    "type": order_data.payment_method.type,
+                    "name": getattr(order_data.payment_method, 'name', '')
+                },
+                "vendor_info": vendor_info
+            }
+            
+            # Create order
+            order_id = self._generate_order_id()
+            order = await Order.create(
+                id=order_id,
+                user_id=user_id,
+                vendor_id=vendor_id,
+                shipping_address_id=None,
+                delivery_type=order_data.delivery_option.type,
+                payment_method=order_data.payment_method.type,
+                subtotal=subtotal,
+                delivery_fee=delivery_fee,
+                total=total,
+                coupon_code=order_data.coupon_code,
+                discount=discount,
+                status=OrderStatus.PENDING,
+                payment_status="unpaid",
+                tracking_number=self._generate_tracking_number(),
+                estimated_delivery=self._calculate_estimated_delivery(
+                    order_data.delivery_option.type
+                ),
+                metadata=order_metadata
             )
             
-            # Update stock
-            item_data['item'].stock -= item_data['quantity']
-            item_data['item'].total_sale += item_data['quantity']
-            await item_data['item'].save(update_fields=['stock', 'total_sale'])
+            # Create order items
+            for item_data in items:
+                await OrderItem.create(
+                    order_id=order.id,
+                    item_id=item_data['item'].id,
+                    title=item_data['title'],
+                    price=str(item_data['price']),
+                    quantity=item_data['quantity'],
+                    image_path=item_data['image_path']
+                )
+                
+                # Update stock
+                item_data['item'].stock -= item_data['quantity']
+                item_data['item'].total_sale += item_data['quantity']
+                await item_data['item'].save(update_fields=['stock', 'total_sale'])
+            
+            await order.fetch_related("user", "items__item")
+            created_orders.append(order)
         
-        await order.fetch_related("user", "items__item")
-        return order
+        return created_orders
 
     def _generate_tracking_number(self) -> str:
         import random
@@ -363,7 +368,6 @@ class OrderService:
             "WELCOME10": Decimal("10.0")
         }
         return coupon_discounts.get(coupon_code, Decimal("0.0"))
-
     # ============= SERVICE METHODS FOR UPDATE & CANCEL =============
     async def update_order(self, order_id: str, update_data: OrderUpdateSchema, current_user) -> dict:
         """Update order - only if status is PENDING"""

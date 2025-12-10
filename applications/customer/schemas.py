@@ -84,6 +84,35 @@ PaymentMethod_Pydantic_In = pydantic_model_creator(
     exclude_readonly=True
 )
 
+class OrderSummary(BaseModel):
+    """Summary of a single order in a combined payment"""
+    order_id: str
+    vendor_id: int
+    vendor_name: str
+    total: float
+    items_count: int
+
+class CombinedPaymentLinkResponse(BaseModel):
+    """Response for combined payment link across multiple orders"""
+    success: bool
+    orders: List[OrderSummary]
+    cf_payment_id: str
+    payment_link: str
+    message: str
+    total_amount: float
+    orders_count: int
+
+class MultiOrderResponseSchema(BaseModel):
+    """Response when creating multiple orders in one request"""
+    success: bool
+    message: str
+    data: dict  # Contains: orders, total_amount, payment_status, payment_link, etc.
+    
+    class Config:
+        from_attributes = True
+
+
+
 # ==================== Cart Schemas ====================
 
 class CartCreateSchema(BaseModel):

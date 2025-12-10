@@ -32,64 +32,73 @@ async def place_order(
     redis = Depends(get_redis)
 ):
     """
-    STEP 1: Create order with PENDING status
-    STEP 2: Return payment link if payment method is Cashfree
-    STEP 3: Order progresses only after successful payment
+    STEP 1: Create orders (one per vendor) with PENDING status
+    STEP 2: Return combined payment link if payment method is Cashfree
+    STEP 3: Orders progress only after successful payment
     """
     
     service = OrderService()
     try:
-        # Create order with PENDING status
-        order = await service.create_order(order_data, current_user)
+        # Create orders (one per vendor)
+        orders = await service.create_orders(order_data, current_user)
         
-        payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
+        payment_method = order_data.payment_method.type
+        if hasattr(payment_method, 'value'):
+            payment_method = payment_method.value
+        payment_method = str(payment_method)
+        
         requires_payment = payment_method.lower() == "cashfree"
+        
+        # Calculate total amount across all orders
+        total_amount = sum(float(order.total) for order in orders)
         
         response_data = {
             "success": True,
-            "message": "Order created successfully",
+            "message": f"{len(orders)} order(s) created successfully",
             "data": {
-                "order_id": order.id,
-                "status": order.status.value if hasattr(order.status, 'value') else order.status,
-                "tracking_number": order.tracking_number,
-                "total": float(order.total),
-                "payment_status": order.payment_status,
+                "orders": [
+                    {
+                        "order_id": order.id,
+                        "vendor_id": order.vendor_id,
+                        "status": order.status.value if hasattr(order.status, 'value') else order.status,
+                        "tracking_number": order.tracking_number,
+                        "total": float(order.total)
+                    }
+                    for order in orders
+                ],
+                "total_amount": total_amount,
+                "payment_status": "unpaid",
                 "requires_payment": requires_payment
             }
         }
         
         if requires_payment:
-            # Generate payment link using Cashfree
+            # Generate combined payment link for all orders
             try:
-                payment_link_response = await create_payment_link_internal(order)
+                payment_link_response = await create_payment_link_for_orders(orders)
                 response_data["data"]["payment_link"] = payment_link_response["payment_link"]
-                response_data["data"]["cf_order_id"] = payment_link_response["cf_order_id"]
-                response_data["message"] = "Order created. Please complete payment to proceed."
+                response_data["data"]["cf_payment_id"] = payment_link_response["cf_payment_id"]
+                response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
             except Exception as e:
                 print(f"Payment link creation error: {e}")
-                response_data["message"] = "Order created but payment link generation failed. Please try manual payment."
+                response_data["message"] = f"{len(orders)} order(s) created but payment link generation failed."
         else:
-            # COD order - notify immediately
-            payload = {
-                "type": "order_placed",
-                "order_id": order.id,
-                "customer_name": current_user.name,
-                "payment_method": "COD",
-                "created_at": datetime.utcnow().isoformat()
-            }
-            
-            try:
-                await redis.publish("order_updates", json.dumps(payload))
-                await manager.send_to(payload, "customers", str(current_user.id), "notifications")
+            # COD orders - notify immediately
+            for order in orders:
+                payload = {
+                    "type": "order_placed",
+                    "order_id": order.id,
+                    "customer_name": current_user.name,
+                    "payment_method": "COD",
+                    "created_at": datetime.utcnow().isoformat()
+                }
                 
-                # Notify all vendors
-                order_items = await OrderItem.filter(order=order).prefetch_related('item__vendor')
-                vendor_ids = set()
-                for oi in order_items:
-                    vendor_ids.add(oi.item.vendor_id)
-                
-                for vendor_id in vendor_ids:
-                    vendor = await VendorProfile.get_or_none(id=vendor_id)
+                try:
+                    await redis.publish("order_updates", json.dumps(payload))
+                    await manager.send_to(payload, "customers", str(current_user.id), "notifications")
+                    
+                    # Notify vendor
+                    vendor = await VendorProfile.get_or_none(id=order.vendor_id)
                     if vendor:
                         await manager.send_to(payload, "vendors", str(vendor.user_id), "notifications")
                         await send_notification(
@@ -97,8 +106,8 @@ async def place_order(
                             "New COD Order", 
                             f"New order #{order.id} received"
                         )
-            except Exception as e:
-                print(f"Notification error: {e}")
+                except Exception as e:
+                    print(f"Notification error for order {order.id}: {e}")
         
         return response_data
         
@@ -106,8 +115,6 @@ async def place_order(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
-
-
 # ============================================================
 # 2. GET ALL ORDERS (with filters and pagination)
 # ============================================================
@@ -386,8 +393,9 @@ async def update_order(
 ):
     """
     Update order details.
-    - Customers can only cancel their pending orders
-    - Staff/Vendors can update status, assign riders, etc.
+    - Only the customer who created the order can update it
+    - Only pending orders can be cancelled
+    - Can only update status to "cancelled"
     """
     
     order = await Order.get_or_none(id=order_id).prefetch_related('user')
@@ -395,92 +403,65 @@ async def update_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    # Authorization check
-    is_owner = order.user_id == current_user.id
-    is_authorized = current_user.is_staff or current_user.is_vendor
+    # Only order owner can update
+    if order.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Not authorized to update this order"
+        )
     
-    if not (is_owner or is_authorized):
-        raise HTTPException(status_code=403, detail="Not authorized to update this order")
+    # Get current status
+    current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
     
-    # Customers can only cancel pending orders
-    if is_owner and not is_authorized:
-        if update_data.status and update_data.status.lower() != "cancelled":
-            raise HTTPException(
-                status_code=403,
-                detail="Customers can only cancel orders"
-            )
+    # Only pending orders can be updated
+    if current_status.lower() != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot update order with status: {current_status}. Only pending orders can be cancelled."
+        )
+    
+    # Only "cancelled" status is allowed
+    if not update_data.status:
+        raise HTTPException(status_code=400, detail="Status is required")
+    
+    if update_data.status.lower() != "cancelled":
+        raise HTTPException(
+            status_code=400,
+            detail="Can only update status to 'cancelled'"
+        )
+    
+    # Update status
+    try:
+        new_status = OrderStatus.CANCELLED
+        order.status = new_status
         
-        current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        if current_status.lower() not in ["pending"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot cancel order with status: {current_status}"
-            )
-    
-    # Update fields
-    updated_fields = []
-    
-    if update_data.status:
-        try:
-            new_status = OrderStatus[update_data.status.upper()]
-            old_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-            if new_status != "cancelled":
-                raise HTTPException(status_code=400, detail="Only cancellation allowed")
-            else:
-                # Only staff can change status to cancelled
-                order.status = new_status
-                updated_fields.append('status')
-            
-                # If cancelling, add reason
-                if update_data.status.lower() == "cancelled" and update_data.reason:
-                    order.reason = update_data.reason
-                    updated_fields.append('reason')
-                
-                print(f"[UPDATE] Order {order_id} status: {old_status} → {update_data.status}")
-                
-        except KeyError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {update_data.status}")
-
-    
-    if updated_fields:
-        order.updated_at = datetime.utcnow()
-        updated_fields.append('updated_at')
-        await order.save(update_fields=updated_fields)
+        # Add cancellation reason if provided
+        if update_data.reason:
+            order.reason = update_data.reason
+            await order.save(update_fields=['status', 'reason', 'updated_at'])
+        else:
+            await order.save(update_fields=['status', 'updated_at'])
         
-        # Send notifications
-        try:
-            status_msg = update_data.status or "updated"
-            
-            # Notify customer
-            await send_notification(
-                order.user_id,
-                "Order Updated",
-                f"Your order #{order_id} status has been updated to {status_msg}"
-            )
-            
-            # If rider assigned and status is OUT_FOR_DELIVERY
-            if update_data.status and update_data.status.lower() == "outfordelivery":
-                await send_notification(
-                    order.user_id,
-                    "Order Out for Delivery",
-                    f"Your order #{order_id} is out for delivery!"
-                )
-        except Exception as e:
-            print(f"[UPDATE] Notification error: {e}")
+        print(f"[UPDATE] Order {order_id} status: {current_status} → cancelled")
         
-        return {
-            "success": True,
-            "message": "Order updated successfully",
-            "order_id": order_id,
-            # "updated_fields": updated_fields
-        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating order: {str(e)}")
+    
+    # Send notification
+    try:
+        await send_notification(
+            order.user_id,
+            "Order Cancelled",
+            f"Your order #{order_id} has been cancelled"
+        )
+    except Exception as e:
+        print(f"[UPDATE] Notification error: {e}")
     
     return {
-        "success": False,
-        "message": "No fields to update"
+        "success": True,
+        "message": "Order cancelled successfully",
+        "order_id": order_id
     }
-
-
 # ============================================================
 # 5. DELETE ORDER (Soft Delete - Cancel)
 # ============================================================
@@ -580,27 +561,79 @@ async def cancel_order(
 # PAYMENT HELPER - Internal function
 # ============================================================
 
-async def create_payment_link_internal(order: Order):
-    """Internal function to create payment link"""
+async def create_payment_link_for_orders(orders: List[Order]):
+    """
+    Create a single payment link for multiple orders.
+    All orders must belong to the same customer and use Cashfree payment method.
+    """
     
-    customer_name = order.metadata.get("shipping_address", {}).get("full_name", "Customer")
-    customer_phone = order.metadata.get("shipping_address", {}).get("phone_number", order.user.phone)
-    customer_email = order.user.email or f"customer_{order.user.id}@example.com"
+    if not orders:
+        raise HTTPException(status_code=400, detail="No orders provided")
     
+    # Validate all orders
+    customer_id = orders[0].user_id
+    customer = orders[0].user
+    total_amount = Decimal("0")
+    order_ids = []
+    
+    for order in orders:
+        # Check customer consistency
+        if order.user_id != customer_id:
+            raise HTTPException(
+                status_code=400,
+                detail="All orders must belong to the same customer"
+            )
+        
+        # Check payment method
+        payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
+        if payment_method.lower() != "cashfree":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Order {order.id} payment method is {payment_method}, not Cashfree"
+            )
+        
+        # Check order status
+        order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
+        if order_status.lower() != "pending":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Order {order.id} is already {order_status}. Cannot create payment link."
+            )
+        
+        # Check payment status
+        if order.payment_status != "unpaid":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Order {order.id} is already paid or payment in progress"
+            )
+        
+        total_amount += order.total
+        order_ids.append(order.id)
+    
+    # Create combined payment link
     headers = {
-        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
-        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET,
+        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID.strip(),
+        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET.strip(),
         "x-api-version": CASHFREE_API_VERSION,
         "Content-Type": "application/json"
     }
     
-    cf_order_id = f"CF_{order.id}_{uuid.uuid4().hex[:8].upper()}"
+    # Generate unique payment ID
+    cf_payment_id = f"PAY_{uuid.uuid4().hex[:12].upper()}"
+    
+    # Build payment purpose
+    order_list = ", ".join(order_ids)
+    payment_purpose = f"Payment for {len(orders)} orders: {order_list[:100]}"
+    
+    customer_name = customer.name or "Customer"
+    customer_email = customer.email or f"customer_{customer.id}@example.com"
+    customer_phone = customer.phone or "9999999999"
     
     payload = {
-        "link_id": cf_order_id,
-        "link_amount": float(order.total),
+        "link_id": cf_payment_id,
+        "link_amount": float(total_amount),
         "link_currency": "INR",
-        "link_purpose": f"Payment for order {order.id}",
+        "link_purpose": payment_purpose,
         "customer_details": {
             "customer_phone": customer_phone,
             "customer_email": customer_email,
@@ -611,45 +644,80 @@ async def create_payment_link_internal(order: Order):
             "send_email": True
         },
         "link_meta": {
-            "order_id": order.id,
-            "user_id": str(order.user.id),
+            "order_ids": order_ids,
+            "user_id": str(customer_id),
+            "orders_count": len(orders),
             "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last"
         }
     }
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{CASHFREE_BASE}/links",
-            json=payload,
-            headers=headers
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            print(f"[PAYMENT] Creating link for {len(orders)} orders, total: ₹{total_amount}")
+            
+            resp = await client.post(
+                f"{CASHFREE_BASE}/links",
+                json=payload,
+                headers=headers
+            )
+        
+        data = resp.json()
+        
+        if resp.status_code not in [200, 201]:
+            error_msg = data.get("message", "Payment link creation failed")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=f"Cashfree API error: {error_msg}"
+            )
+        
+        payment_link = data.get("link_url")
+        
+        if not payment_link:
+            raise HTTPException(
+                status_code=500,
+                detail="Payment link not received from Cashfree"
+            )
+        
+        # Update all orders with payment link info
+        payment_info = {
+            "cf_payment_id": cf_payment_id,
+            "payment_link": payment_link,
+            "link_status": data.get("link_status"),
+            "created_at": data.get("link_created_at"),
+            "is_combined_payment": True,
+            "combined_order_ids": order_ids,
+            "combined_total": float(total_amount)
+        }
+        
+        for order in orders:
+            if order.metadata is None:
+                order.metadata = {}
+            
+            order.metadata["cashfree"] = payment_info.copy()
+            order.cf_order_id = cf_payment_id
+            
+            await order.save(update_fields=["metadata", "cf_order_id"])
+        
+        print(f"[PAYMENT] ✅ Payment link created: {payment_link}")
+        
+        return {
+            "success": True,
+            "cf_payment_id": cf_payment_id,
+            "payment_link": payment_link,
+            "total_amount": float(total_amount),
+            "orders_count": len(orders)
+        }
+        
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to connect to Cashfree: {str(e)}"
         )
-    
-    data = resp.json()
-    
-    if resp.status_code not in [200, 201]:
-        raise Exception(f"Cashfree API error: {data.get('message', 'Unknown error')}")
-    
-    payment_link = data.get("link_url")
-    
-    # Save payment link to order metadata
-    if order.metadata is None:
-        order.metadata = {}
-    
-    order.metadata["cashfree"] = {
-        "cf_link_id": cf_order_id,
-        "payment_link": payment_link,
-        "link_status": data.get("link_status"),
-        "created_at": data.get("link_created_at")
-    }
-    
-    await order.save(update_fields=["metadata"])
-    
-    return {
-        "cf_order_id": cf_order_id,
-        "payment_link": payment_link
-    }
-
-
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating payment link: {str(e)}"
+        )
 
 
 
