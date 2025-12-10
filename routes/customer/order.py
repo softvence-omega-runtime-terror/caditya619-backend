@@ -644,10 +644,9 @@ async def create_payment_link_for_orders(orders: List[Order]):
             "send_email": True
         },
         "link_meta": {
-            "order_ids": order_ids,
-            "user_id": str(customer_id),
-            "orders_count": len(orders),
-            "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last"
+            "return_url": f"{settings.BACKEND_URL}/webhooks/cashfree/payment",  # ✅ Now handled
+            "order_ids": ",".join(order_ids),
+            "user_id": str(customer_id)
         }
     }
     
