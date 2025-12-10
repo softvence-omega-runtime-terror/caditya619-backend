@@ -13,6 +13,8 @@ class OrderStatus(str, Enum):
     OUT_FOR_DELIVERY = "outForDelivery"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
+    REFUND_REQUESTED = "refundRequested"
+    REFUND_APPROVED = "refundApproved"
     REFUNDED = "refunded"
 
 
