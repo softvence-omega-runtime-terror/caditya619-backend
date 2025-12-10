@@ -6,10 +6,8 @@ from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import os
 import uuid
-from applications.user import vendor
-from applications.user.models import *
-from applications.items.models import *
-from applications.customer.models import *
+from applications.user.models import User
+from applications.customer.models import Order, OrderItem, OrderStatus
 from applications.customer.schemas import *
 from app.token import get_current_user
 from app.config import settings
@@ -108,31 +106,6 @@ async def place_order(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
-
-
-# ============================================================
-# COMPLETE ORDER CRUD - applications.customer.routes.py
-# ============================================================
-
-# from fastapi import APIRouter, HTTPException, Depends, Query, status
-# from typing import Optional, List
-# from datetime import datetime
-
-# router = APIRouter(prefix='/orders', tags=['Orders'])
-
-# # ============================================================
-# # 1. CREATE ORDER (Already Implemented)
-# # ============================================================
-
-# @router.post("/", status_code=status.HTTP_201_CREATED)
-# async def place_order(
-#     order_data: OrderCreateSchema, 
-#     current_user: User = Depends(get_current_user),
-#     redis = Depends(get_redis)
-# ):
-#     """Create new order with payment link if needed"""
-#     # Implementation already provided in previous artifacts
-#     pass
 
 
 # ============================================================
@@ -467,24 +440,7 @@ async def update_order(
                 
         except KeyError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {update_data.status}")
-    
-    # if update_data.rider_id is not None:
-    #     # Verify rider exists
-    #     rider = await RiderProfile.get_or_none(id=update_data.rider_id)
-    #     if not rider:
-    #         raise HTTPException(status_code=404, detail="Rider not found")
-        
-    #     order.rider_id = update_data.rider_id
-    #     updated_fields.append('rider_id')
-    #     print(f"[UPDATE] Order {order_id} assigned to rider {update_data.rider_id}")
-    
-    # if update_data.tracking_number:
-    #     order.tracking_number = update_data.tracking_number
-    #     updated_fields.append('tracking_number')
-    
-    # if update_data.estimated_delivery:
-    #     order.estimated_delivery = update_data.estimated_delivery
-    #     updated_fields.append('estimated_delivery')
+
     
     if updated_fields:
         order.updated_at = datetime.utcnow()

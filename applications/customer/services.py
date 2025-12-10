@@ -88,21 +88,6 @@ class ShippingAddressService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Shipping address not found"
             )
-    # @staticmethod
-    # async def get_address_by_type(address_type: str, current_user: str):
-    #     """Get a specific address by type"""
-    #     print("rrrrrrrrrrrrrrrrr ",address_type)
-
-
-
-    #     try:
-    #         address = await CustomerShippingAddress.get(addressType=address_type, user=current_user)
-    #         return address
-    #     except DoesNotExist:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_404_NOT_FOUND,
-    #             detail="Shipping address not found"
-    #         )
         
     @staticmethod
     async def update_address(address_id: str, current_user: str, update_data: dict):
@@ -272,8 +257,9 @@ class OrderService:
                     'image_path': getattr(item, 'image', '')
                 })
                 
-            except Item.DoesNotExist:
+            except DoesNotExist:
                 raise ValueError(f"Item with id {item_input.item_id} not found")
+
             except Exception as e:
                 print(f"Error processing item {item_input.item_id}: {e}")
                 raise
