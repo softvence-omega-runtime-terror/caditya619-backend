@@ -35,7 +35,7 @@ QuizeQusetionsPydanticOut = pydantic_model_creator(QuizQuestion, name="QuizQuest
 
 
 @router.post("/quiz/questions", response_model=QuizeQusetionsPydanticOut)
-async def create_quiz_questions(lng:str = "eng",
+async def create_quiz_questions(request:Request,
                                     question : str = Form(...), 
                                     option_a : str = Form(...), 
                                     option_b : str = Form(...), 
@@ -45,8 +45,9 @@ async def create_quiz_questions(lng:str = "eng",
                                     explanation : Optional[str] = Form(""),
                                  current_user: User = Depends(get_current_user)
                                 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     
 
     quiz_question = await QuizQuestion.create(
@@ -61,87 +62,21 @@ async def create_quiz_questions(lng:str = "eng",
 
     await quiz_question.save()
 
-    return await QuizeQusetionsPydanticOut.from_tortoise_orm(translate(quiz_question, lng))
+    return await QuizeQusetionsPydanticOut.from_tortoise_orm(translate(quiz_question, lang))
     
-
-
-
-# @router.post("/quiz/submit")
-# async def submit_quiz(
-#     answers: dict,  # {question_id: "A"|"B"|"C"|"D"}
-#     current_user: User = Depends(get_current_user)
-# ):
-#     rider = await RiderProfile.get(user=current_user)
-#     questions = await QuizQuestion.all()
-    
-#     correct = 0
-#     results = []
-
-#     for q in questions:
-#         user_answer = answers.get(str(q.id))
-#         is_correct = user_answer == q.correct_answer
-#         if is_correct:
-#             correct += 1
-        
-#         results.append({
-#             "question_id": q.id,
-#             "your_answer": user_answer,
-#             "correct_answer": q.correct_answer,
-#             "is_correct": is_correct
-#         })
-
-#     score = int((correct / len(questions)) * 100)
-#     passed = score >= 80
-
-#     # Mark previous attempts as not latest
-#     await RiderQuizAttempt.filter(rider=rider, is_latest=True).update(is_latest=False)
-
-#     # Save attempt
-#     await RiderQuizAttempt.create(
-#         rider=rider,
-#         score=score,
-#         correct_answers=correct,
-#         passed=passed,
-#         is_latest=True
-#     )
-
-#     # if passed and not rider.is_certified:
-#     #     rider.is_certified = True
-#     #     rider.certified_at = datetime.utcnow()
-#     #     await rider.save()
-
-#     return {
-#         "score": score,
-#         "correct": correct,
-#         "total": len(questions),
-#         "passed": passed,
-#         #"is_certified": rider.is_certified,
-#         "results": results
-#     }
-
-# @router.get("/status")
-# async def get_training_status(current_user: User = Depends(get_current_user)):
-#     rider = await RiderProfile.get(user=current_user)
-#     latest = await RiderQuizAttempt.filter(rider=rider, is_latest=True).first()
-    
-#     return {
-#         #"is_certified": rider.is_certified,
-#         "latest_score": latest.score if latest else None,
-#         "passed": latest.passed if latest else False,
-#         "attempted_at": latest.attempted_at.isoformat() if latest else None
-#     }
 
 
 
 
 # ------------------- 1. Start Quiz – Get Questions -------------------
 @router.get("/start")
-async def start_quiz(lng:str = "eng", current_user: User = Depends(get_current_user)):
+async def start_quiz(request:Request, current_user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_rider:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     questions = await QuizQuestion.all()
     if not questions:
-        raise HTTPException(404, "No quiz questions found")
+        raise HTTPException(404, translate("No quiz questions found", lang))
 
     # Shuffle options for each question (real exam feel)
     serialized = []
@@ -165,20 +100,22 @@ async def start_quiz(lng:str = "eng", current_user: User = Depends(get_current_u
         "total_questions": len(questions),
         "instructions": "Select one answer per question. Minimum 80% to pass.",
         "questions": serialized
-    }, target_lang=lng)
+    }, target_lang=lang)
 
 # ------------------- 2. Submit Quiz – With Full Results -------------------
 @router.post("/submit")
 async def submit_quiz(
+    request:Request,
     answers: Dict[str, str],  # {"1": "A", "3": "C", ...}
     current_user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_rider:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     rider = await RiderProfile.get(user=current_user)
     questions = await QuizQuestion.all()
     if not questions:
-        raise HTTPException(404, "No questions available")
+        raise HTTPException(404, translate("No questions available", lang))
 
     correct = 0
     results = []
@@ -232,7 +169,7 @@ async def submit_quiz(
         # Optional: Send FCM Push
         # await send_push(rider.id, "Certified!", "You passed the training quiz!")
 
-    return {
+    return translate({
         "attempt_id": attempt.id,
         "score": score,
         "correct": correct,
@@ -240,23 +177,24 @@ async def submit_quiz(
         "passed": passed,
         #"is_certified": rider.is_certified,
         "results": detailed_results
-    }
+    }, lang)
 
 # ------------------- 3. Get Past Attempts -------------------
 @router.get("/attempts")
-async def get_attempts(current_user: User = Depends(get_current_user)):
+async def get_attempts(request:Request, current_user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_rider:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     rider = await RiderProfile.get(user=current_user)
     attempts = await RiderQuizAttempt.filter(rider=rider).order_by("-attempted_at")
     
     return [
-        {
+        translate({
             "id": a.id,
             "score": a.score,
             "passed": a.passed,
             "date": a.attempted_at.strftime("%Y-%m-%d %H:%M")
-        }
+        }, lang)
         for a in attempts
     ]
 
@@ -270,11 +208,13 @@ async def quiz_test_page(request: Request):
 
 @router.post("/upload/video")
 async def upload_video(
+    request: Request,
     title: str = Form(...),
     file: UploadFile = File(...),
     thumbnail: UploadFile = File(None),
     user = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -294,14 +234,16 @@ async def upload_video(
         thumbnail= thumblin_path,
         order=(await TrainingVideo.all().count()) + 1
     )
-    return {"message": "Video uploaded", "id": video.id}
+    return translate({"message": "Video uploaded", "id": video.id}, lang)
 
 @router.post("/upload/pdf")
 async def upload_pdf(
+    request: Request,
     title: str = Form(...),
     file: UploadFile = File(...),
     user = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -315,40 +257,42 @@ async def upload_pdf(
         file=file_path,
         order=(await TrainingPDF.all().count()) + 1
     )
-    return {"message": "PDF uploaded", "id": pdf.id}
+    return translate({"message": "PDF uploaded", "id": pdf.id}, lang)
 
 
 
 @router.get("/videos")
-async def get_videos(current_user: User = Depends(get_current_user)):
+async def get_videos(request:Request, current_user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     videos = await TrainingVideo.filter(is_active=True).order_by("order")
     return [
-        {
+        translate({
             "id": v.id,
             "title": v.title,
             "duration": v.duration,
             "video_url": v.video_file,
             "thumbnail": v.thumbnail,
-        }
+        }, lang)
         for v in videos
     ]
 
 @router.get("/pdfs")
-async def get_pdfs(current_user: User = Depends(get_current_user)):
+async def get_pdfs(request:Request, current_user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     pdfs = await TrainingPDF.filter(is_active=True).order_by("order")
     
     return [
-        {
+        translate({
             "id": p.id,
             "title": p.title,
             "file_url": p.file
-        }
+        }, lang)
         for p in pdfs
     ]
 

@@ -18,16 +18,6 @@ from .helper_functions import to_time
 from app.utils.translator import translate
 
 
-# from datetime import time as _time
-# from app.utils.websocket_manager import manager
-# import json
-# from app.redis import redis_client
-# from starlette.websockets import WebSocketDisconnect, WebSocket
-# import asyncio
-# from app.utils.map_distance_ETA import haversine, estimate_eta
-# from fastapi.responses import HTMLResponse
-# from app.redis import get_redis
-
 
 
 
@@ -91,19 +81,20 @@ class RiderListResponse(BaseModel):
 #profile related endpoints
 
 @router.get("/rider-profile/me/")
-async def rider_profile_me(user: User = Depends(get_current_user)):
+async def rider_profile_me(request: Request, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.filter(user=user).first()
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-    return {"name": user.name, "email": user.email, "phone": user.phone,
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
+    return translate({"name": user.name, "email": user.email, "phone": user.phone,
             "driving_license": rider_profile.driving_license, "nid": rider_profile.nid,
-            "profile_image": rider_profile.profile_image,}
+            "profile_image": rider_profile.profile_image,}, lang)
 
 
 
 @router.put("/rider-documents/me/", response_model=RiderProfile_Pydantic)
 async def update_rider_documents_me(
-     lng:str = "eng",
+     request: Request,
      pi: UploadFile = File(...),
      nid: UploadFile = File(...), 
      dl: UploadFile = File(...), 
@@ -111,9 +102,10 @@ async def update_rider_documents_me(
      vi: UploadFile = File(...), 
      user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
 
     # Here you would normally handle file saving and get the file paths
     if pi and pi.filename:
@@ -145,44 +137,50 @@ async def update_rider_documents_me(
         rider_profile.vehicle_registration_document = vr_path
         rider_profile.vehicle_insurance_document = vi_path
 
+        rider_profile.is_document_uploaded = True
+
     else:
-        raise HTTPException(status_code=400, detail=translate("All documents must be provided", lng))
+        raise HTTPException(status_code=400, detail=translate("All documents must be provided", lang))
     
-    rider_profile.is_document_uploaded = True
     
     await rider_profile.save()
 
-    return await RiderProfile_Pydantic.from_tortoise_orm(rider_profile)
+    result = await RiderProfile_Pydantic.from_tortoise_orm(rider_profile)
+    return translate(result, lang)
 
 
 @router.get("/is-document-uploaded/")
-async def is_document_update(user: User = Depends(get_current_user)):
+async def is_document_update(request: Request, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-    return {"is_document_uploaded": rider_profile.is_document_uploaded}
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
+    return translate({"is_document_uploaded": rider_profile.is_document_uploaded}, lang)
 
 
 @router.put("/rider/is-document-uploaded/")
 async def update_is_document_uploaded(
+    request: Request,
     is_document_uploaded: bool,
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     rider_profile.is_document_uploaded = is_document_uploaded
     await rider_profile.save()
 
-    return {"is_document_uploaded": is_document_uploaded}
+    return translate({"is_document_uploaded": is_document_uploaded}, lang)
 
 
 @router.get("/is-verified")
-async def is_verified(user: User = Depends(get_current_user)):
+async def is_verified(request: Request, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-    return {"is_verified": rider_profile.is_verified}
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
+    return translate({"is_verified": rider_profile.is_verified}, lang)
 
 
 
@@ -200,7 +198,7 @@ async def list_riders(
 ):
     lng = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     if not current_user.is_superuser:
-        raise HTTPException(403, "Superuser access required")
+        raise HTTPException(403, translate("Superuser access required", lng))
 
     # Use .count() and keep queryset, don't convert to list early!
     total = await RiderProfile.all().count()
@@ -231,7 +229,7 @@ async def update_rider_profile_me(
     lng = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lng))
     
     if profile_data.driving_license is not None:
         rider_profile.driving_license = profile_data.driving_license
@@ -248,21 +246,22 @@ async def update_rider_profile_me(
     await user.save()
     return translate({"name": user.name, "email": user.email, "phone": user.phone,
             "driving_license": rider_profile.driving_license, "nid": rider_profile.nid,
-            "profile_image": rider_profile.profile_image,})
+            "profile_image": rider_profile.profile_image,}, lng)
 
 
 
 
 
 @router.get("/profile/completion")
-async def get_profile_completion(current_user: User = Depends(get_current_user)):
+async def get_profile_completion(request: Request, current_user: User = Depends(get_current_user)):
     """
     Returns profile completion percentage and list of missing fields
     Only counts the 10 fields specified in requirements
     """
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider = await RiderProfile.get_or_none(user=current_user)
     if not rider:
-        raise HTTPException(404, "Rider profile not found")
+        raise HTTPException(404, translate("Rider profile not found", lang))
 
     # List of fields that count toward completion
     completion_fields = {
@@ -291,14 +290,14 @@ async def get_profile_completion(current_user: User = Depends(get_current_user))
 
     percentage = int((filled_count / total_fields) * 100)
 
-    return {
+    return translate({
         "completion_percentage": percentage,
         "total_fields": total_fields,
         "filled_fields": filled_count,
         "missing_fields": missing_fields,
         "is_complete": percentage == 100,
         "message": f"Profile is {percentage}% complete"
-    }
+    }, lang)
 
 
 
@@ -307,29 +306,31 @@ async def get_profile_completion(current_user: User = Depends(get_current_user))
 #*****************************************************
 
 @router.get("/list/vehicles/", response_model=List[VehicleOut])
-async def list_vehicles_me(user: User = Depends(get_current_user)):
+async def list_vehicles_me(request: Request, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     vehicles = await Vehicle.filter(rider_profile=rider_profile)
     print("Vehicles fetched:", vehicles)
     if not vehicles:
-        raise HTTPException(status_code=404, detail="No vehicles found")
-    return [await VehicleOut.from_tortoise_orm(vehicle) for vehicle in vehicles]
+        raise HTTPException(status_code=404, detail=translate("No vehicles found", lang))
+    return [await VehicleOut.from_tortoise_orm(translate(vehicle, lang)) for vehicle in vehicles]
 
 
 
 
 @router.get("/vehicles/id/{vehicle_id}/", response_model=VehicleOut)
-async def list_vehicles_me(vehicle_id: int, user: User = Depends(get_current_user)):
+async def list_vehicles_me(request: Request, vehicle_id: int, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     vehicle = await Vehicle.filter(id=vehicle_id, rider_profile=rider_profile).first()
     if not vehicle:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(status_code=404, detail=translate("Vehicle not found", lang))
     vehicle_payload = await VehicleOut.from_tortoise_orm(vehicle)
-    return vehicle_payload
+    return translate(vehicle_payload, lang)
 
     
 
@@ -337,12 +338,14 @@ async def list_vehicles_me(vehicle_id: int, user: User = Depends(get_current_use
 
 @router.post("/vehicles/me/", response_model=VehicleOut, status_code=status.HTTP_201_CREATED)
 async def add_vehicle_me(
+    request: Request,
     vehicle_data: VehicleCreate,
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
 
     try:
         # create using Tortoise .create() (async)
@@ -354,48 +357,50 @@ async def add_vehicle_me(
         )
     except IntegrityError as exc:
         # license plate unique constraint likely violated
-        raise HTTPException(status_code=400, detail="Vehicle with this license_plate_number already exists")
+        raise HTTPException(status_code=400, detail=translate("Vehicle with this license_plate_number already exists", lang))
 
     # return Pydantic representation (async helper for Tortoise -> Pydantic)
-    return await VehicleOut.from_tortoise_orm(new_vehicle)
+    return await VehicleOut.from_tortoise_orm(translate(new_vehicle, lang))
 
 @router.put("/vehicles/{vehicle_id}/update/", response_model=VehicleOut, status_code=status.HTTP_200_OK)
 async def update_vehicle_me(
+    request: Request,
     vehicle_id: int,
     vehicle_data: VehicleCreate,
     user: User = Depends(get_current_user)
 ):
-    print("Received data:")
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
-    print("Rider profile:", rider_profile)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     try:
         vehicle = await Vehicle.get_or_none(id=vehicle_id, rider_profile=rider_profile)
         vehicle.vehicle_type = vehicle_data.vehicle_type
         vehicle.model = vehicle_data.model
         vehicle.license_plate_number = vehicle_data.license_plate_number
-        print("Updating vehicle:", vehicle)
+        
         await vehicle.save()
         return await VehicleOut.from_tortoise_orm(vehicle)
     except Vehicle.DoesNotExist:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(status_code=404, detail=translate("Vehicle not found", lang))
 
 
 @router.delete("/vehicles/{vehicle_id}/delete/", response_model=dict)
 async def remove_vehicle_me(
+    request: Request,
     vehicle_id: int,
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     try:
         vehicle = await Vehicle.get(id=vehicle_id, rider_profile=rider_profile)
         await vehicle.delete()
-        return {"message": f"Vehicle with ID {vehicle_id} has been deleted."}
+        return translate({"message": f"Vehicle with ID {vehicle_id} has been deleted."}, lang)
     except Vehicle.DoesNotExist:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(status_code=404, detail=translate("Vehicle not found", lang))
     
 
 
@@ -406,13 +411,15 @@ async def remove_vehicle_me(
 
 @router.post("/rider-location/me/", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def update_rider_location_me(
+    request: Request,
     latitude: float = Form(...),
     longitude: float = Form(...),
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     
     current_location = await RiderCurrentLocation.get_or_none(rider_profile=rider_profile)
     if not current_location:     
@@ -422,104 +429,26 @@ async def update_rider_location_me(
             longitude=longitude
         )
         await new_location.save()
-        return {"message": "Location created successfully"}
+        return translate({"message": "Location created successfully"}, lang)
     else:
         current_location.latitude = latitude
         current_location.longitude = longitude
         await current_location.save()
    
-    return {"message": "Location updated successfully"}
+    return translate({"message": "Location updated successfully"}, lang)
     
 
 
 @router.get("/rider-location/me/", response_model=dict)
-async def get_rider_location_me(user: User = Depends(get_current_user)):
+async def get_rider_location_me(request: Request, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     current_location = await RiderCurrentLocation.get_or_none(rider_profile=rider_profile)
     if not current_location:
-        raise HTTPException(status_code=404, detail="Current location not found")
-    return {"latitude": current_location.latitude, "longitude": current_location.longitude}
-
-
-#*****************************************************
-#            Zone endpoints
-#*****************************************************
-
-
-
-# @router.get("/zones/{zone_id}/me/")
-# async def list_assigned_zones_me(zone_id:int, user: User = Depends(get_current_user)):
-#     rider_profile = await RiderProfile.get_or_none(user=user)
-#     if not rider_profile:
-#         raise HTTPException(status_code=404, detail="Rider profile not found")
-#     zones = await Zone.filter(id=zone_id).first()
-#     if not zones:
-#         raise HTTPException(status_code=404, detail="Zone not found")
-    
-#     zone_assignments = await RiderZoneAssignment.create(rider_profile=rider_profile, zone=zones)
-
-#     await zone_assignments.save()
-    
-#     return zone_assignments
-
-
-# @router.post("/create-zone/", response_model=dict, status_code=status.HTTP_201_CREATED)
-# async def create_zone(
-#     name: str = Form(...),
-#     description: Optional[str] = Form(None),
-#     user: User = Depends(get_current_user)
-# ):
-#     # In a real application, you would check if the user has admin privileges here
-#     existing_zone = await Zone.get_or_none(name=name)
-#     if existing_zone:
-#         raise HTTPException(status_code=400, detail="Zone with this name already exists")
-#     new_zone = await Zone.create(name=name, description=description)
-#     return {"message": f"Zone '{new_zone.name}' created successfully.", "zone_id": new_zone.id}
-
-
-
-# @router.get("/zones-list/")
-# async def list_all_zones(user: User = Depends(get_current_user)):
-#     if not user.is_superuser:
-#         raise HTTPException(status_code=403, detail="Not authorized to view all zones")
-#     zones = await Zone.all()
-#     return zones
-
-
-# @router.put("/zones/{zone_id}/update/", response_model=ZoneOut, status_code=status.HTTP_200_OK)
-# async def update_zone(
-#     zone_id: int,
-#     name: Optional[str] = Form(None),
-#     description: Optional[str] = Form(None),
-#     user: User = Depends(get_current_user)
-# ):
-#     # In a real application, you would check if the user has admin privileges here
-#     zone = await Zone.get_or_none(id=zone_id)
-#     if not zone:
-#         raise HTTPException(status_code=404, detail="Zone not found")
-#     if name is not None:
-#         zone.name = name
-#     if description is not None:
-#         zone.description = description
-#     await zone.save()
-#     return await ZoneOut.from_tortoise_orm(zone)
-
-
-# @router.delete("/zones/{zone_id}/delete/", response_model=dict)
-# async def delete_zone(
-#     zone_id: int,
-#     user: User = Depends(get_current_user)
-# ):
-#     if not user.is_superuser:
-#         raise HTTPException(status_code=403, detail="Not authorized to delete zones")
-#     # In a real application, you would check if the user has admin privileges here
-#     zone = await Zone.get_or_none(id=zone_id)
-#     if not zone:
-#         raise HTTPException(status_code=404, detail="Zone not found")
-#     await zone.delete()
-#     return {"message": f"Zone with ID {zone_id} has been deleted."}
+        raise HTTPException(status_code=404, detail=translate("Current location not found", lang))
+    return translate({"latitude": current_location.latitude, "longitude": current_location.longitude}, lang)
 
 
 
@@ -531,34 +460,37 @@ async def get_rider_location_me(user: User = Depends(get_current_user)):
 
 @router.post("/rider-availability/me/", response_model=AvailabilityStatusOut, status_code=status.HTTP_201_CREATED)
 async def set_availability_status(
+    request: Request,
     is_available: bool = Form(None),
     start_at: Optional[time] = Form(None),
     end_at: Optional[time] = Form(None),
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
 
     availability_status, created= await RiderAvailabilityStatus.get_or_create(rider_profile=rider_profile)
     availability_status.is_available = is_available
     availability_status.strat_at = start_at
     availability_status.end_at = end_at
     await availability_status.save()
-    return await AvailabilityStatusOut.from_tortoise_orm(availability_status)
+    return await AvailabilityStatusOut.from_tortoise_orm(translate(availability_status, lang))
 
 
 
 
 @router.get("/rider-availability/me/", response_model=AvailabilityStatusOut)
-async def get_availability_status(user: User = Depends(get_current_user)):
+async def get_availability_status(request: Request, user: User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
 
     availability_status = await RiderAvailabilityStatus.get_or_none(rider_profile_id=rider_profile.id)
     if not availability_status:
-        raise HTTPException(status_code=404, detail="Availability status not set")
+        raise HTTPException(status_code=404, detail=translate("Availability status not set", lang))
 
     # Build response dict matching the Pydantic model field names
     data = {
@@ -585,20 +517,21 @@ async def get_availability_status(user: User = Depends(get_current_user)):
 
 @router.post("/help-and-support/me/", response_model=HelpAndSupportOut, status_code=status.HTTP_201_CREATED)
 async def submit_help_and_support_request(
+    request: Request,
     subject: str = Form(...),
     description: str = Form(...),
     attachments: Optional[UploadFile] = File(None),
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     
     if attachments:
         attachments_path = await save_file(
             attachments, upload_to="HelpAndSupport", allowed_extensions=['png', 'jpg', 'svg', 'jpeg', 'pdf']
         )
-        print("Attachments saved at:", attachments_path)
     else:
         attachments_path = None
 
@@ -608,19 +541,21 @@ async def submit_help_and_support_request(
         description=description,
         attachment=attachments_path
     )
-    return await HelpAndSupportOut.from_tortoise_orm(help_request)
+    return await HelpAndSupportOut.from_tortoise_orm(translate(help_request, lang))
 
 
 
 @router.get("/help-and-support-requests/me/", response_model=List[HelpAndSupportOut])
 async def list_help_and_support_requests_me(
+    request: Request,
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
     requests = await HelpAndSupport.filter(rider_id=rider_profile.id)
-    return [await HelpAndSupportOut.from_tortoise_orm(request) for request in requests]
+    return [await HelpAndSupportOut.from_tortoise_orm(translate(request, lang)) for request in requests]
 
 
 
@@ -634,9 +569,11 @@ LOCAL_TZ = datetime.now().astimezone().tzinfo
 
 @router.put("/go-online-offline")
 async def go_online_offline(
+    request: Request,
     is_online: bool = Form(...),
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=user)
     # today in system local date
     today = datetime.now(LOCAL_TZ).date()
@@ -648,19 +585,19 @@ async def go_online_offline(
 
     if is_online:
         if rider.is_available:
-            return {"message": "Already online"}
+            return translate({"message": "Already online"}, lang)
 
         now_local = datetime.now(LOCAL_TZ)                 # full aware datetime in local tz
         rider.is_available = True
         rider.online_start_time = now_local
         await rider.save(update_fields=["is_available", "online_start_time"])
 
-        return {
+        return translate({
             "message": "Rider is now online",
             "session_started_local": now_local.isoformat(),
             "local_time_readable": now_local.strftime("%Y-%m-%d %I:%M %p"),
             "hint": "Wait a minute then go offline to test"
-        }
+        }, lang)
 
     else:
         # GOING OFFLINE
@@ -669,7 +606,7 @@ async def go_online_offline(
             rider.is_available = False
             rider.online_start_time = None
             await rider.save(update_fields=["is_available", "online_start_time"])
-            return {"message": "No active session"}
+            return translate({"message": "No active session"}, lang)
 
         # re-fetch to avoid stale instance
         fresh = await RiderProfile.get(id=rider.id)
@@ -680,7 +617,7 @@ async def go_online_offline(
             rider.is_available = False
             rider.online_start_time = None
             await rider.save(update_fields=["is_available", "online_start_time"])
-            return {"message": "No start time recorded; cleared state"}
+            return translate({"message": "No start time recorded; cleared state"}, lang)
 
         if start.tzinfo is None:
             # treat naive DB times as already system-local -> mark them as local
@@ -710,7 +647,7 @@ async def go_online_offline(
         rider.online_start_time = None
         await rider.save(update_fields=["is_available", "online_start_time"])
 
-        return {
+        return translate({
             "message": "Rider is now offline",
             "this_session_hours": round(duration_hours, 4),
             "duration_minutes": round(duration_hours * 60, 2),
@@ -720,22 +657,24 @@ async def go_online_offline(
             "session_from_local_readable": start.strftime("%Y-%m-%d %I:%M %p"),
             "session_to_local_readable": end.strftime("%Y-%m-%d %I:%M %p"),
             "success": "Using system local time for all timestamps"
-        }
+        }, lang)
 
 
 
 
 @router.get("/is-online-status/")
 async def is_online_status(
+    request: Request,
     user: User = Depends(get_current_user)
 ):
+    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=user)
     if not rider:
-        raise HTTPException(status_code=404, detail="Rider profile not found")
-    return {
+        raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
+    return translate({
         "is_online": rider.is_available,
         "online_start_time": rider.online_start_time.isoformat() if rider.online_start_time else None
-    }
+    }, lang)
 
 
 #*****************************************************
