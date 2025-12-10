@@ -7,6 +7,7 @@ class Cupon(models.Model):
     cupon = fields.CharField(max_length=100, unique=True)
     discount = fields.IntField(validators=[MinValueValidator(0), MaxValueValidator(100)], default=0)
     items = fields.ManyToManyField("models.Item", related_name="cupons", blank=True)
+    vendor = fields.ForeignKeyField("models.VendorProfile", related_name="cupons", on_delete=fields.CASCADE)
     used_by = fields.ManyToManyField("models.User", related_name="used_cupons", blank=True)
 
     async def can_apply(self, user, item=None):
