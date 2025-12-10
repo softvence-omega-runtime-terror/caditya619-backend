@@ -5,7 +5,7 @@ import secrets
 from applications.promo.cupon import Cupon
 from applications.items.models import Item
 from applications.user.models import User
-from app.auth import login_required, permission_required
+from app.auth import login_required, permission_required, vendor_required
 
 router = APIRouter(prefix="/cupons", tags=["cupons"])
 
@@ -15,21 +15,24 @@ def generate_cupon_code(length: int = 6) -> str:
     return ''.join(secrets.choice(characters) for _ in range(length))
 
 
-@router.post("/", dependencies=[Depends(permission_required('add_cupon'))])
+@router.post("/")
 async def create_cupon(
     title: str = Form(...),
     description: Optional[str] = Form(None),
     discount: int = Form(...),
-    item_ids: Optional[str] = Form(None, description='Accept as comma-separated string')
+    item_ids: Optional[str] = Form(None, description='Accept as comma-separated string'),
+    vendor: User = Depends(vendor_required)
 ):
     cupon_code = generate_cupon_code()
+    vendor_profile = await vendor.vendor_profile.first()
 
     # Create coupon
     coupon = await Cupon.create(
         title=title,
         description=description,
         cupon=cupon_code,
-        discount=discount
+        discount=discount,
+        vendor=vendor_profile
     )
 
     # Process item_ids if provided
@@ -88,15 +91,50 @@ async def get_cupons(
     return result
 
 
-@router.put("/", dependencies=[Depends(permission_required('update_cupon'))])
+@router.get("/my_cupon")
+async def get_cupons(
+    cupon_code: Optional[str] = Query(None),
+    min_discount: Optional[int] = Query(None),
+    max_discount: Optional[int] = Query(None),
+    vendor: User = Depends(vendor_required)
+):
+    vendor_profile = await vendor.vendor_profile.first()
+    query = Cupon.filter(vendor_id=vendor_profile.id)
+    if cupon_code:
+        query = query.filter(cupon=cupon_code)
+    if min_discount is not None:
+        query = query.filter(discount__gte=min_discount)
+    if max_discount is not None:
+        query = query.filter(discount__lte=max_discount)
+
+    cupons = await query
+    result = []
+    for c in cupons:
+        items = await c.items.all()
+        used_users = await c.used_by.all()
+        result.append({
+            "id": c.id,
+            "title": c.title,
+            "description": c.description,
+            "cupon": c.cupon,
+            "discount": c.discount,
+            "items": [item.id for item in items],
+            "used_by": [user.id for user in used_users]
+        })
+    return result
+
+
+@router.put("/")
 async def update_cupon(
     cupon_id: int = Query(...),
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     discount: Optional[int] = Form(None),
-    item_ids: Optional[List[int]] = Form(None)  # optional updated item list
+    item_ids: Optional[List[int]] = Form(None),  # optional updated item list
+    vendor: User = Depends(vendor_required)
 ):
-    cupon = await Cupon.get_or_none(id=cupon_id)
+    vendor_profile = await vendor.vendor_profile.first()
+    cupon = await Cupon.get_or_none(id=cupon_id, vendor_id=vendor_profile.id)
     if not cupon:
         raise HTTPException(status_code=404, detail="Coupon not found")
 
@@ -126,9 +164,10 @@ async def update_cupon(
     }
 
 
-@router.delete("/", dependencies=[Depends(permission_required('delete_cupon'))])
-async def delete_cupon(cupon_id: int = Query(...)):
-    cupon = await Cupon.get_or_none(id=cupon_id)
+@router.delete("/")
+async def delete_cupon(cupon_id: int = Query(...), vendor: User = Depends(vendor_required)):
+    vendor_profile = await vendor.vendor_profile.first()
+    cupon = await Cupon.get_or_none(id=cupon_id, vendor_id=vendor_profile.id)
     if not cupon:
         raise HTTPException(status_code=404, detail="Coupon not found")
     await cupon.delete()
@@ -155,7 +194,6 @@ async def verify_cupon(
     return {"valid": valid, "message": msg, "discount": cupon.discount }
 
 
-@router.post("/apply")
 async def apply_cupon(
     cupon_code: str = Form(...),
     user: User = Depends(login_required),
