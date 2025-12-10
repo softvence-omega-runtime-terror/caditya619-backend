@@ -29,9 +29,9 @@ async def lifespan(routerAPI: FastAPI):
 
     if settings.DEBUG:
         await create_test_users()
-        # await create_test_categories()
-        # await create_test_subcategories()
-        # await create_dummy_items()
+        await create_test_categories()
+        await create_test_subcategories()
+        await create_dummy_items()
         
     
     for app_name in get_module(base_dir="applications"):
