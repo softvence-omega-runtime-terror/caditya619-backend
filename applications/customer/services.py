@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from applications.user.models import User
 from applications.user.customer import CustomerShippingAddress
@@ -303,6 +303,9 @@ class OrderService:
                 "vendor_info": vendor_info
             }
             
+            print("ghghjgjhhhhhhhhhhhhhhhhhhg", order_data.payment_method.type)
+            order_status = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
+
             # Create order
             order_id = self._generate_order_id()
             order = await Order.create(
@@ -317,7 +320,7 @@ class OrderService:
                 total=total,
                 coupon_code=order_data.coupon_code,
                 discount=discount,
-                status=OrderStatus.PENDING,
+                status=order_status,   
                 payment_status="unpaid",
                 tracking_number=self._generate_tracking_number(),
                 estimated_delivery=self._calculate_estimated_delivery(
@@ -337,10 +340,10 @@ class OrderService:
                     image_path=item_data['image_path']
                 )
                 
-                # Update stock
-                item_data['item'].stock -= item_data['quantity']
-                item_data['item'].total_sale += item_data['quantity']
-                await item_data['item'].save(update_fields=['stock', 'total_sale'])
+                # # Update stock
+                # item_data['item'].stock -= item_data['quantity']
+                # item_data['item'].total_sale += item_data['quantity']
+                # await item_data['item'].save(update_fields=['stock', 'total_sale'])
             
             await order.fetch_related("user", "items__item")
             created_orders.append(order)
@@ -417,12 +420,12 @@ class OrderService:
             await order.save()
             
             # Restore stock for all items in the order
-            await order.fetch_related("items__item")
-            for order_item in order.items:
-                item = order_item.item
-                item.stock += order_item.quantity
-                item.total_sale -= order_item.quantity
-                await item.save(update_fields=['stock', 'total_sale'])
+            # await order.fetch_related("items__item")
+            # for order_item in order.items:
+            #     item = order_item.item
+            #     item.stock += order_item.quantity
+            #     item.total_sale -= order_item.quantity
+            #     await item.save(update_fields=['stock', 'total_sale'])
             
             await order.fetch_related("items__item", "shipping_address", "user")
             
