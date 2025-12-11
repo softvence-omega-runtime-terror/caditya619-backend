@@ -84,6 +84,7 @@ async def serialize_order(order: Order):
     )
 
     items = [await serialize_order_item(oi) for oi in order.items]
+    is_otc_order = any(i.get("isOTC") for i in items)
 
     return {
         "order_id": order.id,
@@ -106,6 +107,7 @@ async def serialize_order(order: Order):
         "discount": format_float(order.discount),
         "coupon_code": order.coupon_code,
         "status": order.status.value if hasattr(order.status, "value") else order.status,
+        "isOTC": is_otc_order,
         "transaction_id": order.transaction_id,
         "tracking_number": order.tracking_number,
         "estimated_delivery": order.estimated_delivery,
