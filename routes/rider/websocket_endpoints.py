@@ -568,3 +568,16 @@ async def mark_messages_read(to_type: str, to_id: str, from_type: str, from_id: 
         return {"error": str(e)}
 
 
+
+
+
+@router.get("/test-endpoint")
+async def test_endpoint():
+    massage = await manager.send_notification(
+        "customers",
+        "16",
+        "Test Notification",
+        "This is a test notification.",
+    )
+    return {"message": massage}
+
