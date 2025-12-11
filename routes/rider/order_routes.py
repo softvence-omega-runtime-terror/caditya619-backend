@@ -481,7 +481,7 @@ from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
 
 from .notifications import send_notification
-from .websocket_endpoints import start_chat, end_chat
+from .websocket_endpoints import start_chat, end_chat, subscribe_to_riders_location
 
 logger = logging.getLogger(__name__)
 
@@ -520,7 +520,7 @@ router = APIRouter(tags=['Rider Orders'])
 # HELPER FUNCTIONS
 # ============================================================================
 
-async def notify_rider_websocket(rider_id: int, order: "Order", notification_type: str = "order_offer"):
+async def notify_rider_websocket(rider_id: int, order: Order, notification_type: str = "order_offer"):
     """Send notification via WebSocket"""
     try:
         payload = {
@@ -531,7 +531,8 @@ async def notify_rider_websocket(rider_id: int, order: "Order", notification_typ
         
         rider = await RiderProfile.get_or_none(id=rider_id)
         if rider:
-            await manager.send_notification("riders", str(rider.user_id), "New Order Offer", payload)
+            print("Sending websocket notification")
+            success = await manager.send_notification("riders", str(rider.user_id), "New Order Offer", f"You have received a new order offer! order id {order.id}")
             logger.info(f"WebSocket notification sent to rider {rider_id}")
     except Exception as e:
         logger.error(f"WebSocket notification error for rider {rider_id}: {str(e)}")
@@ -777,7 +778,7 @@ async def create_order_offer(
         )
         
         return {
-            "status": "processing",
+            "status": "offer_created",
             "order_id": order_id,
             "candidate_count": len(candidates),
             "is_urgent": is_urgent,
@@ -962,6 +963,7 @@ async def accept_order(
         try:
             customer_message = await start_chat("riders", user.id, "customers", order.user_id)
             vendor_message = await start_chat("riders", user.id, "vendors", vendor.user_id)
+            locatin_subscribe = subscribe_to_riders_location(rider_profile.user_id, order.user_id, "subscribe")
         except Exception as e:
             logger.error(f"Chat initialization error: {str(e)}")
             customer_message = vendor_message = None
@@ -970,7 +972,7 @@ async def accept_order(
         await redis.delete(claim_key)
         
         return {
-            "status": "accepted",
+            "status": "rider assigned",
             "order_id": order_id,
             "rider_id": rider_profile.user_id,
             "payout": float(order.base_rate + order.distance_bonus),
@@ -978,7 +980,8 @@ async def accept_order(
             "distance_bonus": float(order.distance_bonus),
             "eta_minutes": order.eta_minutes,
             "customer_message": customer_message,
-            "vendor_message": vendor_message
+            "vendor_message": vendor_message,
+            "location_subscribe": locatin_subscribe
         }
         
     except HTTPException:
@@ -1196,6 +1199,8 @@ async def mark_order_delivered(
     # End chat
     try:
         end_chat("riders", user.id, "customers", order.user_id)
+        end_chat("riders", user.id, "vendors", vendor.user_id)
+        subscribe_to_riders_location("unsubscribe", rider.user_id, order.user_id)
     except:
         pass
     
