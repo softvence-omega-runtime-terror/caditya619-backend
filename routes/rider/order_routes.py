@@ -455,7 +455,7 @@
 
 
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Form
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Form, Query
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from pydantic import BaseModel
@@ -463,6 +463,7 @@ from typing import Optional, List, Dict
 import logging
 import json
 import asyncio
+
 
 from applications.user.models import User
 from applications.user.rider import (
@@ -768,6 +769,12 @@ async def create_order_offer(
         order.metadata["offered_at"] = datetime.utcnow().isoformat()
         order.prepare_time = prepare_time
         await order.save()
+
+        print(f"item stok {item.stock}")
+
+        item.stock -= order_item.quantity
+        await item.save()
+        print(f"item stok {item.stock}")
         
         # Queue sequential offering in background
         background_tasks.add_task(
@@ -1244,6 +1251,8 @@ async def cancel_order(
     order.status = OrderStatus.CANCELLED
     order.reason = reason
     await order.save()
+    item.stock += order_item.quantity
+    await item.save()
     
     notify_payload = {
         "type": "order_cancelled",
@@ -1306,6 +1315,21 @@ async def get_order_details(
         "accepted_at": order.accepted_at,
         "completed_at": order.completed_at
     }
+
+
+
+@router.get("/orders/")
+async def list_orders(
+    skip: int = Query(default=0),
+    limit: int = Query(default=10),
+    user: User = Depends(get_current_user),
+):
+    """List all orders"""
+    rider = await RiderProfile.get_or_none(user=user)
+    if not rider:
+        raise HTTPException(status_code=403, detail="Not a rider")
+    orders = await Order.filter(rider=rider).offset(skip).limit(limit).all()
+    return orders
 
 
 
