@@ -111,8 +111,6 @@ class MultiOrderResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 # ==================== Cart Schemas ====================
 
 class CartCreateSchema(BaseModel):
