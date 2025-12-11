@@ -118,34 +118,34 @@ async def get_prescription_detail(
     return await format_prescription_response(prescription)
 
 
-@router.patch("/{prescription_id}", response_model=PrescriptionResponse)
-async def update_prescription(
-    prescription_id: int,
-    prescription_update: PrescriptionUpdate,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Update prescription status or notes
-    """
-    prescription = await Prescription.filter(
-        id=prescription_id,
-        user=current_user
-    ).first()
+# @router.patch("/{prescription_id}", response_model=PrescriptionResponse)
+# async def update_prescription(
+#     prescription_id: int,
+#     prescription_update: PrescriptionUpdate,
+#     current_user: User = Depends(get_current_user)
+# ):
+#     """
+#     Update prescription status or notes
+#     """
+#     prescription = await Prescription.filter(
+#         id=prescription_id,
+#         user=current_user
+#     ).first()
     
-    if not prescription:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Prescription not found"
-        )
+#     if not prescription:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Prescription not found"
+#         )
     
-    if prescription_update.status:
-        prescription.status = prescription_update.status
-    if prescription_update.notes is not None:
-        prescription.notes = prescription_update.notes
+#     if prescription_update.status:
+#         prescription.status = prescription_update.status
+#     if prescription_update.notes is not None:
+#         prescription.notes = prescription_update.notes
     
-    await prescription.save()
+#     await prescription.save()
     
-    return await format_prescription_response(prescription)
+#     return await format_prescription_response(prescription)
 
 
 @router.delete("/{prescription_id}", status_code=status.HTTP_204_NO_CONTENT)
