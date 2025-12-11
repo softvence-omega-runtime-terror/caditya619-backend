@@ -24,7 +24,7 @@ class Prescription(Model):
         on_delete=fields.CASCADE
     )
     image_path = fields.CharField(max_length=500)
-    file_name = fields.CharField(max_length=255)
+    file_name = fields.CharField(max_length=255, null=True, blank=True)
     uploaded_at = fields.DatetimeField(auto_now_add=True)
     status = fields.CharField(
         max_length=20, 

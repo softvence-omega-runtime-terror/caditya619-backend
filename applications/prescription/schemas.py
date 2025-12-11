@@ -26,6 +26,7 @@ class MedicineCreate(MedicineBase):
 class MedicineResponse(MedicineBase):
     id: str
     vendor_id: str
+    image_path: Optional[str] = None  # Changed to str for response
     
     class Config:
         from_attributes = True
@@ -61,7 +62,7 @@ class VendorResponseSchema(VendorResponseBase):
 
 
 class PrescriptionCreate(BaseModel):
-    image_path: UploadFile
+    image_path: UploadFile  # Receives file upload (required)
     file_name: Optional[str] = None
     notes: Optional[str] = None
 
@@ -74,8 +75,8 @@ class PrescriptionUpdate(BaseModel):
 class PrescriptionResponse(BaseModel):
     id: str
     user_id: str
-    image_path: UploadFile
-    file_name: str
+    image_path: str  # Required (stored file path/URL)
+    file_name: Optional[str] = None  # Changed to Optional
     uploaded_at: datetime
     status: str
     notes: Optional[str] = None
@@ -88,8 +89,8 @@ class PrescriptionResponse(BaseModel):
 class PrescriptionListResponse(BaseModel):
     id: str
     user_id: str
-    image_path: UploadFile
-    file_name: str
+    image_path: str  # Required
+    file_name: Optional[str] = None  # Changed to Optional
     uploaded_at: datetime
     status: str
     notes: Optional[str] = None

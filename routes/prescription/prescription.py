@@ -4,6 +4,7 @@ applications.prescription.routes.py
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from typing import List, Optional
 from decimal import Decimal
+from app.utils.file_manager import save_file
 from applications.prescription.schemas import (
     PrescriptionCreate,
     PrescriptionResponse,
@@ -29,23 +30,28 @@ async def get_current_vendor():
 
 @router.post("/", response_model=PrescriptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_prescription(
-    prescription_data: PrescriptionCreate,
-    current_user: User = Depends(get_current_user), image_path: Optional[UploadFile] = File(None)
+    image_path: UploadFile = File(...),
+    file_name: Optional[str] = None,
+    notes: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
 ):
     """
     Customer uploads a prescription image
     """
-    image_path = None
-    if image_path and image_path.filename:
-        image_path = await save_file(image_path, upload_to="category_avatars", allowed_extensions=['png', 'jpg', 'svg'])
-
+    if not image_path or not image_path.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image file is required"
+        )
+    
+    saved_image_path = await save_file(image_path, upload_to="category_avatars", allowed_extensions=['png', 'jpg', 'svg'])
 
     try:
         prescription = await Prescription.create(
             user=current_user,
-            image_path=image_path,
-            file_name=prescription_data.file_name,
-            notes=prescription_data.notes,
+            image_path=saved_image_path,
+            file_name=file_name,
+            notes=notes,
             status="uploaded"
         )
         
