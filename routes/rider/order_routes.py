@@ -472,6 +472,7 @@ from applications.customer.models import Order, OrderStatus, OrderItem, Delivery
 from applications.items.models import Item
 from applications.user.vendor import VendorProfile
 from applications.user.customer import CustomerProfile
+from applications.earning.vendor_earning import add_money_to_vendor_account
 from app.token import get_current_user
 from app.utils.geo import haversine, bbox_for_radius, estimate_eta
 from app.utils.websocket_manager import manager
@@ -487,8 +488,8 @@ logger = logging.getLogger(__name__)
 # Configuration constants
 OFFER_TIMEOUT_SECONDS = 1200  # 20 minutes
 GEO_REDIS_KEY = "riders_geo"
-INITIAL_RADIUS_KM = 5.0
-RADIUS_STEP_KM = 5.0
+INITIAL_RADIUS_KM = 3.0
+RADIUS_STEP_KM = 1.0
 MAX_RADIUS_KM = 20.0
 URGENT_RADIUS_KM = 10.0  # Urgent orders search in 10km radius
 
@@ -530,7 +531,7 @@ async def notify_rider_websocket(rider_id: int, order: "Order", notification_typ
         
         rider = await RiderProfile.get_or_none(id=rider_id)
         if rider:
-            await manager.send_to(payload, "riders", str(rider.user_id))
+            await manager.send_notification("riders", str(rider.user_id), "New Order Offer", payload)
             logger.info(f"WebSocket notification sent to rider {rider_id}")
     except Exception as e:
         logger.error(f"WebSocket notification error for rider {rider_id}: {str(e)}")
@@ -921,12 +922,6 @@ async def accept_order(
             
             await order.save()
             
-            # Reject other offers
-            # from applications.user.rider import OrderOffer
-            # await OrderOffer.filter(order=order).exclude(rider=rider_profile).update(
-            #     status="rejected",
-            #     responded_at=datetime.utcnow()
-            # )
         
         # Send notifications via WebSocket
         notify_payload = {
@@ -981,7 +976,7 @@ async def accept_order(
         return {
             "status": "accepted",
             "order_id": order_id,
-            "rider_id": rider_profile.id,
+            "rider_id": rider_profile.user_id,
             "payout": float(order.base_rate + order.distance_bonus),
             "base_rate": float(order.base_rate),
             "distance_bonus": float(order.distance_bonus),
@@ -1072,7 +1067,7 @@ async def mark_order_shipped(
     await redis.publish("order_updates", json.dumps(notify_payload))
     
     try:
-        await manager.send_to(notify_payload, "customers", str(order.user_id))
+        await manager.send_to(notify_payload, "customers", str(order.user_id), "notifications")
         await send_notification(order.user_id, "Order Shipped", f"Your order is on the way!")
     except Exception as e:
         logger.warning(f"Shipment notification error: {str(e)}")
@@ -1112,7 +1107,7 @@ async def mark_order_out_for_delivery(
     await redis.publish("order_updates", json.dumps(notify_payload))
     
     try:
-        await manager.send_to(notify_payload, "customers", str(order.user_id))
+        await manager.send_to(notify_payload, "customers", str(order.user_id), "notifications")
         await send_notification(order.user_id, "Out for Delivery", "Your order is arriving soon!")
     except Exception as e:
         logger.warning(f"Out for delivery notification error: {str(e)}")
@@ -1140,17 +1135,33 @@ async def mark_order_delivered(
     order = await Order.get_or_none(id=order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    order_item = await OrderItem.get_or_none(order=order)
+    if not order_item:
+        raise HTTPException(status_code=404, detail="Order item not found")
     
+    item = await Item.get_or_none(id=order_item.item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    vendor = await VendorProfile.get_or_none(id=item.vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
     if order.status != OrderStatus.OUT_FOR_DELIVERY:
         raise HTTPException(status_code=400, detail="Order not out for delivery")
     
     # Check if on-time
-    now = datetime.utcnow()
-    if order.accepted_at and order.eta_minutes:
-        eta_deadline = order.accepted_at + timedelta(minutes=order.eta_minutes)
-        order.is_on_time = now <= eta_deadline
-    else:
-        order.is_on_time = True
+    # now = datetime.utcnow()
+    # if order.accepted_at and order.eta_minutes:
+    #     eta_deadline = order.accepted_at + timedelta(minutes=order.eta_minutes)
+    #     order.is_on_time = now <= eta_deadline
+    # else:
+    #     order.is_on_time = True
+    now = datetime.now(timezone.utc)
+    accepted_at = to_utc(order.accepted_at)      # ensure aware
+    eta_deadline = accepted_at + timedelta(minutes=order.eta_minutes)
+
+    order.is_on_time = now <= eta_deadline
     
     # Update order
     order.status = OrderStatus.DELIVERED
@@ -1165,6 +1176,8 @@ async def mark_order_delivered(
         await rider.save()
         
         logger.info(f"Rider {rider.id} balance updated: +₹{payout}")
+
+    add_money_to_vendor_account(order.id)
     
     # Send notifications
     notify_payload = {
@@ -1178,7 +1191,8 @@ async def mark_order_delivered(
     await redis.publish("order_updates", json.dumps(notify_payload))
     
     try:
-        await manager.send_to(notify_payload, "customers", str(order.user_id))
+        await manager.send_to(notify_payload, "customers", str(order.user_id), "notifications")
+        await manager.send_to(notify_payload, "vendors", str(vendor.usser_id), "notifications")
         await send_notification(order.user_id, "Order Delivered", "Thank you for your order!")
     except Exception as e:
         logger.warning(f"Delivery notification error: {str(e)}")
@@ -1210,6 +1224,17 @@ async def cancel_order(
     order = await Order.get_or_none(id=order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    order_item = await OrderItem.get_or_none(order=order)
+    if not order_item:
+        raise HTTPException(status_code=404, detail="Order item not found")
+    
+    item = await Item.get_or_none(id=order_item.item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    vendor = await VendorProfile.get_or_none(id=item.vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
     
     # Cannot cancel if already delivered or cancelled
     if order.status in [OrderStatus.DELIVERED, OrderStatus.CANCELLED]:
@@ -1229,7 +1254,8 @@ async def cancel_order(
     await redis.publish("order_updates", json.dumps(notify_payload))
     
     try:
-        await manager.send_to(notify_payload, "customers", str(order.user_id))
+        await manager.send_to(notify_payload, "customers", str(order.user_id), "notifications")
+        await manager.send_to(notify_payload, "vendors", str(vendor.user_id), "notifications")
         await send_notification(order.user_id, "Order Cancelled", f"Reason: {reason or 'Not specified'}")
     except Exception as e:
         logger.warning(f"Cancellation notification error: {str(e)}")
@@ -1246,11 +1272,28 @@ async def get_order_details(
     order = await Order.get_or_none(id=order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    rider = await RiderProfile.get_or_none(id=order.rider_id)
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found")
+    order_item = await OrderItem.get_or_none(order=order)
+    if not order_item:
+        raise HTTPException(status_code=404, detail="Order item not found")
+    
+    item = await Item.get_or_none(id=order_item.item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    vendor = await VendorProfile.get_or_none(id=item.vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
     
     return {
         "id": order.id,
         "status": order.status,
-        "rider_id": order.rider_id,
+        "rider_id": rider.user_id,
+        "vendor_id": vendor.user_id,
+        "customer_id": order.user_id,
         "base_rate": float(order.base_rate),
         "distance_bonus": float(order.distance_bonus),
         "total_payout": float((order.base_rate or 0) + (order.distance_bonus or 0)),
@@ -1264,5 +1307,13 @@ async def get_order_details(
     }
 
 
+
+def to_utc(dt: datetime) -> datetime:
+    if dt is None:
+        return None
+    # if naive, assume it's UTC (adjust if your DB stores local tz)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
