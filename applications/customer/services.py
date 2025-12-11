@@ -340,10 +340,10 @@ class OrderService:
                     image_path=item_data['image_path']
                 )
                 
-                # Update stock
-                item_data['item'].stock -= item_data['quantity']
-                item_data['item'].total_sale += item_data['quantity']
-                await item_data['item'].save(update_fields=['stock', 'total_sale'])
+                # # Update stock
+                # item_data['item'].stock -= item_data['quantity']
+                # item_data['item'].total_sale += item_data['quantity']
+                # await item_data['item'].save(update_fields=['stock', 'total_sale'])
             
             await order.fetch_related("user", "items__item")
             created_orders.append(order)
@@ -420,12 +420,12 @@ class OrderService:
             await order.save()
             
             # Restore stock for all items in the order
-            await order.fetch_related("items__item")
-            for order_item in order.items:
-                item = order_item.item
-                item.stock += order_item.quantity
-                item.total_sale -= order_item.quantity
-                await item.save(update_fields=['stock', 'total_sale'])
+            # await order.fetch_related("items__item")
+            # for order_item in order.items:
+            #     item = order_item.item
+            #     item.stock += order_item.quantity
+            #     item.total_sale -= order_item.quantity
+            #     await item.save(update_fields=['stock', 'total_sale'])
             
             await order.fetch_related("items__item", "shipping_address", "user")
             
