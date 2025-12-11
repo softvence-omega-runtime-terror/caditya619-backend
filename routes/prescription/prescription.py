@@ -44,7 +44,7 @@ async def create_prescription(
             detail="Image file is required"
         )
     
-    saved_image_path = await save_file(image_path, upload_to="category_avatars", allowed_extensions=['png', 'jpg', 'svg'])
+    saved_image_path = await save_file(image_path, upload_to="category_avatars")
 
     try:
         prescription = await Prescription.create(
