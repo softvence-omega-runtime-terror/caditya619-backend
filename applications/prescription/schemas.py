@@ -1,6 +1,7 @@
 """
 applications.prescription.schemas.py
 """
+from fastapi import UploadFile
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
@@ -15,7 +16,7 @@ class MedicineBase(BaseModel):
     price: Decimal
     notes: Optional[str] = None
     is_available: bool = True
-    image_path: Optional[str] = None
+    image_path: Optional[UploadFile] = None
 
 
 class MedicineCreate(MedicineBase):
@@ -60,8 +61,8 @@ class VendorResponseSchema(VendorResponseBase):
 
 
 class PrescriptionCreate(BaseModel):
-    image_path: str
-    file_name: str
+    image_path: UploadFile
+    file_name: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -73,7 +74,7 @@ class PrescriptionUpdate(BaseModel):
 class PrescriptionResponse(BaseModel):
     id: str
     user_id: str
-    image_path: str
+    image_path: UploadFile
     file_name: str
     uploaded_at: datetime
     status: str
@@ -87,7 +88,7 @@ class PrescriptionResponse(BaseModel):
 class PrescriptionListResponse(BaseModel):
     id: str
     user_id: str
-    image_path: str
+    image_path: UploadFile
     file_name: str
     uploaded_at: datetime
     status: str
