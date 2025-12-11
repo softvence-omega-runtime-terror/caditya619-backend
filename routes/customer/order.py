@@ -135,7 +135,7 @@ async def get_all_orders(
     """
     
     # Build query
-    if current_user.is_staff:
+    if current_user.is_superuser:
         query = Order.all()
     else:
         query = Order.filter(user_id=current_user.id)
