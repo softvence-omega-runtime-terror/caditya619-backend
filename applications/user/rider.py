@@ -126,49 +126,6 @@ class RiderAvailabilityStatus(models.Model):
 
 
 #*********************************************************************#
-#              Rider Order and Delivery Models
-#*********************************************************************#
-
-# class OrderOffer(models.Model):
-#     """
-#     Records that order was offered to rider and result (accepted/rejected/timeout).
-#     """
-#     id = fields.IntField(pk=True)
-#     order = fields.ForeignKeyField("models.Order", related_name="offers", on_delete=fields.CASCADE)
-#     rider = fields.ForeignKeyField("models.RiderProfile", related_name="order_offers", on_delete=fields.CASCADE)
-#     customer_lat = fields.FloatField()
-#     customer_lng = fields.FloatField()
-#     vendor_lat = fields.FloatField()
-#     vendor_lng = fields.FloatField()
-#     offered_at = fields.DatetimeField(auto_now_add=True)
-#     responded_at = fields.DatetimeField(null=True)
-#     status = fields.CharField(max_length=20, default="offered")  # offered/accepted/rejected/timeout
-#     reason = fields.TextField(null=True)
-#     pickup_distance_km = fields.FloatField()
-#     pickup_time = fields.DatetimeField()
-#     eta_minutes = fields.IntField()
-#     base_rate = fields.DecimalField(max_digits=10, decimal_places=2, default=44.00)
-#     distance_bonus = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-#     offered_at = fields.DatetimeField(auto_now_add=True)
-#     expires_at = fields.DatetimeField()
-#     accepted_at = fields.DatetimeField(null=True)
-#     completed_at = fields.DatetimeField(null=True)
-#     is_on_time = fields.BooleanField(null=True)
-#     is_combined = fields.BooleanField(default=False)
-#     combined_pickups = fields.JSONField(null=True)  # list of dicts: [{"name": "Thai Spice", "amount": 44}]
-
-#     class Meta:
-#         table = "order_offers"
-#         indexes = [("order_id","rider_id")]
-
-
-
-
-
-
-
-
-#*********************************************************************#
 #              Rider State Related Models
 #*********************************************************************#
 
