@@ -539,12 +539,12 @@ async def cancel_order(
     
     await order.save(update_fields=['status', 'reason', 'updated_at', 'metadata'])
     
-    # Restore stock for items
-    for order_item in order.items:
-        item = order_item.item
-        item.stock += order_item.quantity
-        item.total_sale -= order_item.quantity
-        await item.save(update_fields=['stock', 'total_sale'])
+    # # Restore stock for items
+    # for order_item in order.items:
+    #     item = order_item.item
+    #     item.stock += order_item.quantity
+    #     item.total_sale -= order_item.quantity
+    #     await item.save(update_fields=['stock', 'total_sale'])
     
     print(f"[CANCEL] Order {order_id} cancelled. Status: {old_status} → CANCELLED")
     
