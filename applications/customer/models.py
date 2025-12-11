@@ -118,7 +118,7 @@ class Order(models.Model):
     estimated_delivery = fields.DatetimeField(null=True)
     
     metadata = fields.JSONField(null=True)
-    prepire_time = fields.IntField(null=True)
+    prepare_time = fields.IntField(null=True)
     reason = fields.TextField(null=True)
     pickup_distance_km = fields.FloatField(null= True)
     pickup_time = fields.DatetimeField(null=True)
