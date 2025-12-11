@@ -742,7 +742,7 @@ async def create_order_offer(
             raise HTTPException(status_code=404, detail="Customer not found")
         
         # Validate order is not already processed
-        if order.status not in [OrderStatus.PENDING]:
+        if order.status not in [OrderStatus.PROCESSING]:
             raise HTTPException(status_code=400, detail="Order already being processed")
         
         # Check if urgent order
@@ -761,7 +761,7 @@ async def create_order_offer(
             raise HTTPException(status_code=400, detail="No riders available in area")
         
         # Update order status
-        order.status = OrderStatus.PROCESSING
+        order.status = OrderStatus.CONFIRMED
         order.metadata = order.metadata or {}
         order.metadata["candidate_riders"] = [r.id for r in candidates]
         order.metadata["offered_at"] = datetime.utcnow().isoformat()
@@ -828,7 +828,7 @@ async def accept_order(
             raise HTTPException(status_code=404, detail="Order not found")
         
         # Validate order status
-        if order.status != OrderStatus.PROCESSING:
+        if order.status != OrderStatus.CONFIRMED:
             await redis.delete(claim_key)
             raise HTTPException(status_code=400, detail="Order not available (already accepted)")
         
@@ -851,7 +851,7 @@ async def accept_order(
         async with in_transaction():
             # Verify order still available
             order = await Order.get(id=order_id)
-            if order.status != OrderStatus.PROCESSING:
+            if order.status != OrderStatus.CONFIRMED:
                 raise HTTPException(status_code=400, detail="Order not available")
             
             # Get all required data
@@ -887,7 +887,7 @@ async def accept_order(
             )
             
             delivery_dist = haversine(
-                loc.latitude, loc.longitude,
+                vendor.latitude, vendor.longitude,
                 customer.customer_lat, customer.customer_lng
             )
             
@@ -909,7 +909,7 @@ async def accept_order(
             eta_minutes = pickup_eta_min + delivery_eta_min + (order.prepare_time or 10)
             
             # Update order
-            order.status = OrderStatus.CONFIRMED
+            #order.status = OrderStatus.CONFIRMED
             order.rider = rider_profile
             order.pickup_distance_km = pickup_dist
             order.base_rate = Decimal(str(base_rate))
@@ -935,23 +935,19 @@ async def accept_order(
         await redis.publish("order_updates", json.dumps(notify_payload))
         
         try:
-            await manager.send_notification("customers", str(order.user_id), "Order accept", "your order has been accepted")
-            await manager.send_notification("vendors", str(vendor.user_id), "Order accept", "your order has been accepted")
+            await manager.send_notification("customers", str(order.user_id), "Rider assigned", "{user.name} is assigned for order {order_id}")
+            await manager.send_notification("vendors", str(vendor.user_id), "Rider assigned", "{user.name} is assigned for order {order_id}")
         except Exception as e:
             logger.warning(f"WebSocket notification failed: {str(e)}")
         
         # Send push notifications
         try:
-            await notify_rider_pushnotification(
-                rider_profile.id,
-                "Order Accepted!",
-                f"Order {order_id} accepted. Rating: ₹{order.base_rate + order.distance_bonus}"
-            )
+           
             
             await send_notification(
                 order.user_id,
-                "Order Accepted",
-                f"Your order is confirmed. Rider {user.name} is on the way!"
+                "Rider Assigned",
+                f"Rider {user.name} is on the way!"
             )
             
             await send_notification(
@@ -1067,7 +1063,7 @@ async def mark_order_shipped(
     await redis.publish("order_updates", json.dumps(notify_payload))
     
     try:
-        await manager.send_to(notify_payload, "customers", str(order.user_id), "notifications")
+        await manager.send_notification("customers", str(order.user_id), "Order Shipped", "Your order has been picked up!")
         await send_notification(order.user_id, "Order Shipped", f"Your order is on the way!")
     except Exception as e:
         logger.warning(f"Shipment notification error: {str(e)}")
@@ -1107,7 +1103,7 @@ async def mark_order_out_for_delivery(
     await redis.publish("order_updates", json.dumps(notify_payload))
     
     try:
-        await manager.send_to(notify_payload, "customers", str(order.user_id), "notifications")
+        await manager.send_notification("customers", str(order.user_id), "Out for Delivery", "Your order is on its way!")
         await send_notification(order.user_id, "Out for Delivery", "Your order is arriving soon!")
     except Exception as e:
         logger.warning(f"Out for delivery notification error: {str(e)}")
@@ -1191,8 +1187,8 @@ async def mark_order_delivered(
     await redis.publish("order_updates", json.dumps(notify_payload))
     
     try:
-        await manager.send_to(notify_payload, "customers", str(order.user_id), "notifications")
-        await manager.send_to(notify_payload, "vendors", str(vendor.usser_id), "notifications")
+        await manager.send_notification("customers", str(order.user_id), "Order delivered", "Thank you for your order!")
+        await manager.send_notification("vendors", str(vendor.usser_id), "Order Delivered", "Order {order_id} delivered successfully!")
         await send_notification(order.user_id, "Order Delivered", "Thank you for your order!")
     except Exception as e:
         logger.warning(f"Delivery notification error: {str(e)}")
