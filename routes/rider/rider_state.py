@@ -358,6 +358,7 @@ from app.utils.websocket_manager import manager
 from app.redis import get_redis
 from .notifications import send_notification
 from .helper_functions import to_float
+from math import ceil, floor
 
 logger = logging.getLogger(__name__)
 
@@ -695,8 +696,12 @@ async def calculate_monthly_earnings(rider: RiderProfile, month_start: date, mon
     guarantee_floor = float(feesandbonus.rider_base_salary or 8000.00)
     guarantee_topup = 0.0
     final_earnings = subtotal
+
+    if subtotal == 0.0:
+        guarantee_topup = guarantee_floor
+        final_earnings = 0.0
     
-    if subtotal < guarantee_floor:
+    elif subtotal < guarantee_floor:
         guarantee_topup = guarantee_floor - subtotal
         final_earnings = guarantee_floor
     
@@ -793,7 +798,7 @@ async def get_monthly_stats(
     else:
         month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
     
-    earnings = await calculate_monthly_earnings(rider, month_start, month_end.date())
+    earnings = await calculate_monthly_earnings(rider, month_start, month_end)
     
     return MonthlyStatsResponse(
         delivery_pay=earnings["delivery_pay"],
@@ -891,14 +896,14 @@ async def get_annual_stats(
         else:
             month_end = today.replace(month=month_num + 1, day=1) - timedelta(days=1)
         
-        if month_end.date() > today:
+        if month_end > today:
             month_end = today
         
         month_start_dt = datetime.combine(month_start, datetime.min.time())
         month_end_dt = datetime.combine(month_end, datetime.max.time())
         
         month_deliveries = await get_deliveries_count(rider, month_start_dt, month_end_dt)
-        earnings = await calculate_monthly_earnings(rider, month_start.date(), month_end.date())
+        earnings = await calculate_monthly_earnings(rider, month_start, month_end)
         month_earnings = earnings["final_earnings"]
         
         month_name = month_start.strftime("%B")
@@ -1007,6 +1012,43 @@ async def get_bonus_progress(
 
 
 
+
+@router.get("/rider-monthly-forecast/")
+async def get_rider_monthly_forecast(
+    user: User = Depends(get_current_user),
+):
+    """Get forecast of monthly earnings based on recent performance"""
+    
+    rider = await RiderProfile.get_or_none(user=user)
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    
+    today = datetime.utcnow().date()
+    month_start = today.replace(day=1)
+    
+    if today.month == 12:
+        month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+    
+    earnings = await calculate_monthly_earnings(rider, month_start, month_end)
+    subtotal = earnings["subtotal_earned"]
+
+    target = 14000
+    percentage = (subtotal / target) * 100
+    remaining_deliveries = max((target - subtotal) / 44, 0)
+    if remaining_deliveries > floor(remaining_deliveries):
+        remaining_deliveries = ceil(remaining_deliveries)
+    else:
+        remaining_deliveries = floor(remaining_deliveries)
+
+
+    return {
+        "subtotal": round(subtotal, 2),
+        "percentage": round(percentage, 2),
+        "remaining_deliveries": round(remaining_deliveries, 2),
+        "target": round(target, 2)
+        }
 
 
 
