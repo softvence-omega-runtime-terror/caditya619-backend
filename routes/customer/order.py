@@ -166,14 +166,13 @@ async def get_all_orders(
     orders = await query.offset(offset).limit(limit).prefetch_related(
         'user',
         'items__item',
-        'rider__user'
+        'rider__user',
+        'vendor__vendor_profile'
     )
     
     # Build response
     results = []
     for order in orders:
-        # Get vendors locations
-        
         # Get shipping address from metadata
         shipping_address = None
         if order.metadata and "shipping_address" in order.metadata:
@@ -217,6 +216,32 @@ async def get_all_orders(
             cashfree_data = order.metadata.get("cashfree", {})
             payment_link = cashfree_data.get("payment_link")
         
+        # Get vendor info (preserved even if vendor deleted)
+        vendor_info = None
+        if order.metadata and "vendor_info" in order.metadata:
+            vendor_info = order.metadata["vendor_info"]
+        elif order.vendor:
+            # Fallback to live vendor data if metadata not available
+            vendor_profile = await VendorProfile.get_or_none(user=order.vendor)
+            vendor_info = {
+                "vendor_id": order.vendor_id,
+                "vendor_name": order.vendor.name,
+                "vendor_phone": order.vendor.phone,
+                "vendor_email": order.vendor.email or None,
+                "is_vendor": order.vendor.is_vendor,
+                "is_active": order.vendor.is_active
+            }
+            
+            if vendor_profile:
+                vendor_info.update({
+                    "store_name": vendor_profile.owner_name,
+                    "store_type": vendor_profile.type,
+                    "store_latitude": vendor_profile.latitude,
+                    "store_longitude": vendor_profile.longitude,
+                    "kyc_status": vendor_profile.kyc_status,
+                    "profile_is_active": vendor_profile.is_active
+                })
+        
         results.append({
             "id": order.id,
             "user_id": str(order.user_id),
@@ -237,7 +262,7 @@ async def get_all_orders(
             "payment_status": order.payment_status,
             "payment_link": payment_link,
             "rider_info": rider_info,
-            "vendor_id": str(order.vendor_id) if order.vendor_id else None
+            "vendor_info": vendor_info
         })
     
     # Return with pagination metadata
@@ -247,8 +272,6 @@ async def get_all_orders(
         "offset": offset,
         "orders": results
     }
-
-
 # ============================================================
 # 3. GET SINGLE ORDER
 # ============================================================
@@ -644,7 +667,7 @@ async def create_payment_link_for_orders(orders: List[Order]):
             "send_email": True
         },
         "link_meta": {
-            "return_url": f"{settings.BACKEND_URL}/webhooks/cashfree/payment",  # ✅ Now handled
+            "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last",  # ✅ Now handled
             "order_ids": ",".join(order_ids),
             "user_id": str(customer_id)
         }
