@@ -8,8 +8,8 @@ from app.redis import get_redis
 
 
 TWOFACTOR_BASE_URL = "https://2factor.in/API/V1"
-OTP_EXPIRY_SECONDS = 60
-MAX_ATTEMPTS_PER_HOUR = 10
+OTP_EXPIRY_SECONDS = 120
+MAX_ATTEMPTS_PER_HOUR = 30
 TWOFACTOR_API_KEY = settings.TWOFACTOR_API_KEY
 
 def _otp_key(phone: str, purpose: str):
@@ -98,7 +98,13 @@ async def verify_otp(phone: str, otp_value: str, purpose: str) -> bool:
     try:
         print('>>>>>>>>>>>>>>>>>>>>   Using 2Factor.in for Verify')
         stored_value = await redis.get(otp_key)
-        url = f"{TWOFACTOR_BASE_URL}/{TWOFACTOR_API_KEY}/SMS/VERIFY/{stored_value}/{otp_value}"
+        stored_session_id = await redis.get(otp_key)
+
+        if not stored_session_id:
+            raise HTTPException(status_code=400, detail="OTP expired or not found.")
+        
+        url = f"{TWOFACTOR_BASE_URL}/{TWOFACTOR_API_KEY}/SMS/VERIFY/{stored_session_id}/{otp_value}"
+        # print(f"🔍 Verifying OTP with URL: {url}")
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url)
             response.raise_for_status()
