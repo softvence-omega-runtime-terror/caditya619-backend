@@ -61,11 +61,6 @@ async def send_notification(data: NotificationIn):
         raise HTTPException(500, f"Send error: {e}")
 
 
-
-
-
-
-
 @router.get("/test_notification/")
 async def test(user: User = Depends(get_current_user)):
    deliveries = 42  # Example metrics or calculations

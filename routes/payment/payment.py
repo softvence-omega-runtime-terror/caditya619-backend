@@ -469,12 +469,21 @@ async def pay_last_order_no_auth():
         
         print(f"[NO-AUTH LAST] ✅ Order {ord.id}: {old_status} → PROCESSING")
         
-        # Send notification to customer
+        # Send notification to customer — message depends on payment method
         try:
+            pm = ord.payment_method.value if hasattr(ord.payment_method, 'value') else str(ord.payment_method)
+            pm = (pm or "").lower()
+            if pm == "cashfree":
+                title = "Payment Successful"
+                body = "Your payment is successful."
+            else:
+                title = "Order Processing"
+                body = "Your order is now processing."
+
             await send_notification(
                 ord.user.id,
-                "Payment Successful (TEST)",
-                f"Order #{ord.id} payment confirmed."
+                title,
+                body
             )
         except Exception as e:
             print(f"[NO-AUTH LAST] Notification error for order {ord.id}: {e}")
