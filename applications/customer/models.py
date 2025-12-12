@@ -53,30 +53,6 @@ class PaymentMethod(models.Model):
     
     class Meta:
         table = "payment_method"
-# ==================== Cart Models ====================
-
-class Cart(models.Model):
-    """Cart Model"""
-    id = fields.CharField(max_length=255, pk=True)
-    user = fields.ForeignKeyField("models.User", related_name="carts")
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
-
-    class Meta:
-        table = "carts"
-
-
-class CartItem(models.Model):
-    """Cart Item Model"""
-    id = fields.CharField(max_length=255, pk=True)
-    cart = fields.ForeignKeyField("models.Cart", related_name="items", on_delete=fields.CASCADE)
-    item = fields.ForeignKeyField("models.Item", related_name="cart_items")
-    quantity = fields.IntField(default=1)
-    added_at = fields.DatetimeField(auto_now_add=True)
-
-    class Meta:
-        table = "cart_items"
-
 
 # ==================== Order Models ====================
 
