@@ -337,10 +337,6 @@ class OrderService:
                     image_path=item_data['image_path']
                 )
                 
-                # Update stock
-                item_data['item'].stock -= item_data['quantity']
-                item_data['item'].total_sale += item_data['quantity']
-                await item_data['item'].save(update_fields=['stock', 'total_sale'])
             
             await order.fetch_related("user", "items__item")
             created_orders.append(order)
@@ -368,3 +364,5 @@ class OrderService:
             "WELCOME10": Decimal("10.0")
         }
         return coupon_discounts.get(coupon_code, Decimal("0.0"))
+
+

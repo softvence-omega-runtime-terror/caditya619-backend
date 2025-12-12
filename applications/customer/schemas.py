@@ -4,7 +4,7 @@ from tortoise.contrib.pydantic import pydantic_model_creator
 from pydantic import BaseModel, Field, EmailStr, validator, condecimal
 from typing import List, Optional
 from datetime import datetime
-from applications.customer.models import Cart, CartItem, Order, OrderItem, DeliveryOption, PaymentMethod
+from applications.customer.models import Order, OrderItem, DeliveryOption, PaymentMethod
 from decimal import Decimal
 import re
 from enum import Enum
@@ -52,10 +52,6 @@ class PaymentResponseSchema(BaseModel):
     cf_order_id: str
     payment_url: str
     order_id: str
-
-# Cart Schemas
-Cart_Pydantic = pydantic_model_creator(Cart, name="Cart")
-CartItem_Pydantic = pydantic_model_creator(CartItem, name="CartItem")
 
 # Order Schemas
 Order_Pydantic = pydantic_model_creator(Order, name="Order")
@@ -111,50 +107,7 @@ class MultiOrderResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
-# ==================== Cart Schemas ====================
-
-class CartCreateSchema(BaseModel):
-    """Cart Creation Schema"""
-    # user_id: str
-    pass
-
-
-class CartItemCreateSchema(BaseModel):
-    """Add Item to Cart Schema"""
-    item_id: str
-    quantity: int = Field(..., gt=0)
-
-
-class CartItemUpdateSchema(BaseModel):
-    """Update Cart Item Schema"""
-    quantity: int = Field(..., gt=0)
-
-
-class CartItemResponseSchema(BaseModel):
-    """Cart Item Response"""
-    item_id: str
-    title: str
-    price: Decimal
-    quantity: int
-    image_path: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-
-class CartResponseSchema(BaseModel):
-    """Cart Response with Items"""
-    items: List[CartItemResponseSchema]
-
-    class Config:
-        from_attributes = True
-
-
 # ==================== Order Schemas ====================
-
-class CartItemsCreateSchema(BaseModel):
-    """Order Item Schema"""
-    cart_id: str
 
 class AddressTypeEnum(str, Enum):
     HOME = "HOME"
