@@ -48,11 +48,13 @@ async def lifespan(routerAPI: FastAPI):
 app = FastAPI(lifespan=lifespan, debug=settings.DEBUG)
 register_routes(app)
 
+# if settings.DEBUG else "index.html"
+
 templates = Jinja2Templates(directory="templates")
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     routes = get_module()
-    html_file = "development.html" if settings.DEBUG else "index.html"
+    html_file = "development.html"
     return templates.TemplateResponse(
         html_file,
         {
