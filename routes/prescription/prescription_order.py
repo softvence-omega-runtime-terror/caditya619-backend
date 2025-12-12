@@ -77,7 +77,7 @@ class PrescriptionOrderSerializer(BaseModel):
     user_id: int
     user_name: str
     image_path: str
-    file_name: str
+    file_name: Optional[str]
     status: str
     notes: Optional[str]
     uploaded_at: str
