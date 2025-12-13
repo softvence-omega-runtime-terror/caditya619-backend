@@ -330,7 +330,7 @@ class OrderService:
                 total=total,
                 coupon_code=order_data.coupon_code,
                 discount=discount,
-                status=order_status,   
+                status=OrderStatus.PENDING,
                 payment_status="unpaid",
                 tracking_number=self._generate_tracking_number(),
                 estimated_delivery=self._calculate_estimated_delivery(
