@@ -328,8 +328,10 @@ class OrderResponseSchema(BaseModel):
     metadata: Optional[dict] = None
     payment_session_id: Optional[str] = None
     rider_info: Optional[RiderInfoSchema] = None
+    payment_session_id: Optional[str] = None
     payment_status: str = "unpaid"
     vendor_id: Optional[str] = None
+    cf_order_id: Optional[str] = None
      
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):
