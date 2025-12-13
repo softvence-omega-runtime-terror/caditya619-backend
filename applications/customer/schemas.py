@@ -309,6 +309,7 @@ class RiderInfoSchema(BaseModel):
 
 class OrderResponseSchema(BaseModel):
     order_id: str = Field(..., alias="id")
+    parent_order_id: Optional[str] = None
     user_id: str
     items: List[OrderItemResponseSchema] = []
     shipping_address: Optional[ShippingAddressResponseSchema] = None

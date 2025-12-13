@@ -100,11 +100,15 @@ async def create_payment_session_for_orders(orders: List[Order]):
                 print(f"   CF Order ID: {data.get('cf_order_id')}")
                 print(f"   Payment Session ID: {data.get('payment_session_id')}")
                 
+                # Extract both order_id and cf_order_id from Cashfree response
+                cashfree_order_id = data.get("order_id")  # This is what we sent (ORDER_ABC123XYZ)
+                cf_order_id = data.get("cf_order_id")     # This is Cashfree's internal ID
+                
                 # Return session details for Flutter SDK
                 return {
                     "payment_session_id": data.get("payment_session_id"),
-                    "cf_order_id": data.get("cf_order_id"),
-                    "order_id": data.get("order_id"),
+                    "order_id": cashfree_order_id,        # Our generated order_id (use as parent_order_id)
+                    "cf_order_id": cf_order_id,            # Cashfree's internal order ID
                     "order_status": data.get("order_status", "ACTIVE")
                 }
             else:

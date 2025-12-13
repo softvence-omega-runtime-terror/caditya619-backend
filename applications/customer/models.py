@@ -58,6 +58,8 @@ class PaymentMethod(models.Model):
 
 class Order(models.Model):
     id = fields.CharField(max_length=255, pk=True)
+    parent_order_id = fields.CharField(max_length=255, null=True, index=True)
+
     user = fields.ForeignKeyField("models.User", related_name="orders", index=True)
     rider = fields.ForeignKeyField("models.RiderProfile", related_name="assigned_orders", on_delete=fields.CASCADE, null=True)
 
