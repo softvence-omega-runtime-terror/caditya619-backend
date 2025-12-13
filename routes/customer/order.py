@@ -61,14 +61,14 @@ async def place_order(
         # Calculate total amount across all orders
         total_amount = sum(float(order.total) for order in orders)
         
-        # Get parent_order_id (same for all orders in this group)
-        parent_order_id = orders[0].parent_order_id if orders else None
-        
+        parent_order_id = None
+
+
         response_data = {
             "success": True,
             "message": f"{len(orders)} order(s) created successfully",
             "data": {
-                "parent_order_id": parent_order_id,  # NEW
+                
                 "orders": [
                     {
                         "order_id": order.id,
@@ -91,11 +91,14 @@ async def place_order(
                 payment_response = await create_payment_session_for_orders(orders)
                 response_data["data"]["payment_session_id"] = payment_response["payment_session_id"]
                 response_data["data"]["cf_order_id"] = payment_response["cf_order_id"]
+                response_data["data"]["parent_order_id"] = payment_response["order_id"]
+                
                 
                 # Update all orders with payment session info
                 for order in orders:
                     order.payment_session_id = payment_response["payment_session_id"]
                     order.cf_order_id = payment_response["cf_order_id"]
+                    order.parent_order_id = payment_response["order_id"]
                     await order.save()
                 
                 response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
@@ -280,6 +283,9 @@ async def get_all_orders(
             "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
             "payment_status": order.payment_status,
             "payment_link": payment_link,
+            "parent_order_id": order.parent_order_id,
+            "cf_order_id": order.cf_order_id,
+            "payment_session_id": order.payment_session_id,
             "rider_info": rider_info,
             "vendor_info": vendor_info
         })
@@ -404,8 +410,9 @@ async def get_order_details(
         "tracking_number": order.tracking_number,
         "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
         "payment_status": order.payment_status,
-        "payment_link": payment_link,
-        # "vendors": vendors_locations,
+        "parent_order_id": order.parent_order_id,
+        "cf_order_id": order.cf_order_id,
+        "payment_session_id": order.payment_session_id,
         "rider_info": rider_info,
         "vendor_info": vendor_info,
         "can_cancel": order_status.lower() == "pending"
@@ -590,96 +597,6 @@ async def cancel_order(
     }    
 
 
-# ============================================================
-# PAYMENT HELPER - Internal function
-# ============================================================
-
-# Payment helper function - Update your existing create_payment_link_for_orders to:
-
-# async def create_payment_session_for_orders(orders: List[Order]):
-#     """
-#     Create Cashfree payment session for Flutter SDK integration.
-#     Calls Cashfree /orders API to get payment_session_id and cf_order_id.
-    
-#     API Documentation: https://docs.cashfree.com/reference/pgcreateorder
-#     """
-    
-#     # Calculate total amount
-#     total_amount = sum(float(order.total) for order in orders)
-    
-#     # Generate unique order ID
-#     order_id = f"ORDER_{uuid.uuid4().hex[:12].upper()}"
-    
-#     # Get customer details from first order
-#     customer_info = orders[0].metadata.get("shipping_address", {})
-#     user = orders[0].user if hasattr(orders[0], 'user') else None
-    
-#     # Prepare request payload for Cashfree
-#     payload = {
-#         "order_id": order_id,
-#         "order_amount": round(float(total_amount), 2),
-#         "order_currency": "INR",
-#         "customer_details": {
-#             "customer_id": str(orders[0].user_id),
-#             "customer_phone": customer_info.get("phone_number", "9999999999"),
-#             "customer_name": customer_info.get("full_name", "Customer"),
-#             "customer_email": getattr(user, 'email', None) or "customer@example.com"
-#         },
-#         "order_meta": {
-#             "return_url": f"{settings.FRONTEND_URL}/payment/callback",
-#             "notify_url": f"{settings.BACKEND_URL}/api/payment/webhook",
-#             "payment_methods": "cc,dc,upi,nb,wallet,paylater,emi"
-#         },
-#         "order_note": f"Payment for {len(orders)} order(s)"
-#     }
-    
-#     # Prepare headers
-#     headers = {
-#         "Content-Type": "application/json",
-#         "x-api-version": CASHFREE_API_VERSION,
-#         "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
-#         "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET
-#     }
-    
-#     try:
-#         async with httpx.AsyncClient(timeout=30.0) as client:
-#             response = await client.post(
-#                 f"{CASHFREE_BASE}/orders",
-#                 json=payload,
-#                 headers=headers
-#             )
-            
-#             if response.status_code in [200, 201]:
-#                 data = response.json()
-                
-#                 print(f"✅ Cashfree order created successfully")
-#                 print(f"Order ID: {data.get('order_id')}")
-#                 print(f"CF Order ID: {data.get('cf_order_id')}")
-#                 print(f"Payment Session ID: {data.get('payment_session_id')}")
-                
-#                 # Return session details for Flutter SDK
-#                 return {
-#                     "payment_session_id": data.get("payment_session_id"),
-#                     "cf_order_id": data.get("cf_order_id"),
-#                     "order_id": data.get("order_id"),
-#                     "order_status": data.get("order_status", "ACTIVE")
-#                 }
-#             else:
-#                 error_data = response.json() if response.text else {}
-#                 error_msg = error_data.get("message", response.text)
-#                 print(f"❌ Cashfree API Error [{response.status_code}]: {error_msg}")
-#                 raise Exception(f"Cashfree API error: {error_msg}")
-                
-#     except httpx.TimeoutException:
-#         print("⏱️ Cashfree API timeout")
-#         raise Exception("Payment gateway timeout. Please try again.")
-#     except httpx.RequestError as e:
-#         print(f"🌐 Network error calling Cashfree: {e}")
-#         raise Exception(f"Payment gateway connection failed: {str(e)}")
-#     except Exception as e:
-#         print(f"⚠️ Error creating Cashfree payment session: {e}")
-#         raise
-
 
 #*****************************************
 #    Rider Ratings
@@ -717,7 +634,6 @@ async def create_rider_rating(
             "created_at": rider_review.created_at.isoformat(),
         }
     }
-
 
 
 

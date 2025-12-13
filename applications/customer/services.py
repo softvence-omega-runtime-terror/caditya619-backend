@@ -247,10 +247,9 @@ class OrderService:
         
         if not vendor_items_map:
             raise ValueError("No valid items in order")
-        
         # Generate parent order ID for this group
         parent_order_id = self._generate_parent_order_id()
-        
+
         # Create one order per vendor
         created_orders = []
         
@@ -319,7 +318,7 @@ class OrderService:
             order_id = self._generate_order_id()
             order = await Order.create(
                 id=order_id,
-                parent_order_id=parent_order_id,  # NEW
+                parent_order_id=parent_order_id,
                 user_id=user_id,
                 vendor_id=vendor_id,
                 shipping_address_id=None,
