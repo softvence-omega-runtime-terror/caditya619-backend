@@ -309,6 +309,7 @@ class RiderInfoSchema(BaseModel):
 
 class OrderResponseSchema(BaseModel):
     order_id: str = Field(..., alias="id")
+    parent_order_id: Optional[str] = None  # NEW
     user_id: str
     items: List[OrderItemResponseSchema] = []
     shipping_address: Optional[ShippingAddressResponseSchema] = None
@@ -325,8 +326,8 @@ class OrderResponseSchema(BaseModel):
     tracking_number: Optional[str] = None
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
+    payment_session_id: Optional[str] = None
     rider_info: Optional[RiderInfoSchema] = None
-    payment_link: Optional[str] = None
     payment_status: str = "unpaid"
     vendor_id: Optional[str] = None
      
@@ -343,6 +344,8 @@ class OrderResponseSchema(BaseModel):
     class Config:
         from_attributes = True
         populate_by_name = True       
+
+
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
     first_name: Optional[str] = None
