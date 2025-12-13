@@ -2,12 +2,10 @@ import httpx
 from applications.customer.services import OrderService
 from fastapi import APIRouter, HTTPException, Query, status, Depends, Form
 from typing import List, Optional
-from datetime import datetime, timedelta
-from passlib.context import CryptContext
-import os
+from datetime import datetime
 import uuid
 from applications.user.models import User
-from applications.customer.models import Order, OrderItem, OrderStatus
+from applications.customer.models import Order, OrderStatus
 from applications.customer.schemas import *
 from app.token import get_current_user
 from app.config import settings
@@ -50,7 +48,7 @@ async def place_order(
     
     service = OrderService()
     try:
-        # Create orders (one per vendor)
+        # Create orders (one per vendor, all share same parent_order_id)
         orders = await service.create_orders(order_data, current_user)
         
         payment_method = order_data.payment_method.type
@@ -63,10 +61,14 @@ async def place_order(
         # Calculate total amount across all orders
         total_amount = sum(float(order.total) for order in orders)
         
+        # Get parent_order_id (same for all orders in this group)
+        parent_order_id = orders[0].parent_order_id if orders else None
+        
         response_data = {
             "success": True,
             "message": f"{len(orders)} order(s) created successfully",
             "data": {
+                "parent_order_id": parent_order_id,  # NEW
                 "orders": [
                     {
                         "order_id": order.id,
@@ -106,6 +108,7 @@ async def place_order(
                 payload = {
                     "type": "order_placed",
                     "order_id": order.id,
+                    "parent_order_id": parent_order_id,
                     "customer_name": current_user.name,
                     "payment_method": "COD",
                     "created_at": datetime.utcnow().isoformat()
@@ -133,10 +136,6 @@ async def place_order(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
-# ============================================================
-# 2. GET ALL ORDERS (with filters and pagination)
-# ============================================================
-
 @router.get("/")  # ✅ NO response_model here!
 async def get_all_orders(
     current_user: User = Depends(get_current_user),

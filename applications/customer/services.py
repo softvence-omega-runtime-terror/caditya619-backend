@@ -182,6 +182,11 @@ class OrderService:
     @staticmethod
     def _generate_order_id() -> str:
         return f"ORD_{uuid.uuid4().hex[:8].upper()}"
+    
+    @staticmethod
+    def _generate_parent_order_id() -> str:
+        """Generate a parent order ID for grouping multiple vendor orders"""
+        return f"PORD_{uuid.uuid4().hex[:8].upper()}"
 
     async def create_orders(
         self, 
@@ -242,6 +247,9 @@ class OrderService:
         
         if not vendor_items_map:
             raise ValueError("No valid items in order")
+        
+        # Generate parent order ID for this group
+        parent_order_id = self._generate_parent_order_id()
         
         # Create one order per vendor
         created_orders = []
@@ -307,10 +315,11 @@ class OrderService:
             
             order_status = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
 
-            # Create order
+            # Create order with parent_order_id
             order_id = self._generate_order_id()
             order = await Order.create(
                 id=order_id,
+                parent_order_id=parent_order_id,  # NEW
                 user_id=user_id,
                 vendor_id=vendor_id,
                 shipping_address_id=None,
@@ -321,7 +330,7 @@ class OrderService:
                 total=total,
                 coupon_code=order_data.coupon_code,
                 discount=discount,
-                status=order_status,   
+                status=OrderStatus.PENDING,
                 payment_status="unpaid",
                 tracking_number=self._generate_tracking_number(),
                 estimated_delivery=self._calculate_estimated_delivery(
