@@ -326,6 +326,7 @@ class OrderResponseSchema(BaseModel):
     tracking_number: Optional[str] = None
     estimated_delivery: Optional[datetime] = None
     metadata: Optional[dict] = None
+    payment_session_id: Optional[str] = None
     rider_info: Optional[RiderInfoSchema] = None
     payment_session_id: Optional[str] = None
     payment_status: str = "unpaid"
@@ -345,6 +346,8 @@ class OrderResponseSchema(BaseModel):
     class Config:
         from_attributes = True
         populate_by_name = True       
+
+
 # User Profile Update Schema
 class UserProfileUpdateSchema(BaseModel):
     first_name: Optional[str] = None
