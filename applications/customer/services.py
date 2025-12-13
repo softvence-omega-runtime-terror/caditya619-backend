@@ -176,6 +176,8 @@ class ShippingAddressService:
 # SERVICE - applications.customer.services.py
 # ============================================================
 
+# applications.customer.services.py
+
 class OrderService:
     @staticmethod
     def _generate_order_id() -> str:
@@ -303,7 +305,6 @@ class OrderService:
                 "vendor_info": vendor_info
             }
             
-            print("ghghjgjhhhhhhhhhhhhhhhhhhg", order_data.payment_method.type)
             order_status = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
 
             # Create order
@@ -367,5 +368,3 @@ class OrderService:
             "WELCOME10": Decimal("10.0")
         }
         return coupon_discounts.get(coupon_code, Decimal("0.0"))
-
-

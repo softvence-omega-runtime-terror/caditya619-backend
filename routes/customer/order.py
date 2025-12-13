@@ -1,6 +1,6 @@
 import httpx
 from applications.customer.services import OrderService
-from fastapi import APIRouter, HTTPException, Query, Request, status, Depends, Form
+from fastapi import APIRouter, HTTPException, Query, status, Depends, Form
 from typing import List, Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
@@ -18,12 +18,23 @@ from app.redis import get_redis
 import json
 from applications.user.vendor import VendorProfile
 from app.utils.websocket_manager import manager
+from routes.payment.payment_helper import create_payment_session_for_orders
+
+# Cashfree Configuration
+CASHFREE_CLIENT_PAYMENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
+CASHFREE_CLIENT_PAYMENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
+CASHFREE_ENV = settings.CASHFREE_ENV
+CASHFREE_BASE = "https://sandbox.cashfree.com/pg" if CASHFREE_ENV == "SANDBOX" else "https://api.cashfree.com/pg"
+CASHFREE_API_VERSION = "2023-08-01"
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
 
 # ============================================================
 # ROUTER - applications.customer.routes.py
 # ============================================================
+
+# routes.customer.order.py
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def place_order(
@@ -33,7 +44,7 @@ async def place_order(
 ):
     """
     STEP 1: Create orders (one per vendor) with PENDING status
-    STEP 2: Return combined payment link if payment method is Cashfree
+    STEP 2: Return payment session_id and cf_order_id if payment method is Cashfree
     STEP 3: Orders progress only after successful payment
     """
     
@@ -73,15 +84,22 @@ async def place_order(
         }
         
         if requires_payment:
-            # Generate combined payment link for all orders
+            # Generate payment session for Flutter SDK
             try:
-                payment_link_response = await create_payment_link_for_orders(orders)
-                response_data["data"]["payment_link"] = payment_link_response["payment_link"]
-                response_data["data"]["cf_payment_id"] = payment_link_response["cf_payment_id"]
+                payment_response = await create_payment_session_for_orders(orders)
+                response_data["data"]["payment_session_id"] = payment_response["payment_session_id"]
+                response_data["data"]["cf_order_id"] = payment_response["cf_order_id"]
+                
+                # Update all orders with payment session info
+                for order in orders:
+                    order.payment_session_id = payment_response["payment_session_id"]
+                    order.cf_order_id = payment_response["cf_order_id"]
+                    await order.save()
+                
                 response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
             except Exception as e:
-                print(f"Payment link creation error: {e}")
-                response_data["message"] = f"{len(orders)} order(s) created but payment link generation failed."
+                print(f"Payment session creation error: {e}")
+                response_data["message"] = f"{len(orders)} order(s) created but payment session generation failed."
         else:
             # COD orders - notify immediately
             for order in orders:
@@ -577,165 +595,91 @@ async def cancel_order(
 # PAYMENT HELPER - Internal function
 # ============================================================
 
-async def create_payment_link_for_orders(orders: List[Order]):
-    """
-    Create a single payment link for multiple orders.
-    All orders must belong to the same customer and use Cashfree payment method.
-    """
-    
-    if not orders:
-        raise HTTPException(status_code=400, detail="No orders provided")
-    
-    # Validate all orders
-    customer_id = orders[0].user_id
-    customer = orders[0].user
-    total_amount = Decimal("0")
-    order_ids = []
-    
-    for order in orders:
-        # Check customer consistency
-        if order.user_id != customer_id:
-            raise HTTPException(
-                status_code=400,
-                detail="All orders must belong to the same customer"
-            )
-        
-        # Check payment method
-        payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
-        if payment_method.lower() != "cashfree":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Order {order.id} payment method is {payment_method}, not Cashfree"
-            )
-        
-        # Check order status
-        order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        if order_status.lower() != "pending":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Order {order.id} is already {order_status}. Cannot create payment link."
-            )
-        
-        # Check payment status
-        if order.payment_status != "unpaid":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Order {order.id} is already paid or payment in progress"
-            )
-        
-        total_amount += order.total
-        order_ids.append(order.id)
-    
-    # Create combined payment link
-    headers = {
-        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID.strip(),
-        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET.strip(),
-        "x-api-version": CASHFREE_API_VERSION,
-        "Content-Type": "application/json"
-    }
-    
-    # Generate unique payment ID
-    cf_payment_id = f"PAY_{uuid.uuid4().hex[:12].upper()}"
-    
-    # Build payment purpose
-    order_list = ", ".join(order_ids)
-    payment_purpose = f"Payment for {len(orders)} orders: {order_list[:100]}"
-    
-    customer_name = customer.name or "Customer"
-    customer_email = customer.email or f"customer_{customer.id}@example.com"
-    customer_phone = customer.phone or "9999999999"
-    
-    payload = {
-        "link_id": cf_payment_id,
-        "link_amount": float(total_amount),
-        "link_currency": "INR",
-        "link_purpose": payment_purpose,
-        "customer_details": {
-            "customer_phone": customer_phone,
-            "customer_email": customer_email,
-            "customer_name": customer_name
-        },
-        "link_notify": {
-            "send_sms": True,
-            "send_email": True
-        },
-        "link_meta": {
-            "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last",  # ✅ Now handled
-            "order_ids": ",".join(order_ids),
-            "user_id": str(customer_id)
-        }
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            print(f"[PAYMENT] Creating link for {len(orders)} orders, total: ₹{total_amount}")
-            
-            resp = await client.post(
-                f"{CASHFREE_BASE}/links",
-                json=payload,
-                headers=headers
-            )
-        
-        data = resp.json()
-        
-        if resp.status_code not in [200, 201]:
-            error_msg = data.get("message", "Payment link creation failed")
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail=f"Cashfree API error: {error_msg}"
-            )
-        
-        payment_link = data.get("link_url")
-        
-        if not payment_link:
-            raise HTTPException(
-                status_code=500,
-                detail="Payment link not received from Cashfree"
-            )
-        
-        # Update all orders with payment link info
-        payment_info = {
-            "cf_payment_id": cf_payment_id,
-            "payment_link": payment_link,
-            "link_status": data.get("link_status"),
-            "created_at": data.get("link_created_at"),
-            "is_combined_payment": True,
-            "combined_order_ids": order_ids,
-            "combined_total": float(total_amount)
-        }
-        
-        for order in orders:
-            if order.metadata is None:
-                order.metadata = {}
-            
-            order.metadata["cashfree"] = payment_info.copy()
-            order.cf_order_id = cf_payment_id
-            
-            await order.save(update_fields=["metadata", "cf_order_id"])
-        
-        print(f"[PAYMENT] ✅ Payment link created: {payment_link}")
-        
-        return {
-            "success": True,
-            "cf_payment_id": cf_payment_id,
-            "payment_link": payment_link,
-            "total_amount": float(total_amount),
-            "orders_count": len(orders)
-        }
-        
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Failed to connect to Cashfree: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error creating payment link: {str(e)}"
-        )
+# Payment helper function - Update your existing create_payment_link_for_orders to:
 
-
-
+# async def create_payment_session_for_orders(orders: List[Order]):
+#     """
+#     Create Cashfree payment session for Flutter SDK integration.
+#     Calls Cashfree /orders API to get payment_session_id and cf_order_id.
+    
+#     API Documentation: https://docs.cashfree.com/reference/pgcreateorder
+#     """
+    
+#     # Calculate total amount
+#     total_amount = sum(float(order.total) for order in orders)
+    
+#     # Generate unique order ID
+#     order_id = f"ORDER_{uuid.uuid4().hex[:12].upper()}"
+    
+#     # Get customer details from first order
+#     customer_info = orders[0].metadata.get("shipping_address", {})
+#     user = orders[0].user if hasattr(orders[0], 'user') else None
+    
+#     # Prepare request payload for Cashfree
+#     payload = {
+#         "order_id": order_id,
+#         "order_amount": round(float(total_amount), 2),
+#         "order_currency": "INR",
+#         "customer_details": {
+#             "customer_id": str(orders[0].user_id),
+#             "customer_phone": customer_info.get("phone_number", "9999999999"),
+#             "customer_name": customer_info.get("full_name", "Customer"),
+#             "customer_email": getattr(user, 'email', None) or "customer@example.com"
+#         },
+#         "order_meta": {
+#             "return_url": f"{settings.FRONTEND_URL}/payment/callback",
+#             "notify_url": f"{settings.BACKEND_URL}/api/payment/webhook",
+#             "payment_methods": "cc,dc,upi,nb,wallet,paylater,emi"
+#         },
+#         "order_note": f"Payment for {len(orders)} order(s)"
+#     }
+    
+#     # Prepare headers
+#     headers = {
+#         "Content-Type": "application/json",
+#         "x-api-version": CASHFREE_API_VERSION,
+#         "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
+#         "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET
+#     }
+    
+#     try:
+#         async with httpx.AsyncClient(timeout=30.0) as client:
+#             response = await client.post(
+#                 f"{CASHFREE_BASE}/orders",
+#                 json=payload,
+#                 headers=headers
+#             )
+            
+#             if response.status_code in [200, 201]:
+#                 data = response.json()
+                
+#                 print(f"✅ Cashfree order created successfully")
+#                 print(f"Order ID: {data.get('order_id')}")
+#                 print(f"CF Order ID: {data.get('cf_order_id')}")
+#                 print(f"Payment Session ID: {data.get('payment_session_id')}")
+                
+#                 # Return session details for Flutter SDK
+#                 return {
+#                     "payment_session_id": data.get("payment_session_id"),
+#                     "cf_order_id": data.get("cf_order_id"),
+#                     "order_id": data.get("order_id"),
+#                     "order_status": data.get("order_status", "ACTIVE")
+#                 }
+#             else:
+#                 error_data = response.json() if response.text else {}
+#                 error_msg = error_data.get("message", response.text)
+#                 print(f"❌ Cashfree API Error [{response.status_code}]: {error_msg}")
+#                 raise Exception(f"Cashfree API error: {error_msg}")
+                
+#     except httpx.TimeoutException:
+#         print("⏱️ Cashfree API timeout")
+#         raise Exception("Payment gateway timeout. Please try again.")
+#     except httpx.RequestError as e:
+#         print(f"🌐 Network error calling Cashfree: {e}")
+#         raise Exception(f"Payment gateway connection failed: {str(e)}")
+#     except Exception as e:
+#         print(f"⚠️ Error creating Cashfree payment session: {e}")
+#         raise
 
 
 #*****************************************
