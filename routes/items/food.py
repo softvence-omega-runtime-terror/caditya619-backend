@@ -179,12 +179,14 @@ async def get_all_items(
         query = query.filter(name__icontains=name)
 
     total_count = await query.count()
+    low_stock_count = await query.filter(stock__lt=10).count()
     items = await query.offset(offset).limit(limit)
     data = [await serialize_item(item) for item in items]
 
     return {
         "status": "success",
         "count": len(data),
+        "low_stock_count": low_stock_count,
         "total": total_count,
         "offset": offset,
         "limit": limit,
@@ -242,7 +244,6 @@ async def get_all_items(
         query = query.filter(name__icontains=name)
 
     total_count = await query.count()
-    low_stock_count = await query.filter(stock__lt=10).count()
     items = await query.offset(offset).limit(limit)
     data = [await serialize_item(item) for item in items]
 
@@ -250,7 +251,6 @@ async def get_all_items(
         "status": "success",
         "count": len(data),
         "total": total_count,
-        "low_stock_count": low_stock_count,
         "offset": offset,
         "limit": limit,
         "data": data
