@@ -77,7 +77,7 @@ class PrescriptionOrderSerializer(BaseModel):
     user_id: int
     user_name: str
     image_path: str
-    file_name: str
+    file_name: Optional[str]
     status: str
     notes: Optional[str]
     uploaded_at: str
@@ -189,8 +189,9 @@ async def create_vendor_response(
 
         # Update total_amount in vendor_response
         vendor_response.total_amount = total_amount
-        vendor_response.status = "medicinesReady"
+        prescription.status = "medicinesReady"
         await vendor_response.save()
+        await prescription.save()
 
     # Build JSON Response
     await vendor_response.fetch_related("medicines")
@@ -200,7 +201,7 @@ async def create_vendor_response(
         "prescription_id": vendor_response.prescription_id,
         "vendor_id": vendor_response.vendor_id,
         "total_amount": float(vendor_response.total_amount),
-        "status": vendor_response.status,
+        "status": prescription.status,
         "notes": vendor_response.notes,
         "responded_at": vendor_response.responded_at,
         "medicines": [

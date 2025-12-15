@@ -315,7 +315,7 @@ class OrderService:
             order_status_update = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
 
 
-            # Create order
+            # Create order with parent_order_id
             order_id = self._generate_order_id()
             order = await Order.create(
                 id=order_id,
