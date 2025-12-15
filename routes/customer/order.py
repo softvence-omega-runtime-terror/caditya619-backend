@@ -141,6 +141,8 @@ async def place_order(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
+
+
 # ============================================================
 # 2. GET ALL ORDERS (with filters and pagination)
 # ============================================================
