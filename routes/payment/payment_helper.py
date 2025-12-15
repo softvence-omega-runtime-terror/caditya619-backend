@@ -21,16 +21,12 @@ async def create_payment_session_for_orders(orders: List[Order]):
     
     API Documentation: https://docs.cashfree.com/reference/pgcreateorder
     """
-    
-    print(f"🔄 Starting payment session creation for {len(orders)} order(s)")
-    
+        
     # Calculate total amount
     total_amount = sum(float(order.total) for order in orders)
-    print(f"💰 Total amount: {total_amount}")
     
     # Generate unique order ID
     order_id = f"ORDER_{uuid.uuid4().hex[:12].upper()}"
-    print(f"🆔 Generated order_id: {order_id}")
     
     # Get customer details from first order
     customer_info = orders[0].metadata.get("shipping_address", {})
@@ -40,7 +36,6 @@ async def create_payment_session_for_orders(orders: List[Order]):
     customer_name = customer_info.get("full_name", "Customer")
     customer_email = getattr(user, 'email', None) or "customer@example.com"
     
-    print(f"👤 Customer: {customer_name} | Phone: {customer_phone} | Email: {customer_email}")
     
     # Prepare request payload for Cashfree
     payload = {
@@ -59,13 +54,6 @@ async def create_payment_session_for_orders(orders: List[Order]):
         },
         "order_note": f"Payment for {len(orders)} order(s)"
     }
-    
-    print(f"📦 Payload prepared:")
-    print(f"   - Order ID: {payload['order_id']}")
-    print(f"   - Amount: {payload['order_amount']}")
-    print(f"   - Return URL: {payload['order_meta']['return_url']}")
-    print(f"   - Notify URL: {payload['order_meta']['notify_url']}")
-    
     # Prepare headers
     headers = {
         "Content-Type": "application/json",
@@ -73,14 +61,8 @@ async def create_payment_session_for_orders(orders: List[Order]):
         "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
         "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET
     }
-    
-    print(f"🔐 Using credentials:")
-    print(f"   - Client ID: {CASHFREE_CLIENT_PAYMENT_ID[:10]}...")
-    print(f"   - Environment: {CASHFREE_ENV}")
-    print(f"   - Base URL: {CASHFREE_BASE}")
-    
+
     try:
-        print(f"🌐 Making request to: {CASHFREE_BASE}/orders")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -89,16 +71,9 @@ async def create_payment_session_for_orders(orders: List[Order]):
                 headers=headers
             )
             
-            print(f"📡 Response Status: {response.status_code}")
-            print(f"📡 Response Body: {response.text}")
             
             if response.status_code in [200, 201]:
                 data = response.json()
-                
-                print(f"✅ Cashfree order created successfully")
-                print(f"   Order ID: {data.get('order_id')}")
-                print(f"   CF Order ID: {data.get('cf_order_id')}")
-                print(f"   Payment Session ID: {data.get('payment_session_id')}")
                 
                 # Extract both order_id and cf_order_id from Cashfree response
                 cashfree_order_id = data.get("order_id")  # This is what we sent (ORDER_ABC123XYZ)
@@ -114,16 +89,11 @@ async def create_payment_session_for_orders(orders: List[Order]):
             else:
                 error_data = response.json() if response.text else {}
                 error_msg = error_data.get("message", response.text)
-                print(f"❌ Cashfree API Error [{response.status_code}]: {error_msg}")
-                print(f"📋 Full error response: {error_data}")
                 raise Exception(f"Cashfree API error: {error_msg}")
                 
     except httpx.TimeoutException:
-        print("⏱️ Cashfree API timeout")
         raise Exception("Payment gateway timeout. Please try again.")
     except httpx.RequestError as e:
-        print(f"🌐 Network error calling Cashfree: {e}")
         raise Exception(f"Payment gateway connection failed: {str(e)}")
     except Exception as e:
-        print(f"⚠️ Error creating Cashfree payment session: {e}")
         raise
