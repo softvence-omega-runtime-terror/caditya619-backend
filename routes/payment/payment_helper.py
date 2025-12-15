@@ -49,8 +49,8 @@ async def create_payment_session_for_orders(orders: List[Order]):
             "customer_email": customer_email
         },
         "order_meta": {
-            "return_url": f"{settings.FRONTEND_URL}/payment/callback",
-            "notify_url": f"{settings.BACKEND_URL}/api/payment/webhook"
+            "return_url": f"{settings.FRONTEND_URL}/payment/callback" or "https://quikle-dev.onrender.com/payment/callback",
+            "notify_url": f"{settings.BACKEND_URL}/api/payment/webhook" or "https://quikle-dev.onrender.com/api/payment/webhook"
         },
         "order_note": f"Payment for {len(orders)} order(s)"
     }
