@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from tortoise.transactions import in_transaction
 from pydantic import BaseModel
 from typing import List, Optional
+from routes.rider.notifications import send_notification
 
 from applications.prescription.models import (
     PrescriptionVendorResponse,
@@ -120,6 +121,36 @@ async def change_prescription_status(
 
     prescription.status = status
     await prescription.save()
+
+    try:
+        if status == "underReview":
+            await send_notification(
+                user=prescription.user.id,
+                title="⏳ Prescription Under Review",
+                body="A pharmacy has opened your prescription for review. You will be notified when medicines are available"
+            )
+        elif status == "valid":
+            await send_notification(
+                user=prescription.user.id,
+                title="✅ Prescription Valid",
+                body="Your prescription is valid. We are checking medicine availability."
+            )
+        elif status == "invalid":
+            await send_notification(
+                user=prescription.user.id,
+                title="❌ Prescription Invalid",
+                body="We could not validate your prescription. Please check and upload a valid one or contact support."
+            )
+        elif status == "medicinesReady":
+            await send_notification(
+                user=prescription.user.id,
+                title="💊 Medicines Ready",
+                body="Medicines are ready for your order. Review them now and place your order."
+            )
+    except:
+        pass
+
+
 
     return {
         "status": "success",
