@@ -4,7 +4,6 @@ from tortoise.expressions import Q
 from tortoise.functions import Sum, Avg, Count
 from applications.customer.models import Order
 
-
 class PayoutStatus(str, Enum):
     QUEUED = "queued"
     PROCESSING = "processing"
@@ -33,12 +32,12 @@ class PayoutTransaction(models.Model):
     cf_response = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
+    invoice = fields.CharField(355, null=True, blank=True)
     
     async def save(self, *args, **kwargs):
         if self.amount_in_paise is None:
             self.amount_in_paise = int(self.amount * 100)
         await super().save(*args, **kwargs)
-
 
 class VendorAccount(models.Model):
     id = fields.IntField(pk=True)
