@@ -148,7 +148,10 @@ class WorkDay(models.Model):
     date = fields.DateField()
     hours_worked = fields.FloatField(default=0.0)
     order_offer_count = fields.IntField(default=0)
+    rejection_count = fields.IntField(default=0)  
+    timeout_rejection_count = fields.IntField(default=0)
     is_scheduled_leave = fields.BooleanField(default=False)
+
 
     class Meta:
         table = "work_days"
@@ -378,3 +381,37 @@ class BeneficiaryAccount(models.Model):
 
     def __str__(self):
         return f"beneficiary {self.id}: {self.bank_holder_name}"
+    
+
+
+
+class OrderOffer(models.Model):
+    """
+    Tracks individual order offers sent to riders.
+    Enables timeout tracking, rejection reasons, and offer statistics.
+    """
+    id = fields.IntField(pk=True)
+    order = fields.ForeignKeyField("models.Order", related_name="offers")
+    rider = fields.ForeignKeyField("models.RiderProfile", related_name="order_offers")
+    
+    # Status: PENDING, ACCEPTED, REJECTED, TIMEOUT
+    status = fields.CharField(max_length=20, default="PENDING")
+    
+    # For urgent orders: track rejection reason
+    reject_reason = fields.TextField(null=True)
+    is_urgent = fields.BooleanField(default=False)
+    
+    # Timestamps
+    created_at = fields.DatetimeField(auto_now_add=True)
+    responded_at = fields.DatetimeField(null=True)
+    
+    class Meta:
+        table = "order_offers"
+        indexes = [
+            ("order", "rider"),
+            ("order", "status"),
+            ("created_at",),
+        ]
+
+    def __str__(self):
+        return f"Offer({self.order_id}, Rider{self.rider_id}, {self.status})"
