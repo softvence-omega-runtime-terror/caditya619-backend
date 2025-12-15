@@ -139,6 +139,12 @@ async def place_order(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
+
+
+# ============================================================
+# 2. GET ALL ORDERS (with filters and pagination)
+# ============================================================
+
 @router.get("/")  # ✅ NO response_model here!
 async def get_all_orders(
     current_user: User = Depends(get_current_user),
