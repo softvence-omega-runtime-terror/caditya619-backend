@@ -9,6 +9,7 @@ from applications.user.models import User
 from datetime import datetime, timedelta
 from app.config import settings
 from app.auth import vendor_required
+from app.utils.generate_pdf import generate_payout_pdf
 from app.utils.cashfree_payout import call_cashfree_transfer
 from applications.earning.vendor_earning import (
     Beneficiary,
@@ -31,7 +32,26 @@ BASE_URL = "https://sandbox.cashfree.com/payout"
 #     beneficiary_id: int
 #     amount: Decimal = Field(..., gt=Decimal("0.99"))
 
+class DummyTransaction:
+    def __init__(self):
+        self.transfer_id = "TXN_TEST_001"
+        self.amount = 1500.75
+        self.status = "SUCCESS"
+        self.created_at = datetime.now()
 
+@router.get("/generate-pdf")
+async def generate_pdf(vendor: User = Depends(vendor_required)):
+    await vendor.fetch_related("vendor_profile")
+    vendor_profile = vendor.vendor_profile
+    transaction = await PayoutTransaction.filter(vendor_id=vendor_profile.id).first()
+    if not transaction:
+        return {"error": "Transaction not found"}
+    file_url = await generate_payout_pdf(transaction)
+
+    return {
+        "message": "PDF generated successfully",
+        "invoice_url": file_url,
+    }
 
 @router.get("/vendor_account")
 async def vendor_account(
@@ -175,7 +195,6 @@ async def transfer_amount(amount:int= None, vendor: User = Depends(vendor_requir
 
     url = f"{BASE_URL}/transfers"
     unique_transfer_id = f"QU{vendor.id}{int(time.time())}"
-    
 
     headers = {
         "x-api-version": "2024-01-01",
@@ -204,3 +223,7 @@ async def transfer_amount(amount:int= None, vendor: User = Depends(vendor_requir
         raise HTTPException(status_code=res.status_code, detail=res.json())
 
     return res.json()
+
+
+
+
