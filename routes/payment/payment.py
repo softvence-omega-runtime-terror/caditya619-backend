@@ -233,9 +233,9 @@ async def verify_payment_endpoint(parent_order_id: str):
 class PaymentConfirmRequest(BaseModel):
     """Request model for payment confirmation from Flutter app"""
     parent_order_id: str
-    # cf_order_id: Optional[str] = None
-    # payment_status: str  # "SUCCESS", "FAILED", "PENDING"
-    # transaction_id: Optional[str] = None
+    cf_order_id: Optional[str] = None
+    payment_status: Optional[str] = "PAID"  # "SUCCESS", "FAILED", "PENDING"
+    transaction_id: Optional[str] = None
 
 
 @router.post("/confirm")
