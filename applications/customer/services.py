@@ -312,7 +312,8 @@ class OrderService:
                 "vendor_info": vendor_info
             }
             
-            order_status = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
+            order_status_update = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
+
 
             # Create order with parent_order_id
             order_id = self._generate_order_id()
@@ -329,7 +330,7 @@ class OrderService:
                 total=total,
                 coupon_code=order_data.coupon_code,
                 discount=discount,
-                status=OrderStatus.PENDING,
+                status=order_status_update,   
                 payment_status="unpaid",
                 tracking_number=self._generate_tracking_number(),
                 estimated_delivery=self._calculate_estimated_delivery(
