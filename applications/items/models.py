@@ -67,6 +67,7 @@ class Item(models.Model):
     
     ratings = fields.FloatField(default=0.0)
     stock = fields.IntField(default=0)
+    is_stock = fields.BooleanField(default=True)
     total_sale = fields.IntField(default=0)
     
     popular = fields.BooleanField(default=False)
@@ -124,6 +125,8 @@ class Item(models.Model):
 
     @property
     def is_in_stock(self):
+        if not self.is_stock:
+            return False
         return self.stock > 0
 
     @property
