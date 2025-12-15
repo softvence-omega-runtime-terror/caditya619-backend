@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from typing import Optional
 import json
 from datetime import datetime
+from app.token import get_current_user
+from applications.user.models import User
 from applications.user.vendor import VendorProfile
 from app.redis import get_redis
 from routes.payment.payment_verification import verify_payment_status
@@ -29,7 +31,7 @@ CASHFREE_API_VERSION = "2023-08-01"
 # SCHEMAS
 # ============================================================
 
-router = APIRouter()
+router = APIRouter(prefix="/payment", tags=["payment"])
 
 
 class PaymentWebhookData(BaseModel):
@@ -226,6 +228,342 @@ async def verify_payment_endpoint(parent_order_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+
+
+class PaymentConfirmRequest(BaseModel):
+    """Request model for payment confirmation from Flutter app"""
+    parent_order_id: str
+    # cf_order_id: Optional[str] = None
+    # payment_status: str  # "SUCCESS", "FAILED", "PENDING"
+    # transaction_id: Optional[str] = None
+
+
+@router.post("/confirm")
+async def confirm_payment_from_app(
+    request: PaymentConfirmRequest,
+    current_user: User = Depends(get_current_user),
+    redis = Depends(get_redis)
+):
+    """
+    Flutter app calls this endpoint after payment completion.
+    This endpoint verifies payment with Cashfree and updates orders.
+    
+    Usage from Flutter:
+    POST /api/payment/confirm
+    {
+        "parent_order_id": "ORDER_77A8641A732B",
+        "payment_status": "SUCCESS",
+        "transaction_id": "12345"
+    }
+    """
+    
+    print("=" * 60)
+    print(f"📱 Payment confirmation from Flutter app")
+    print(f"   User: {current_user.name} ({current_user.id})")
+    print(f"   Parent Order ID: {request.parent_order_id}")
+    print(f"   Payment Status: {request.payment_status}")
+    print("=" * 60)
+    
+    try:
+        # Step 1: Find all orders with this parent_order_id
+        orders = await Order.filter(
+            parent_order_id=request.parent_order_id,
+            user_id=current_user.id  # Ensure user owns these orders
+        ).prefetch_related("user")
+        
+        if not orders:
+            print(f"❌ No orders found with parent_order_id: {request.parent_order_id}")
+            raise HTTPException(
+                status_code=404,
+                detail="Orders not found or you don't have permission to access them"
+            )
+        
+        print(f"📦 Found {len(orders)} order(s) for this payment")
+        
+        # Step 2: Verify payment status with Cashfree API
+        print(f"🔍 Verifying payment with Cashfree API...")
+        verification_result = await verify_payment_status(request.parent_order_id)
+        
+        if not verification_result.get("success"):
+            print(f"❌ Verification failed: {verification_result.get('error')}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment verification failed: {verification_result.get('error')}"
+            )
+        
+        cashfree_status = verification_result.get("order_status")
+        print(f"✅ Cashfree confirms order status: {cashfree_status}")
+        
+        # Step 3: Update orders based on verified status
+        if cashfree_status == "PAID" and request.payment_status == "SUCCESS":
+            print(f"💰 Payment confirmed as PAID! Updating orders...")
+            
+            updated_orders = []
+            for order in orders:
+                old_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
+                
+                # Update order
+                order.payment_status = "paid"
+                order.status = OrderStatus.PROCESSING
+                order.transaction_id = request.transaction_id or verification_result.get("cf_order_id")
+                
+                # Add payment confirmation to metadata
+                if order.metadata is None:
+                    order.metadata = {}
+                
+                order.metadata["payment_confirmation"] = {
+                    "confirmed_at": datetime.utcnow().isoformat(),
+                    "confirmed_by": "flutter_app",
+                    "user_id": str(current_user.id),
+                    "cashfree_status": cashfree_status,
+                    "transaction_id": order.transaction_id
+                }
+                
+                await order.save()
+                
+                print(f"✅ Order {order.id}: {old_status} → PROCESSING, unpaid → paid")
+                
+                # Send notifications
+                payload = {
+                    "type": "order_placed",
+                    "order_id": order.id,
+                    "parent_order_id": request.parent_order_id,
+                    "customer_name": current_user.name,
+                    "payment_method": "Cashfree",
+                    "payment_status": "paid",
+                    "order_status": "PROCESSING",
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                
+                try:
+                    # Publish to Redis
+                    await redis.publish("order_updates", json.dumps(payload))
+                    
+                    # Notify vendor
+                    vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                    if vendor:
+                        await send_notification(
+                            vendor.user_id,
+                            "New Paid Order",
+                            f"Order #{order.id} received and paid"
+                        )
+                        print(f"📧 Vendor notified for order {order.id}")
+                        
+                except Exception as e:
+                    print(f"⚠️ Notification error: {e}")
+                
+                updated_orders.append({
+                    "order_id": order.id,
+                    "status": "PROCESSING",
+                    "payment_status": "paid",
+                    "total": float(order.total)
+                })
+            
+            return {
+                "success": True,
+                "message": "Payment confirmed successfully! Your orders are now being processed.",
+                "parent_order_id": request.parent_order_id,
+                "orders_count": len(updated_orders),
+                "orders": updated_orders,
+                "verified_status": cashfree_status
+            }
+        
+        elif cashfree_status == "ACTIVE":
+            # Payment still pending
+            print(f"⏳ Payment still pending in Cashfree")
+            return {
+                "success": False,
+                "message": "Payment is still pending. Please wait for confirmation.",
+                "parent_order_id": request.parent_order_id,
+                "verified_status": cashfree_status,
+                "orders_count": len(orders)
+            }
+        
+        elif cashfree_status == "EXPIRED":
+            # Payment expired
+            print(f"⏰ Payment expired")
+            for order in orders:
+                order.payment_status = "expired"
+                await order.save()
+            
+            return {
+                "success": False,
+                "message": "Payment has expired. Please place a new order.",
+                "parent_order_id": request.parent_order_id,
+                "verified_status": cashfree_status
+            }
+        
+        else:
+            # Mismatch between app status and Cashfree status
+            print(f"⚠️ Status mismatch - App: {request.payment_status}, Cashfree: {cashfree_status}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment status mismatch. Cashfree status: {cashfree_status}"
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"⚠️ Error confirming payment: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error confirming payment: {str(e)}"
+        )
+
+
+@router.get("/status/{parent_order_id}")
+async def get_payment_status(
+    parent_order_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Flutter app can poll this endpoint to check payment status.
+    
+    Usage from Flutter:
+    GET /api/payment/status/ORDER_77A8641A732B
+    """
+    
+    print(f"🔍 Payment status check for: {parent_order_id}")
+    
+    # Find orders
+    orders = await Order.filter(
+        parent_order_id=parent_order_id,
+        user_id=current_user.id
+    ).all()
+    
+    if not orders:
+        raise HTTPException(
+            status_code=404,
+            detail="Orders not found"
+        )
+    
+    # Verify with Cashfree
+    verification_result = await verify_payment_status(parent_order_id)
+    
+    if not verification_result.get("success"):
+        return {
+            "success": False,
+            "message": "Unable to verify payment status",
+            "parent_order_id": parent_order_id
+        }
+    
+    cashfree_status = verification_result.get("order_status")
+    
+    # Get current order statuses
+    orders_info = [
+        {
+            "order_id": order.id,
+            "status": order.status.value if hasattr(order.status, 'value') else str(order.status),
+            "payment_status": order.payment_status,
+            "total": float(order.total)
+        }
+        for order in orders
+    ]
+    
+    return {
+        "success": True,
+        "parent_order_id": parent_order_id,
+        "cashfree_status": cashfree_status,
+        "orders_count": len(orders),
+        "orders": orders_info,
+        "is_paid": cashfree_status == "PAID",
+        "needs_processing": cashfree_status == "PAID" and orders[0].payment_status != "paid"
+    }
+
+
+@router.post("/retry-confirmation/{parent_order_id}")
+async def retry_payment_confirmation(
+    parent_order_id: str,
+    current_user: User = Depends(get_current_user),
+    redis = Depends(get_redis)
+):
+    """
+    Retry payment confirmation if webhook failed or app didn't confirm.
+    Flutter app can call this if user reports payment success but orders not updated.
+    
+    Usage from Flutter:
+    POST /api/payment/retry-confirmation/ORDER_77A8641A732B
+    """
+    
+    print(f"🔄 Retrying payment confirmation for: {parent_order_id}")
+    
+    # Find orders
+    orders = await Order.filter(
+        parent_order_id=parent_order_id,
+        user_id=current_user.id
+    ).prefetch_related("user")
+    
+    if not orders:
+        raise HTTPException(
+            status_code=404,
+            detail="Orders not found"
+        )
+    
+    # Check if already processed
+    if orders[0].payment_status == "paid":
+        return {
+            "success": True,
+            "message": "Orders are already marked as paid",
+            "parent_order_id": parent_order_id,
+            "orders_count": len(orders)
+        }
+    
+    # Verify with Cashfree
+    verification_result = await verify_payment_status(parent_order_id)
+    
+    if not verification_result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail="Unable to verify payment with Cashfree"
+        )
+    
+    cashfree_status = verification_result.get("order_status")
+    
+    if cashfree_status == "PAID":
+        # Process payment confirmation
+        for order in orders:
+            order.payment_status = "paid"
+            order.status = OrderStatus.PROCESSING
+            
+            if order.metadata is None:
+                order.metadata = {}
+            
+            order.metadata["payment_retry"] = {
+                "retried_at": datetime.utcnow().isoformat(),
+                "user_id": str(current_user.id)
+            }
+            
+            await order.save()
+            
+            # Notify vendor
+            try:
+                vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                if vendor:
+                    await send_notification(
+                        vendor.user_id,
+                        "New Paid Order",
+                        f"Order #{order.id} received and paid"
+                    )
+            except Exception as e:
+                print(f"Notification error: {e}")
+        
+        return {
+            "success": True,
+            "message": "Payment confirmed successfully!",
+            "parent_order_id": parent_order_id,
+            "orders_count": len(orders),
+            "verified_status": cashfree_status
+        }
+    else:
+        return {
+            "success": False,
+            "message": f"Payment not confirmed. Status: {cashfree_status}",
+            "parent_order_id": parent_order_id,
+            "verified_status": cashfree_status
+        }
+
 
 @router.get("/test/pay-last")
 @router.post("/test/pay-last")
