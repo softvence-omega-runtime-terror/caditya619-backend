@@ -295,7 +295,7 @@ async def confirm_payment_from_app(
         print(f"✅ Cashfree confirms order status: {cashfree_status}")
         
         # Step 3: Update orders based on verified status
-        if cashfree_status == "PAID" and request.payment_status == "SUCCESS":
+        if cashfree_status == "ACTIVE" and request.payment_status == "PAID":
             print(f"💰 Payment confirmed as PAID! Updating orders...")
             
             updated_orders = []
