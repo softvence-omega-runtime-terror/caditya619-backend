@@ -17,7 +17,7 @@ class Category(models.Model):
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["id"]
 
     def __str__(self):
         return self.name
