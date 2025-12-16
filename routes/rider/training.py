@@ -45,7 +45,7 @@ async def create_quiz_questions(request:Request,
                                     explanation : Optional[str] = Form(""),
                                  current_user: User = Depends(get_current_user)
                                 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not current_user.is_superuser:
         raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     
@@ -71,7 +71,7 @@ async def create_quiz_questions(request:Request,
 # ------------------- 1. Start Quiz – Get Questions -------------------
 @router.get("/start")
 async def start_quiz(request:Request, current_user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     questions = await QuizQuestion.all()
@@ -109,7 +109,7 @@ async def submit_quiz(
     answers: Dict[str, str],  # {"1": "A", "3": "C", ...}
     current_user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     rider = await RiderProfile.get(user=current_user)
@@ -182,7 +182,7 @@ async def submit_quiz(
 # ------------------- 3. Get Past Attempts -------------------
 @router.get("/attempts")
 async def get_attempts(request:Request, current_user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail=translate("Not authorized", lang))
     rider = await RiderProfile.get(user=current_user)
@@ -214,7 +214,7 @@ async def upload_video(
     thumbnail: UploadFile = File(None),
     user = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -243,7 +243,7 @@ async def upload_pdf(
     file: UploadFile = File(...),
     user = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -263,7 +263,7 @@ async def upload_pdf(
 
 @router.get("/videos")
 async def get_videos(request:Request, current_user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -281,7 +281,7 @@ async def get_videos(request:Request, current_user: User = Depends(get_current_u
 
 @router.get("/pdfs")
 async def get_pdfs(request:Request, current_user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not current_user.is_rider:
         raise HTTPException(status_code=403, detail="Not authorized")
     
