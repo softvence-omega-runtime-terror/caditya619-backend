@@ -82,7 +82,7 @@ class RiderListResponse(BaseModel):
 
 @router.get("/rider-profile/me/")
 async def rider_profile_me(request: Request, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.filter(user=user).first()
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -102,7 +102,7 @@ async def update_rider_documents_me(
      vi: UploadFile = File(...), 
      user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -151,7 +151,7 @@ async def update_rider_documents_me(
 
 @router.get("/is-document-uploaded/")
 async def is_document_update(request: Request, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -164,7 +164,7 @@ async def update_is_document_uploaded(
     is_document_uploaded: bool,
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -176,7 +176,7 @@ async def update_is_document_uploaded(
 
 @router.get("/is-verified")
 async def is_verified(request: Request, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -196,7 +196,7 @@ async def list_riders(
     limit: int = Query(30, ge=1, le=100),
     current_user: User = Depends(get_current_user)
 ):
-    lng = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lng = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not current_user.is_superuser:
         raise HTTPException(403, translate("Superuser access required", lng))
 
@@ -226,7 +226,7 @@ async def update_rider_profile_me(
     profile_data: RiderProfileUpdateModel,
     user: User = Depends(get_current_user)
 ):
-    lng = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lng = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lng))
@@ -258,7 +258,7 @@ async def get_profile_completion(request: Request, current_user: User = Depends(
     Returns profile completion percentage and list of missing fields
     Only counts the 10 fields specified in requirements
     """
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider = await RiderProfile.get_or_none(user=current_user)
     if not rider:
         raise HTTPException(404, translate("Rider profile not found", lang))
@@ -307,7 +307,7 @@ async def get_profile_completion(request: Request, current_user: User = Depends(
 
 @router.get("/list/vehicles/", response_model=List[VehicleOut])
 async def list_vehicles_me(request: Request, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -322,7 +322,7 @@ async def list_vehicles_me(request: Request, user: User = Depends(get_current_us
 
 @router.get("/vehicles/id/{vehicle_id}/", response_model=VehicleOut)
 async def list_vehicles_me(request: Request, vehicle_id: int, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -342,7 +342,7 @@ async def add_vehicle_me(
     vehicle_data: VehicleCreate,
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -369,7 +369,7 @@ async def update_vehicle_me(
     vehicle_data: VehicleCreate,
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -391,7 +391,7 @@ async def remove_vehicle_me(
     vehicle_id: int,
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -416,7 +416,7 @@ async def update_rider_location_me(
     longitude: float = Form(...),
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -441,7 +441,7 @@ async def update_rider_location_me(
 
 @router.get("/rider-location/me/", response_model=dict)
 async def get_rider_location_me(request: Request, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -466,7 +466,7 @@ async def set_availability_status(
     end_at: Optional[time] = Form(None),
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -483,7 +483,7 @@ async def set_availability_status(
 
 @router.get("/rider-availability/me/", response_model=AvailabilityStatusOut)
 async def get_availability_status(request: Request, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -523,7 +523,7 @@ async def submit_help_and_support_request(
     attachments: Optional[UploadFile] = File(None),
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -550,7 +550,7 @@ async def list_help_and_support_requests_me(
     request: Request,
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
@@ -573,7 +573,7 @@ async def go_online_offline(
     is_online: bool = Form(...),
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=user)
     # today in system local date
     today = datetime.now(LOCAL_TZ).date()
@@ -667,7 +667,7 @@ async def is_online_status(
     request: Request,
     user: User = Depends(get_current_user)
 ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=user)
     if not rider:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
