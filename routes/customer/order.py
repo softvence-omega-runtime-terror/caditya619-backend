@@ -16,8 +16,17 @@ from app.redis import get_redis
 import json
 from applications.user.vendor import VendorProfile
 from app.utils.websocket_manager import manager
+from routes.payment.payment_helper import create_payment_session_for_orders
+
+# Cashfree Configuration
+CASHFREE_CLIENT_PAYMENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
+CASHFREE_CLIENT_PAYMENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
+CASHFREE_ENV = settings.CASHFREE_ENV
+CASHFREE_BASE = "https://sandbox.cashfree.com/pg" if CASHFREE_ENV == "SANDBOX" else "https://api.cashfree.com/pg"
+CASHFREE_API_VERSION = "2023-08-01"
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
 
 # ============================================================
 # ROUTER - applications.customer.routes.py
@@ -32,8 +41,8 @@ async def place_order(
     redis = Depends(get_redis)
 ):
     """
-    STEP 1: Create orders (one per vendor) with PENDING status, grouped by parent_order_id
-    STEP 2: Return payment session_id if payment method is Cashfree (for Flutter SDK)
+    STEP 1: Create orders (one per vendor) with PENDING status
+    STEP 2: Return payment session_id and cf_order_id if payment method is Cashfree
     STEP 3: Orders progress only after successful payment
     """
     
@@ -52,14 +61,14 @@ async def place_order(
         # Calculate total amount across all orders
         total_amount = sum(float(order.total) for order in orders)
         
-        # Get parent_order_id (same for all orders in this group)
-        parent_order_id = orders[0].parent_order_id if orders else None
-        
+        parent_order_id = None
+
+
         response_data = {
             "success": True,
             "message": f"{len(orders)} order(s) created successfully",
             "data": {
-                "parent_order_id": parent_order_id,  # NEW
+                
                 "orders": [
                     {
                         "order_id": order.id,
@@ -79,14 +88,17 @@ async def place_order(
         if requires_payment:
             # Generate payment session for Flutter SDK
             try:
-                payment_response = await create_payment_session_for_orders(orders, parent_order_id)
+                payment_response = await create_payment_session_for_orders(orders)
                 response_data["data"]["payment_session_id"] = payment_response["payment_session_id"]
                 response_data["data"]["cf_order_id"] = payment_response["cf_order_id"]
+                response_data["data"]["parent_order_id"] = payment_response["order_id"]
+                
                 
                 # Update all orders with payment session info
                 for order in orders:
                     order.payment_session_id = payment_response["payment_session_id"]
                     order.cf_order_id = payment_response["cf_order_id"]
+                    order.parent_order_id = payment_response["order_id"]
                     await order.save()
                 
                 response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
@@ -127,6 +139,12 @@ async def place_order(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
+
+
+# ============================================================
+# 2. GET ALL ORDERS (with filters and pagination)
+# ============================================================
+
 @router.get("/")  # ✅ NO response_model here!
 async def get_all_orders(
     current_user: User = Depends(get_current_user),
@@ -271,6 +289,9 @@ async def get_all_orders(
             "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
             "payment_status": order.payment_status,
             "payment_link": payment_link,
+            "parent_order_id": order.parent_order_id,
+            "cf_order_id": order.cf_order_id,
+            "payment_session_id": order.payment_session_id,
             "rider_info": rider_info,
             "vendor_info": vendor_info
         })
@@ -395,8 +416,9 @@ async def get_order_details(
         "tracking_number": order.tracking_number,
         "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
         "payment_status": order.payment_status,
-        "payment_link": payment_link,
-        # "vendors": vendors_locations,
+        "parent_order_id": order.parent_order_id,
+        "cf_order_id": order.cf_order_id,
+        "payment_session_id": order.payment_session_id,
         "rider_info": rider_info,
         "vendor_info": vendor_info,
         "can_cancel": order_status.lower() == "pending"
@@ -581,50 +603,6 @@ async def cancel_order(
     }    
 
 
-# ============================================================
-# PAYMENT HELPER - Internal function
-# ============================================================
-
-# Payment helper function - Update your existing create_payment_link_for_orders to:
-
-async def create_payment_session_for_orders(orders: List[Order], parent_order_id: str):
-    """
-    Create Cashfree payment session for Flutter SDK integration.
-    Uses parent_order_id to group multiple vendor orders.
-    
-    Returns payment_session_id which Flutter SDK will use.
-    """
-    total_amount = sum(float(order.total) for order in orders)
-    
-    # Use parent_order_id as the Cashfree order reference
-    cf_order_id = parent_order_id
-    
-    # Cashfree API call to create payment session
-    # Adjust based on your Cashfree SDK setup
-    payload = {
-        "order_id": cf_order_id,
-        "order_amount": total_amount,
-        "order_currency": "INR",
-        "customer_details": {
-            "customer_id": str(orders[0].user_id),
-            "customer_phone": orders[0].metadata.get("shipping_address", {}).get("phone_number", ""),
-            "customer_name": orders[0].metadata.get("shipping_address", {}).get("full_name", "")
-        },
-        "order_meta": {
-            "parent_order_id": parent_order_id,
-            "order_ids": [order.id for order in orders]
-        }
-    }
-    
-    # Make API call to Cashfree
-    # response = await cashfree_client.create_order(payload)
-    
-    # Return structure expected by the route
-    return {
-        "payment_session_id": "session_id_from_cashfree",  # Get from Cashfree response
-        "cf_order_id": cf_order_id
-    }
-
 
 #*****************************************
 #    Rider Ratings
@@ -662,7 +640,6 @@ async def create_rider_rating(
             "created_at": rider_review.created_at.isoformat(),
         }
     }
-
 
 
 

@@ -1,19 +1,25 @@
 # ============================================================
 # MULTI-ORDER PAYMENT LINK - routes/payment/routes.py
 # ============================================================
-
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, validator
-from typing import List, Optional
+import base64
+from decimal import Decimal
+import hashlib
+import hmac
+from fastapi import APIRouter, Header, Query, Request, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional
+import json
+from datetime import datetime
+from app.token import get_current_user
+from applications.user.models import User
+from applications.user.vendor import VendorProfile
+from app.redis import get_redis
+from routes.payment.payment_verification import verify_payment_status
+from routes.rider.notifications import send_notification
 import httpx
 import uuid
-from datetime import datetime
-from decimal import Decimal
-
-from app.redis import get_redis
 from applications.customer.models import Order, OrderStatus
 from app.config import settings
-from routes.rider.notifications import send_notification
 
 CASHFREE_CLIENT_PAYMENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
 CASHFREE_CLIENT_PAYMENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
@@ -25,238 +31,442 @@ CASHFREE_API_VERSION = "2023-08-01"
 # SCHEMAS
 # ============================================================
 
-class PaymentInitiateRequest(BaseModel):
-    order_ids: List[str]  # Array of order IDs
-    
-    @validator('order_ids')
-    def validate_order_ids(cls, v):
-        if not v or len(v) == 0:
-            raise ValueError("At least one order_id is required")
-        if len(v) > 10:  # Limit to prevent abuse
-            raise ValueError("Maximum 10 orders can be paid together")
-        return v
+router = APIRouter(prefix="/payment", tags=["payment"])
 
-class OrderSummary(BaseModel):
+
+class PaymentWebhookData(BaseModel):
+    """Cashfree Payment Webhook Data"""
     order_id: str
-    total: float
-    vendor_name: str
-    items_count: int
+    cf_order_id: Optional[str] = None
+    order_amount: float
+    order_status: str  # SUCCESS, FAILED, CANCELLED, etc.
+    payment_status: str
+    payment_time: Optional[str] = None
+    payment_group: Optional[str] = None
+    payment_method: Optional[str] = None
 
-class PaymentLinkResponse(BaseModel):
-    success: bool
-    orders: List[OrderSummary]
-    cf_payment_id: str
-    payment_link: str
-    message: str
-    total_amount: float
-    orders_count: int
 
-router = APIRouter(prefix='/payment', tags=['Payment'])
-
-# ============================================================
-# CREATE PAYMENT LINK FOR MULTIPLE ORDERS
-# ============================================================
-
-@router.post("/initiate", response_model=PaymentLinkResponse)
-async def create_payment_link(req: PaymentInitiateRequest):
+# ----------------------------------
+# CALLBACK (Return URL After Payment)
+# ----------------------------------
+@router.get("/callback")
+async def payment_callback(
+    order_id: str = Query(...),
+    order_status: Optional[str] = Query(None),
+    redis = Depends(get_redis)
+):
     """
-    Create a single payment link for multiple orders.
-    All orders must belong to the same customer and use Cashfree payment method.
+    Called when user returns after payment.
+    We verify via Cashfree API & update DB.
+    """
+    try:
+        print(f"[CALLBACK] Received for: {order_id}")
+
+        # Verify with Cashfree API
+        verification = await verify_payment_status(order_id)
+        if not verification.get("success"):
+            return {"success": False, "message": "Verification failed"}
+
+        cf_status = verification.get("order_status")
+        print(f"[CALLBACK] Cashfree status: {cf_status}")
+
+        # Fetch orders with this parent_order_id
+        orders = await Order.filter(parent_order_id=order_id).prefetch_related("user")
+        if not orders:
+            return {"success": False, "message": "Orders not found"}
+
+        # Update orders if paid
+        if cf_status == "PAID":
+            for order in orders:
+                order.payment_status = "paid"
+                order.status = OrderStatus.PROCESSING
+                await order.save()
+
+                # Send customer + vendor notifications
+                payload = {
+                    "type": "order_placed",
+                    "order_id": order.id,
+                    "parent_order_id": order_id,
+                    "customer_name": order.user.name if order.user else "Customer",
+                    "payment_method": "Cashfree",
+                    "payment_status": "paid",
+                    "order_status": "PROCESSING",
+                    "created_at": datetime.utcnow().isoformat()
+                }
+
+                try:
+                    await redis.publish("order_updates", json.dumps(payload))
+                    vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                    if vendor:
+                        await send_notification(
+                            vendor.user_id,
+                            "New Paid Order",
+                            f"Order #{order.id} paid successfully"
+                        )
+                except Exception as e:
+                    print(f"[CALLBACK] Notification error: {e}")
+
+            return {"success": True, "message": "Orders marked paid via callback"}
+
+        # Pending / expired / unknown
+        return {
+            "success": False,
+            "order_id": order_id,
+            "order_status": cf_status
+        }
+
+    except Exception as e:
+        print(f"[CALLBACK] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ----------------------------------
+# WEBHOOK (Server-to-Server)
+# ----------------------------------
+@router.post("/webhook")
+async def payment_webhook(
+    request: Request,
+    x_webhook_signature: str = Header(None),
+    x_webhook_timestamp: str = Header(None),
+    redis = Depends(get_redis)
+):
+    """
+    Cashfree webhook — must verify signature before processing.
+    """
+    try:
+        raw_body = await request.body()
+
+        # Signature verification (required for production) :contentReference[oaicite:1]{index=1}
+        secret = settings.CASHFREE_CLIENT_PAYMENT_SECRET.encode()
+        data_to_sign = x_webhook_timestamp.encode() + raw_body
+        expected_sig = base64.b64encode(hmac.new(secret, data_to_sign, hashlib.sha256).digest()).decode()
+
+        if expected_sig != x_webhook_signature:
+            print("[WEBHOOK] ❌ Signature mismatch!")
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+        # Parse JSON
+        body = json.loads(raw_body)
+        data = body.get("data", {})
+        order_data = data.get("order", {})
+        payment_data = data.get("payment", {})
+
+        parent_order_id = order_data.get("order_id")
+        if not parent_order_id:
+            return {"status": "error", "message": "Missing order_id"}
+
+        # Verify payment with Cashfree API
+        verification = await verify_payment_status(parent_order_id)
+        if not verification.get("success"):
+            return {"status": "error", "message": "Verification failed"}
+
+        cf_status = verification.get("order_status")
+        print(f"[WEBHOOK] Verified status: {cf_status}")
+
+        if cf_status == "PAID":
+            orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
+            for order in orders:
+                order.payment_status = "paid"
+                order.status = OrderStatus.PROCESSING
+                order.transaction_id = payment_data.get("cf_payment_id")
+                await order.save()
+
+                # Notifications
+                payload = {
+                    "type": "order_placed",
+                    "order_id": order.id,
+                    "parent_order_id": parent_order_id,
+                    "customer_name": order.user.name if order.user else "Customer",
+                    "payment_method": "Cashfree",
+                    "payment_status": "paid",
+                    "order_status": "PROCESSING",
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                try:
+                    await redis.publish("order_updates", json.dumps(payload))
+                    vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                    if vendor:
+                        await send_notification(
+                            vendor.user_id,
+                            "New Paid Order",
+                            f"Order #{order.id} paid"
+                        )
+                except Exception as e:
+                    print(f"[WEBHOOK] Notification error: {e}")
+
+            return {"status": "success", "message": "Orders updated (webhook)"}
+
+        return {"status": "success", "message": f"No action for status {cf_status}"}
+
+    except Exception as e:
+        print(f"[WEBHOOK] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# ----------------------------------
+# MANUAL VERIFY ENDPOINT
+# ----------------------------------
+@router.get("/verify/{parent_order_id}")
+async def verify_payment_endpoint(parent_order_id: str):
+    """
+    Manual verify (for app or debugging)
+    """
+    try:
+        result = await verify_payment_status(parent_order_id)
+        if not result.get("success"):
+            raise HTTPException(status_code=404, detail="Verification failed")
+
+        return {
+            "success": True,
+            "parent_order_id": parent_order_id,
+            "order_status": result.get("order_status"),
+            "cf_order_id": result.get("cf_order_id"),
+            "order_amount": result.get("order_amount"),
+            "payment_session_id": result.get("payment_session_id")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+
+class PaymentConfirmRequest(BaseModel):
+    """Request model for payment confirmation from Flutter app"""
+    parent_order_id: str
+    
+
+
+@router.post("/confirm")
+async def confirm_payment_from_app(
+    request: PaymentConfirmRequest,
+    current_user: User = Depends(get_current_user),
+    redis = Depends(get_redis)
+):
+    """
+    Confirm payment from Flutter app after redirect.
+    """
+    parent_order_id = request.parent_order_id
+
+    try:
+        # Fetch orders for this parent_order_id
+        orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
+
+        if not orders:
+            raise HTTPException(status_code=404, detail="Orders not found")
+
+        # Mark each order as paid and processing
+        for order in orders:
+            order.payment_status = "paid"
+            order.status = OrderStatus.PROCESSING
+            await order.save()
+
+            # Publish update + notify vendor
+            payload = {
+                "type": "order_placed",
+                "order_id": order.id,
+                "parent_order_id": parent_order_id,
+                "customer_name": order.user.name if order.user else "Customer",
+                "payment_method": "Cashfree",
+                "payment_status": "paid",
+                "order_status": "PROCESSING",
+                "created_at": datetime.utcnow().isoformat()
+            }
+
+            try:
+                await redis.publish("order_updates", json.dumps(payload))
+                vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                if vendor:
+                    await send_notification(
+                        vendor.user_id,
+                        "New Paid Order",
+                        f"Order #{order.id} paid successfully"
+                    )
+            except Exception as e:
+                print(f"[CONFIRM] Notification error: {e}")
+
+        return {
+            "success": True,
+            "message": "Orders marked paid",
+            "parent_order_id": parent_order_id,
+            "orders_count": len(orders)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[CONFIRM] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/status/{parent_order_id}")
+async def get_payment_status(
+    parent_order_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Flutter app can poll this endpoint to check payment status.
+    
+    Usage from Flutter:
+    GET /api/payment/status/ORDER_77A8641A732B
     """
     
-    # Step 1: Fetch all orders
-    orders = await Order.filter(id__in=req.order_ids).prefetch_related(
-        'user',
-        'items',
-        'vendor'
-    )
+    print(f"🔍 Payment status check for: {parent_order_id}")
     
-    if len(orders) != len(req.order_ids):
+    # Find orders
+    orders = await Order.filter(
+        parent_order_id=parent_order_id,
+        user_id=current_user.id
+    ).all()
+    
+    if not orders:
         raise HTTPException(
             status_code=404,
-            detail="Some orders not found"
+            detail="Orders not found"
         )
     
-    # Step 2: Validate all orders
-    customer_id = None
-    customer_name = None
-    customer_email = None
-    customer_phone = None
-    total_amount = Decimal("0")
-    order_summaries = []
+    # Verify with Cashfree
+    verification_result = await verify_payment_status(parent_order_id)
     
-    for order in orders:
-        # Check customer consistency
-        if customer_id is None:
-            customer_id = order.user_id
-            customer_name = order.user.name or "Customer"
-            customer_email = order.user.email or f"customer_{order.user.id}@example.com"
-            customer_phone = order.user.phone or "9999999999"
-        elif order.user_id != customer_id:
-            raise HTTPException(
-                status_code=400,
-                detail="All orders must belong to the same customer"
-            )
-        
-        # Check payment method
-        payment_method = order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
-        if payment_method.lower() != "cashfree":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Order {order.id} payment method is {payment_method}, not Cashfree"
-            )
-        
-        # Check order status
-        order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        if order_status.lower() != "pending":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Order {order.id} is already {order_status}. Cannot create payment link."
-            )
-        
-        # Check payment status
-        if order.payment_status != "unpaid":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Order {order.id} is already paid or payment in progress"
-            )
-        
-        # Get vendor name
-        vendor_name = "Unknown Vendor"
-        if order.vendor:
-            vendor_name = order.vendor.name
-        elif order.metadata and "vendor_info" in order.metadata:
-            vendor_name = order.metadata["vendor_info"].get("vendor_name", "Unknown Vendor")
-        
-        # Calculate total
-        total_amount += order.total
-        
-        # Build order summary
-        order_summaries.append(OrderSummary(
-            order_id=order.id,
-            total=float(order.total),
-            vendor_name=vendor_name,
-            items_count=len(order.items)
-        ))
-    
-    # Step 3: Create combined payment link
-    headers = {
-        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID.strip(),
-        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET.strip(),
-        "x-api-version": CASHFREE_API_VERSION,
-        "Content-Type": "application/json"
-    }
-    
-    # Generate unique payment ID for multiple orders
-    cf_payment_id = f"PAY_{uuid.uuid4().hex[:12].upper()}"
-    
-    # Build payment purpose description
-    order_list = ", ".join([o.id for o in orders])
-    payment_purpose = f"Payment for {len(orders)} orders: {order_list[:100]}"  # Truncate if too long
-    
-    payload = {
-        "link_id": cf_payment_id,
-        "link_amount": float(total_amount),
-        "link_currency": "INR",
-        "link_purpose": payment_purpose,
-        "customer_details": {
-            "customer_phone": customer_phone,
-            "customer_email": customer_email,
-            "customer_name": customer_name
-        },
-        "link_notify": {
-            "send_sms": True,
-            "send_email": True
-        },
-        "link_meta": {
-            "order_ids": req.order_ids,  # Store all order IDs
-            "user_id": str(customer_id),
-            "orders_count": len(orders),
-            "return_url": f"{settings.BACKEND_URL}/payment/payment/test/pay-last"
+    if not verification_result.get("success"):
+        return {
+            "success": False,
+            "message": "Unable to verify payment status",
+            "parent_order_id": parent_order_id
         }
-    }
     
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            print(f"[PAYMENT] Creating link for {len(orders)} orders, total: ₹{total_amount}")
-            
-            resp = await client.post(
-                f"{CASHFREE_BASE}/links",
-                json=payload,
-                headers=headers
-            )
-        
-        data = resp.json()
-        
-        if resp.status_code not in [200, 201]:
-            error_msg = data.get("message", "Payment link creation failed")
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail=f"Cashfree API error: {error_msg}"
-            )
-        
-        payment_link = data.get("link_url")
-        
-        if not payment_link:
-            raise HTTPException(
-                status_code=500,
-                detail="Payment link not received from Cashfree"
-            )
-        
-        # Step 4: Update all orders with payment link info
-        payment_info = {
-            "cf_payment_id": cf_payment_id,
-            "payment_link": payment_link,
-            "link_status": data.get("link_status"),
-            "created_at": data.get("link_created_at"),
-            "is_combined_payment": True,
-            "combined_order_ids": req.order_ids,
-            "combined_total": float(total_amount)
+    cashfree_status = verification_result.get("order_status")
+    
+    # Get current order statuses
+    orders_info = [
+        {
+            "order_id": order.id,
+            "status": order.status.value if hasattr(order.status, 'value') else str(order.status),
+            "payment_status": order.payment_status,
+            "total": float(order.total)
         }
-        
+        for order in orders
+    ]
+    
+    return {
+        "success": True,
+        "parent_order_id": parent_order_id,
+        "cashfree_status": cashfree_status,
+        "orders_count": len(orders),
+        "orders": orders_info,
+        "is_paid": cashfree_status == "PAID",
+        "needs_processing": cashfree_status == "PAID" and orders[0].payment_status != "paid"
+    }
+
+
+@router.post("/retry-confirmation/{parent_order_id}")
+async def retry_payment_confirmation(
+    parent_order_id: str,
+    current_user: User = Depends(get_current_user),
+    redis = Depends(get_redis)
+):
+    """
+    Retry payment confirmation if webhook failed or app didn't confirm.
+    Flutter app can call this if user reports payment success but orders not updated.
+    
+    Usage from Flutter:
+    POST /api/payment/retry-confirmation/ORDER_77A8641A732B
+    """
+    
+    print(f"🔄 Retrying payment confirmation for: {parent_order_id}")
+    
+    # Find orders
+    orders = await Order.filter(
+        parent_order_id=parent_order_id,
+        user_id=current_user.id
+    ).prefetch_related("user")
+    
+    if not orders:
+        raise HTTPException(
+            status_code=404,
+            detail="Orders not found"
+        )
+    
+    # Check if already processed
+    if orders[0].payment_status == "paid":
+        return {
+            "success": True,
+            "message": "Orders are already marked as paid",
+            "parent_order_id": parent_order_id,
+            "orders_count": len(orders)
+        }
+    
+    # Verify with Cashfree
+    verification_result = await verify_payment_status(parent_order_id)
+    
+    if not verification_result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail="Unable to verify payment with Cashfree"
+        )
+    
+    cashfree_status = verification_result.get("order_status")
+    
+    if cashfree_status == "PAID":
+        # Process payment confirmation
         for order in orders:
+            order.payment_status = "paid"
+            order.status = OrderStatus.PROCESSING
+            
             if order.metadata is None:
                 order.metadata = {}
             
-            order.metadata["cashfree"] = payment_info.copy()
-            order.cf_order_id = cf_payment_id  # Store for easy lookup
+            order.metadata["payment_retry"] = {
+                "retried_at": datetime.utcnow().isoformat(),
+                "user_id": str(current_user.id)
+            }
             
-            await order.save(update_fields=["metadata", "cf_order_id"])
+            await order.save()
+            
+            # Notify vendor
+            try:
+                vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                if vendor:
+                    await send_notification(
+                        vendor.user_id,
+                        "New Paid Order",
+                        f"Order #{order.id} received and paid"
+                    )
+            except Exception as e:
+                print(f"Notification error: {e}")
         
-        print(f"[PAYMENT] ✅ Payment link created: {payment_link}")
-        
-        return PaymentLinkResponse(
-            success=True,
-            orders=order_summaries,
-            cf_payment_id=cf_payment_id,
-            payment_link=payment_link,
-            message=f"Payment link created for {len(orders)} orders",
-            total_amount=float(total_amount),
-            orders_count=len(orders)
-        )
-        
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Failed to connect to Cashfree: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error creating payment link: {str(e)}"
-        )
-
-
+        return {
+            "success": True,
+            "message": "Payment confirmed successfully!",
+            "parent_order_id": parent_order_id,
+            "orders_count": len(orders),
+            "verified_status": cashfree_status
+        }
+    else:
+        return {
+            "success": False,
+            "message": f"Payment not confirmed. Status: {cashfree_status}",
+            "parent_order_id": parent_order_id,
+            "verified_status": cashfree_status
+        }
 
 
 @router.get("/test/pay-last")
 @router.post("/test/pay-last")
 async def pay_last_order_no_auth():
-    """Test endpoint to mark the most recent unpaid order(s) as paid"""
+    """
+    Test endpoint to mark the most recent unpaid order(s) as paid.
+    This simulates successful payment for testing purposes.
     
+    ⚠️ REMOVE THIS ENDPOINT IN PRODUCTION!
+    """
+    
+    print("=" * 60)
+    print("🧪 TEST PAYMENT ENDPOINT CALLED")
+    print("=" * 60)
+    
+    # Find the most recent unpaid order
     order = await Order.filter(
         payment_status="unpaid"
-    ).order_by('-created_at').first().prefetch_related('user', 'items__item__vendor')
+    ).order_by('-created_at').first().prefetch_related('user')
     
     if not order:
         return {
@@ -264,26 +474,27 @@ async def pay_last_order_no_auth():
             "message": "No unpaid orders found in the system"
         }
     
-    # Check if this order is part of a combined payment
+    print(f"📦 Found unpaid order: {order.id}")
+    print(f"   Parent Order ID: {order.parent_order_id}")
+    print(f"   Status: {order.status}")
+    print(f"   Payment Status: {order.payment_status}")
+    
+    # Check if this order has a parent_order_id (combined payment)
     orders_to_process = [order]
     is_combined = False
-    cf_payment_id = None
     
-    if order.metadata and "cashfree" in order.metadata:
-        cashfree_data = order.metadata["cashfree"]
+    if order.parent_order_id:
+        is_combined = True
+        print(f"🔗 This is a combined payment with parent_order_id: {order.parent_order_id}")
         
-        # Check if this is a combined payment
-        if cashfree_data.get("is_combined_payment") and cashfree_data.get("combined_order_ids"):
-            is_combined = True
-            cf_payment_id = cashfree_data.get("cf_payment_id")
-            combined_order_ids = cashfree_data["combined_order_ids"]
-            
-            # Fetch all orders in the combined payment
-            orders_to_process = await Order.filter(
-                id__in=combined_order_ids
-            ).prefetch_related('user', 'items__item__vendor')
-            
-            print(f"[NO-AUTH LAST] Found combined payment with {len(orders_to_process)} orders")
+        # Fetch all orders with the same parent_order_id
+        orders_to_process = await Order.filter(
+            parent_order_id=order.parent_order_id
+        ).prefetch_related('user')
+        
+        print(f"   Found {len(orders_to_process)} orders in this payment group")
+    else:
+        print(f"📦 Single order payment (no parent_order_id)")
     
     # Process all orders
     processed_orders = []
@@ -291,144 +502,110 @@ async def pay_last_order_no_auth():
     
     for ord in orders_to_process:
         old_status = ord.status.value if hasattr(ord.status, 'value') else str(ord.status)
+        old_payment_status = ord.payment_status
         
+        # Update order status
         ord.status = OrderStatus.PROCESSING
         ord.payment_status = "paid"
+        ord.transaction_id = f"TEST_TXN_{uuid.uuid4().hex[:8].upper()}"
         
+        # Update metadata
         if ord.metadata is None:
             ord.metadata = {}
         
-        if "cashfree" not in ord.metadata:
-            ord.metadata["cashfree"] = {}
-        
-        # Update payment metadata
-        ord.metadata["cashfree"]["payment_status"] = "PAID"
-        ord.metadata["cashfree"]["paid_at"] = datetime.utcnow().isoformat()
-        ord.metadata["cashfree"]["payment_amount"] = float(ord.total)
-        ord.metadata["cashfree"]["test_no_auth_last"] = True
-        
-        # Preserve combined payment info if exists
-        if is_combined and cf_payment_id:
-            ord.metadata["cashfree"]["is_combined_payment"] = True
-            ord.metadata["cashfree"]["cf_payment_id"] = cf_payment_id
+        ord.metadata["test_payment"] = {
+            "paid_at": datetime.utcnow().isoformat(),
+            "payment_amount": float(ord.total),
+            "test_endpoint": True,
+            "note": "⚠️ This is a TEST payment"
+        }
         
         await ord.save()
         
         total_amount += ord.total
         
-        print(f"[NO-AUTH LAST] ✅ Order {ord.id}: {old_status} → PROCESSING")
+        print(f"✅ Order {ord.id} updated:")
+        print(f"   Status: {old_status} → PROCESSING")
+        print(f"   Payment: {old_payment_status} → paid")
         
-        # Send notification to customer — message depends on payment method
+        # Send notification to customer
         try:
-            pm = ord.payment_method.value if hasattr(ord.payment_method, 'value') else str(ord.payment_method)
-            pm = (pm or "").lower()
-            if pm == "cashfree":
-                title = "Payment Successful"
-                body = "Your payment is successful."
-            else:
-                title = "Order Processing"
-                body = "Your order is now processing."
-
-            await send_notification(
-                ord.user.id,
-                title,
-                body
-            )
+            if ord.user:
+                await send_notification(
+                    ord.user.id,
+                    "Payment Successful (TEST)",
+                    f"Order #{ord.id} payment confirmed via test endpoint."
+                )
+                print(f"   📧 Notification sent to user {ord.user.id}")
         except Exception as e:
-            print(f"[NO-AUTH LAST] Notification error for order {ord.id}: {e}")
+            print(f"   ⚠️ Notification error: {e}")
+        
+        # Send notification to vendor
+        try:
+            from applications.vendor.models import VendorProfile
+            vendor = await VendorProfile.get_or_none(id=ord.vendor_id)
+            if vendor:
+                await send_notification(
+                    vendor.user_id,
+                    "New Paid Order (TEST)",
+                    f"Order #{ord.id} received and paid via test endpoint."
+                )
+                print(f"   📧 Notification sent to vendor {vendor.user_id}")
+        except Exception as e:
+            print(f"   ⚠️ Vendor notification error: {e}")
         
         processed_orders.append({
             "order_id": ord.id,
             "old_status": old_status,
+            "new_status": "PROCESSING",
+            "old_payment_status": old_payment_status,
+            "new_payment_status": "paid",
             "total": float(ord.total)
         })
+    
+    print("=" * 60)
+    print(f"✅ TEST PAYMENT COMPLETED: {len(processed_orders)} order(s) marked as paid")
+    print("=" * 60)
     
     # Prepare response
     response = {
         "success": True,
-        "message": f"✅ {'Combined payment' if is_combined else 'Order'} marked as paid!",
+        "message": f"✅ {len(processed_orders)} order(s) marked as paid!",
         "orders_count": len(processed_orders),
         "total_amount": float(total_amount),
-        "processed_orders": processed_orders,
-        "customer_name": order.user.name,
-        "payment_status": "paid",
         "is_combined_payment": is_combined,
-        "note": "⚠️ This is a TEST payment - remove this endpoint in production!"
+        "parent_order_id": order.parent_order_id if is_combined else None,
+        "processed_orders": processed_orders,
+        "customer_name": order.user.name if order.user else "Unknown",
+        "note": "⚠️ This is a TEST payment endpoint - REMOVE IN PRODUCTION!"
     }
-    
-    if is_combined and cf_payment_id:
-        response["cf_payment_id"] = cf_payment_id
     
     return response
 
 
-@router.get("/verify/{cf_payment_id}")
-async def verify_multi_order_payment(cf_payment_id: str):
+@router.get("/test/orders-status")
+async def get_orders_status():
     """
-    Verify payment status for multiple orders.
+    Test endpoint to check status of recent orders.
+    Useful for debugging.
     """
     
-    # Find all orders with this payment ID
-    orders = await Order.filter(cf_order_id=cf_payment_id).prefetch_related('user', 'items')
+    orders = await Order.all().order_by('-created_at').limit(10).prefetch_related('user')
     
-    if not orders:
-        raise HTTPException(status_code=404, detail="No orders found for this payment")
+    orders_data = []
+    for order in orders:
+        orders_data.append({
+            "order_id": order.id,
+            "parent_order_id": order.parent_order_id,
+            "status": order.status.value if hasattr(order.status, 'value') else str(order.status),
+            "payment_status": order.payment_status,
+            "total": float(order.total),
+            "customer": order.user.name if order.user else "Unknown",
+            "created_at": order.created_at.isoformat()
+        })
     
-    # Call Cashfree API to check status
-    headers = {
-        "x-client-id": CASHFREE_CLIENT_PAYMENT_ID,
-        "x-client-secret": CASHFREE_CLIENT_PAYMENT_SECRET,
-        "x-api-version": CASHFREE_API_VERSION,
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                f"{CASHFREE_BASE}/links/{cf_payment_id}",
-                headers=headers
-            )
-            
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=resp.status_code,
-                    detail=f"Failed to verify payment: {resp.text}"
-                )
-            
-            data = resp.json()
-            link_status = data.get("link_status")
-            
-            print(f"[VERIFY] Payment {cf_payment_id} status: {link_status}")
-            
-            # Update orders if paid but not yet updated
-            if link_status == "PAID":
-                for order in orders:
-                    if order.payment_status != "paid":
-                        order.status = OrderStatus.PROCESSING
-                        order.payment_status = "paid"
-                        
-                        if order.metadata:
-                            order.metadata["cashfree"]["payment_status"] = "PAID"
-                            order.metadata["cashfree"]["paid_at"] = data.get("link_paid_at")
-                        
-                        await order.save()
-                        print(f"[VERIFY] ✅ Updated order {order.id}")
-            
-            return {
-                "cf_payment_id": cf_payment_id,
-                "link_status": link_status,
-                "orders_count": len(orders),
-                "orders": [
-                    {
-                        "order_id": o.id,
-                        "payment_status": o.payment_status,
-                        "order_status": o.status.value if hasattr(o.status, 'value') else str(o.status),
-                        "total": float(o.total)
-                    }
-                    for o in orders
-                ],
-                "total_amount": sum(float(o.total) for o in orders),
-                "paid_at": data.get("link_paid_at")
-            }
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error verifying payment: {str(e)}")
+    return {
+        "success": True,
+        "total_orders": len(orders_data),
+        "orders": orders_data
+    }    

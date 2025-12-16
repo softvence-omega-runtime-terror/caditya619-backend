@@ -247,10 +247,9 @@ class OrderService:
         
         if not vendor_items_map:
             raise ValueError("No valid items in order")
-        
         # Generate parent order ID for this group
         parent_order_id = self._generate_parent_order_id()
-        
+
         # Create one order per vendor
         created_orders = []
         
@@ -313,13 +312,14 @@ class OrderService:
                 "vendor_info": vendor_info
             }
             
-            order_status = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
+            order_status_update = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
+
 
             # Create order with parent_order_id
             order_id = self._generate_order_id()
             order = await Order.create(
                 id=order_id,
-                parent_order_id=parent_order_id,  # NEW
+                parent_order_id=parent_order_id,
                 user_id=user_id,
                 vendor_id=vendor_id,
                 shipping_address_id=None,
@@ -330,7 +330,7 @@ class OrderService:
                 total=total,
                 coupon_code=order_data.coupon_code,
                 discount=discount,
-                status=OrderStatus.PENDING,
+                status=order_status_update,   
                 payment_status="unpaid",
                 tracking_number=self._generate_tracking_number(),
                 estimated_delivery=self._calculate_estimated_delivery(
