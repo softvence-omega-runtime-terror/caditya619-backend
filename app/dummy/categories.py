@@ -2,12 +2,12 @@ from tortoise.exceptions import IntegrityError
 from applications.items.models import Category
 
 CATEGORIES_DATA = [
-    {"name": "Food", "type": "food", "avatar": "https://via.placeholder.com/300x300?text=Food"},
-    {"name": "Groceries", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Groceries"},
-    {"name": "Cleaning", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Cleaning"},
-    {"name": "Personal Care", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Personal+Care"},
-    {"name": "Pet Supplies", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Pet+Supplies"},
-    {"name": "Medicine", "type": "medicine", "avatar": "https://via.placeholder.com/300x300?text=Medicine"},
+    {"id": 1, "name": "Food", "type": "food", "avatar": "https://via.placeholder.com/300x300?text=Food"},
+    {"id": 2, "name": "Groceries", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Groceries"},
+    {"id": 3, "name": "Cleaning", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Cleaning"},
+    {"id": 4, "name": "Personal Care", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Personal+Care"},
+    {"id": 5, "name": "Pet Supplies", "type": "groceries", "avatar": "https://via.placeholder.com/300x300?text=Pet+Supplies"},
+    {"id": 6, "name": "Medicine", "type": "medicine", "avatar": "https://via.placeholder.com/300x300?text=Medicine"},
 ]
 
 
