@@ -200,6 +200,12 @@ class OrderService:
         user = current_user
         user_id = user.id
         
+        # Save shipping address and set as default
+        shipping_address_id = await self._save_shipping_address(
+            user_id=user_id,
+            shipping_data=order_data.shipping_address
+        )
+        
         # Group items by vendor
         vendor_items_map: Dict[int, List[Dict]] = {}
         
@@ -247,6 +253,7 @@ class OrderService:
         
         if not vendor_items_map:
             raise ValueError("No valid items in order")
+        
         # Generate parent order ID for this group
         parent_order_id = self._generate_parent_order_id()
 
@@ -315,15 +322,14 @@ class OrderService:
             
             order_status_update = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
 
-
-            # Create order with parent_order_id
+            # Create order
             order_id = self._generate_order_id()
             order = await Order.create(
                 id=order_id,
                 parent_order_id=parent_order_id,
                 user_id=user_id,
                 vendor_id=vendor_id,
-                shipping_address_id=None,
+                shipping_address_id=shipping_address_id,  # Use saved address ID
                 delivery_type=order_data.delivery_option.type,
                 payment_method=order_data.payment_method.type,
                 subtotal=subtotal,
@@ -356,6 +362,42 @@ class OrderService:
             created_orders.append(order)
         
         return created_orders
+
+    async def _save_shipping_address(
+        self, 
+        user_id: int, 
+        shipping_data: ShippingAddressSchema
+    ) -> str:
+        """
+        Save shipping address to CustomerShippingAddress model.
+        Set new address as default and unset other defaults.
+        Returns the created address ID.
+        """
+        import uuid
+        
+        # Set all existing addresses to is_default=False
+        await CustomerShippingAddress.filter(user_id=user_id).update(is_default=False)
+        
+        # Create new address with is_default=True
+        address_id = f"ADDR_{uuid.uuid4().hex[:8].upper()}"
+        
+        new_address = await CustomerShippingAddress.create(
+            id=address_id,
+            user_id=user_id,
+            full_name=shipping_data.full_name,
+            address_line1=shipping_data.address_line1,
+            address_line2=shipping_data.address_line2 or "",
+            city=shipping_data.city or "",
+            state=shipping_data.state or "",
+            country=shipping_data.country or "",
+            postal_code=shipping_data.postal_code or "",
+            phone_number=shipping_data.phone_number,
+            email=getattr(shipping_data, 'email', ''),
+            is_default=True,
+            addressType="HOME"  # Default type, can be modified if needed
+        )
+        
+        return new_address.id
 
     def _generate_tracking_number(self) -> str:
         import random
