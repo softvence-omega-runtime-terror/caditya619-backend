@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Form
 from applications.user.models import User
+from typing import Optional
 from applications.user.customer import CustomerProfile
 from app.token import  create_access_token, create_refresh_token
 from app.utils.otp_manager import verify_otp
@@ -14,7 +15,7 @@ router = APIRouter(prefix='/customer', tags=['Customer Signup'])
 @router.post("/signup/", response_model=dict)
 async def signup(
     phone: str = Form(..., description="Enter a valid phone number +91XXXXXXXXXX"),
-    name: str = Form(...),
+    name: Optional[str] = Form('Unknown User'),
     otp: str = Form(...),
 ):
     phone = await phone_number(phone)
