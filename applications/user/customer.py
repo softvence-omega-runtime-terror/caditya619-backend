@@ -17,7 +17,6 @@ class CustomerProfile(models.Model):
     customer_lat = fields.FloatField(null=True)
     customer_lng = fields.FloatField(null=True)
 
-    # photo = fields.CharField(max_length=20, null=True, blank=True)
     class Meta:
         table = "cus_profile"
 
