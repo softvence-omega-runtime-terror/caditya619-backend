@@ -198,7 +198,7 @@ class ShippingAddressSchema(BaseModel):
     postal_code: Optional[str] = Field(None, alias="postalCode", max_length=20)
     country: Optional[str] = Field(None, max_length=255)
     phone_number: str = Field(..., alias="phoneNumber", max_length=50)
-    is_default: bool = Field(False, alias="isDefault")
+    is_default: bool = Field(True, alias="isDefault")
     
     @validator('phone_number')
     def validate_phone(cls, v):
