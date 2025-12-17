@@ -1359,7 +1359,7 @@ async def create_order_offer(
         # Determine delivery type
         is_urgent = order.delivery_type == DeliveryTypeEnum.URGENT
         is_split = order.delivery_type == DeliveryTypeEnum.SPLIT
-        is_combined = order.is_combined
+        is_combined = order.is_combined or (order.delivery_type == DeliveryTypeEnum.COMBINED)
 
         # Find candidate riders
         candidates = await find_candidate_riders(
@@ -1473,7 +1473,7 @@ async def accept_order(
         # Check delivery type restrictions
         is_urgent = order.delivery_type == DeliveryTypeEnum.URGENT
         is_split = order.delivery_type == DeliveryTypeEnum.SPLIT
-        is_combined = order.is_combined
+        is_combined = order.is_combined or (order.delivery_type == DeliveryTypeEnum.COMBINED)
 
         # URGENT and SPLIT orders: cannot accept another until delivered
         if is_urgent or is_split:
@@ -1634,7 +1634,7 @@ async def accept_order(
         try:
             customer_message = await start_chat("riders", user.id, "customers", order.user_id)
             vendor_message = await start_chat("riders", user.id, "vendors", vendor.user_id)
-            location_subscribe = await subscribe_to_riders_location(rider_profile.user_id, order.user_id, "subscribe")
+            location_subscribe = await subscribe_to_riders_location("subscribe", user.id, order.user_id)
         except Exception as e:
             logger.error(f"Chat initialization error: {str(e)}")
 
@@ -1913,7 +1913,7 @@ async def mark_order_delivered(
 
         # Add money to vendor account
         try:
-            add_money_to_vendor_account(order.id)
+            await add_money_to_vendor_account(order.id)
         except Exception as e:
             logger.warning(f"Error adding money to vendor account: {str(e)}")
 
@@ -1949,8 +1949,7 @@ async def mark_order_delivered(
         try:
             await end_chat("riders", user.id, "customers", order.user_id)
             await end_chat("riders", user.id, "vendors", vendor.user_id)
-            if rider:
-                subscribe_to_riders_location(rider.user_id, order.user_id, "unsubscribe")
+            await subscribe_to_riders_location("unsubscribe", user.id, order.user_id)
         except Exception as e:
             logger.warning(f"Chat cleanup error: {str(e)}")
 
@@ -2035,6 +2034,15 @@ async def cancel_order(
             await send_notification(order.user_id, "Order Cancelled", f"Reason: {reason or 'Not specified'}")
         except Exception as e:
             logger.warning(f"Cancellation notification error: {str(e)}")
+
+        try:
+            rider = await RiderProfile.get_or_none(id=order.rider_id)
+            if rider:
+                await end_chat("riders", rider.user_id, "customers", order.user_id)
+                await end_chat("riders", rider.user_id, "vendors", vendor.user_id)
+                await subscribe_to_riders_location("unsubscribe", rider.user_id, order.user_id)
+        except Exception as e:
+            logger.warning(f"Chat cleanup error: {str(e)}")
 
         return {"status": "cancelled", "order_id": order_id}
 
