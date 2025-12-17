@@ -125,32 +125,30 @@ async def change_prescription_status(
     try:
         if status == "underReview":
             await send_notification(
-                user=prescription.user.id,
+                user=prescription.user_id,
                 title="⏳ Prescription Under Review",
                 body="A pharmacy has opened your prescription for review. You will be notified when medicines are available"
             )
         elif status == "valid":
             await send_notification(
-                user=prescription.user.id,
+                user=prescription.user_id,
                 title="✅ Prescription Valid",
                 body="Your prescription is valid. We are checking medicine availability."
             )
         elif status == "invalid":
             await send_notification(
-                user=prescription.user.id,
+                user=prescription.user_id,
                 title="❌ Prescription Invalid",
                 body="We could not validate your prescription. Please check and upload a valid one or contact support."
             )
         elif status == "medicinesReady":
             await send_notification(
-                user=prescription.user.id,
+                user=prescription.user_id,
                 title="💊 Medicines Ready",
                 body="Medicines are ready for your order. Review them now and place your order."
             )
     except:
-        pass
-
-
+        print('Notification sending failed.')
 
     return {
         "status": "success",
@@ -223,6 +221,11 @@ async def create_vendor_response(
         prescription.status = "medicinesReady"
         await vendor_response.save()
         await prescription.save()
+        await send_notification(
+            user=prescription.user_id,
+            title="💊 Medicines Ready",
+            body="Medicines are ready for your order. Review them now and place your order."
+        )
 
     # Build JSON Response
     await vendor_response.fetch_related("medicines")
