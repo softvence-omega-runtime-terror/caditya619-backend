@@ -35,7 +35,7 @@ async def rider_fees_and_bonus_rate(
     excellence_bonus: float = Form(),
     user: User = Depends(get_current_user),
     ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     fees_obj, created = await RiderFeesAndBonuses.get_or_create(id=1)
@@ -60,7 +60,7 @@ async def rider_fees_and_bonus_rate(
 
 @router.get("/rider-fees-and-bonus-rate", response_model=RiderFeesAndBonuses_Pydantic)
 async def get_rider_fees_and_bonus_rate(request:Request, user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     fees_obj = await RiderFeesAndBonuses.filter(id=1).first()
@@ -82,7 +82,7 @@ async def update_rider_fees_and_bonus_rate(request:Request,
                                             excellence_bonus: float = Form(None),
                                             user: User = Depends(get_current_user)
                                         ):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     fees_obj = await RiderFeesAndBonuses.filter(id=id).first()
@@ -112,7 +112,7 @@ async def update_rider_fees_and_bonus_rate(request:Request,
 
 @router.get("/rider-document-check/{rider_id}", response_model=dict)
 async def check_rider_document(request:Request, rider_id:str, user:User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     rider_profile = await RiderProfile.filter(user=rider_id).first()
@@ -131,8 +131,7 @@ async def check_rider_document(request:Request, rider_id:str, user:User = Depend
 
 @router.put("/rider-document-approve/{rider_id}", response_model=dict)
 async def approve_rider_document(request:Request, rider_id:str, is_verified:bool = Form(), user:User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
-    lang = "bn"
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     rider_profile = await RiderProfile.filter(user=rider_id).first()

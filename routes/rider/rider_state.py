@@ -337,13 +337,14 @@
 
 
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from datetime import datetime, timedelta, date, time
 from typing import List, Optional, Dict
 from decimal import Decimal
 from pydantic import BaseModel
 import logging
 from dateutil.relativedelta import relativedelta
+import pytz
 
 from applications.user.models import User
 from applications.user.rider import (
@@ -358,6 +359,7 @@ from app.utils.websocket_manager import manager
 from app.redis import get_redis
 from .notifications import send_notification
 from .helper_functions import to_float
+from math import ceil, floor
 
 logger = logging.getLogger(__name__)
 
@@ -407,6 +409,29 @@ class AnnualStatsResponse(BaseModel):
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+    
+
+async def get_total_earnings(rider: RiderProfile) -> float:
+    orders = await Order.filter(
+        rider=rider, status="delivered"
+    ).all()
+    
+    return sum([order.base_rate + order.distance_bonus for order in orders])
+
+
+async def get_total_acceptance_rate(rider: RiderProfile) -> float:
+    offered = await WorkDay.filter(rider=rider)
+    offered_count = 0
+    for offer in offered:
+        offered_count += offer.order_offer_count
+    
+    accepted = await Order.filter(rider=rider, status="delivered").count()
+   
+    if offered_count == 0:
+        return 0.0
+    acceptance_rate = (to_float(accepted) / to_float(offered_count)) * 100.0
+    
+    return acceptance_rate
 
 async def get_deliveries_count(rider: RiderProfile, start: datetime, end: datetime) -> int:
     """Get count of completed deliveries including combined order pickups"""
@@ -695,8 +720,12 @@ async def calculate_monthly_earnings(rider: RiderProfile, month_start: date, mon
     guarantee_floor = float(feesandbonus.rider_base_salary or 8000.00)
     guarantee_topup = 0.0
     final_earnings = subtotal
+
+    if subtotal == 0.0:
+        guarantee_topup = guarantee_floor
+        final_earnings = 0.0
     
-    if subtotal < guarantee_floor:
+    elif subtotal < guarantee_floor:
         guarantee_topup = guarantee_floor - subtotal
         final_earnings = guarantee_floor
     
@@ -793,7 +822,7 @@ async def get_monthly_stats(
     else:
         month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
     
-    earnings = await calculate_monthly_earnings(rider, month_start, month_end.date())
+    earnings = await calculate_monthly_earnings(rider, month_start, month_end)
     
     return MonthlyStatsResponse(
         delivery_pay=earnings["delivery_pay"],
@@ -891,14 +920,14 @@ async def get_annual_stats(
         else:
             month_end = today.replace(month=month_num + 1, day=1) - timedelta(days=1)
         
-        if month_end.date() > today:
+        if month_end > today:
             month_end = today
         
         month_start_dt = datetime.combine(month_start, datetime.min.time())
         month_end_dt = datetime.combine(month_end, datetime.max.time())
         
         month_deliveries = await get_deliveries_count(rider, month_start_dt, month_end_dt)
-        earnings = await calculate_monthly_earnings(rider, month_start.date(), month_end.date())
+        earnings = await calculate_monthly_earnings(rider, month_start, month_end)
         month_earnings = earnings["final_earnings"]
         
         month_name = month_start.strftime("%B")
@@ -1008,5 +1037,133 @@ async def get_bonus_progress(
 
 
 
+@router.get("/rider-monthly-forecast/")
+async def get_rider_monthly_forecast(
+    user: User = Depends(get_current_user),
+):
+    """Get forecast of monthly earnings based on recent performance"""
+    
+    rider = await RiderProfile.get_or_none(user=user)
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider profile not found")
+    
+    today = datetime.utcnow().date()
+    month_start = today.replace(day=1)
+    
+    if today.month == 12:
+        month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+    
+    earnings = await calculate_monthly_earnings(rider, month_start, month_end)
+    subtotal = earnings["subtotal_earned"]
+
+    target = 14000
+    percentage = (subtotal / target) * 100
+    remaining_deliveries = max((target - subtotal) / 44, 0)
+    if remaining_deliveries > floor(remaining_deliveries):
+        remaining_deliveries = ceil(remaining_deliveries)
+    else:
+        remaining_deliveries = floor(remaining_deliveries)
 
 
+    return {
+        "subtotal": round(subtotal, 2),
+        "percentage": round(percentage, 2),
+        "remaining_deliveries": round(remaining_deliveries, 2),
+        "target": round(target, 2)
+        }
+
+
+
+
+
+
+@router.get("/leaderboard/")
+async def get_leaderboard(user: User = Depends(get_current_user)):
+    rider = await RiderProfile.get(user=user)
+    if not rider:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rider not found")
+    now = datetime.utcnow()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_end = month_start + relativedelta(months=1)
+    all_riders = await RiderProfile.all()
+    scores = []
+    for p in all_riders:
+        deliveries = await get_deliveries_count(p, month_start, month_end)
+        rating = await get_monthly_rating(p, month_start, month_end)
+        on_time = await get_on_time_rate(p, month_start, month_end)
+        score = (deliveries * 0.5) + (rating * 50) + (on_time * 2)
+        scores.append((p.id, score, deliveries, rating, on_time))
+    scores.sort(key=lambda x: x[1], reverse=True)
+    rank = next((i+1 for i, s in enumerate(scores) if s[0] == rider.id), None)
+    total_riders = len(scores)
+    my_score, my_deliveries, my_rating, my_on_time = next((s for s in scores if s[0] == rider.id), (0,0,0,0))[1:]
+    prize_structure = {1: 2000, 2: 1000, 3: 500}
+    prize = prize_structure.get(rank, 250 if rank <= 10 else 0)
+    return {
+        "rank": rank,
+        "total_riders": total_riders,
+        "total_deliveries": my_deliveries,
+        "prize_money": prize,
+        "score": my_score,
+        "breakdown": {
+            "deliveries_pts": my_deliveries * 0.5,
+            "rating_pts": my_rating * 50,
+            "on_time_pts": my_on_time * 2
+        }
+    }
+
+
+
+@router.get("/rider-current-tire/")
+async def get_rider_tires(current_user: User = Depends(get_current_user)):
+    rider_profile = await RiderProfile.get_or_none(user=current_user)
+    if not rider_profile:
+        raise HTTPException(status_code=404, detail="Rider not found")
+    today = datetime.now(pytz.UTC)
+    created_at = rider_profile.created_at
+    if created_at.tzinfo is None:
+        created_at = pytz.UTC.localize(created_at)
+    #today = datetime.utcnow()
+    month_of_work = relativedelta(today, created_at).years * 12 + \
+                    relativedelta(today, created_at).months
+
+    earnings = await get_total_earnings(rider_profile)
+    qs = RiderReview.filter(rider=rider_profile, rating__not_isnull=True)
+    # get list of rating values
+    ratings = await qs.values_list("rating", flat=True)  # returns list of Decimal/float
+
+    total_reviews = len(ratings)
+    if total_reviews == 0:
+        avg_rating = 0.0
+    else:
+        # Convert to float safely (ratings may be Decimal)
+        total = sum((float(r) for r in ratings))
+        avg_rating = total / total_reviews
+
+    acceptance_rate = await get_total_acceptance_rate(rider_profile)
+
+    #print(f"Month of work: {month_of_work} | Earnings: {earnings} | Average Rating: {avg_rating} | Acceptance Rate: {acceptance_rate}")
+
+
+    if month_of_work <= 2 and (earnings >= 16000 and earnings <= 18500):
+        return {
+            "tire": "Bronze",
+            "status": "success",
+        }
+    elif month_of_work >= 2 and avg_rating >= 4.0 and (earnings >= 18500 and earnings <= 21000):
+        return {
+            "tire": "Silver",
+            "status": "success",
+        }
+    elif month_of_work >= 2 and avg_rating >= 4.5 and acceptance_rate >= 90 and earnings >= 21000:
+        return {
+            "tire": "Gold",
+            "status": "success",
+        }
+    else:
+        return {
+            "tire": "None",
+            "status": "failed",
+        }

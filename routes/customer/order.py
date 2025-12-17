@@ -2,12 +2,10 @@ import httpx
 from applications.customer.services import OrderService
 from fastapi import APIRouter, HTTPException, Query, status, Depends, Form
 from typing import List, Optional
-from datetime import datetime, timedelta
-from passlib.context import CryptContext
-import os
+from datetime import datetime
 import uuid
 from applications.user.models import User
-from applications.customer.models import Order, OrderItem, OrderStatus
+from applications.customer.models import Order, OrderStatus
 from applications.customer.schemas import *
 from app.token import get_current_user
 from app.config import settings
@@ -50,7 +48,7 @@ async def place_order(
     
     service = OrderService()
     try:
-        # Create orders (one per vendor)
+        # Create orders (one per vendor, all share same parent_order_id)
         orders = await service.create_orders(order_data, current_user)
         
         payment_method = order_data.payment_method.type

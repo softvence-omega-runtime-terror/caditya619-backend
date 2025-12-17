@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from tortoise.transactions import in_transaction
 from pydantic import BaseModel
 from typing import List, Optional
+from routes.rider.notifications import send_notification
 
 from applications.prescription.models import (
     PrescriptionVendorResponse,
@@ -77,7 +78,7 @@ class PrescriptionOrderSerializer(BaseModel):
     user_id: int
     user_name: str
     image_path: str
-    file_name: str
+    file_name: Optional[str]
     status: str
     notes: Optional[str]
     uploaded_at: str
@@ -120,6 +121,34 @@ async def change_prescription_status(
 
     prescription.status = status
     await prescription.save()
+
+    try:
+        if status == "underReview":
+            await send_notification(
+                user=prescription.user_id,
+                title="⏳ Prescription Under Review",
+                body="A pharmacy has opened your prescription for review. You will be notified when medicines are available"
+            )
+        elif status == "valid":
+            await send_notification(
+                user=prescription.user_id,
+                title="✅ Prescription Valid",
+                body="Your prescription is valid. We are checking medicine availability."
+            )
+        elif status == "invalid":
+            await send_notification(
+                user=prescription.user_id,
+                title="❌ Prescription Invalid",
+                body="We could not validate your prescription. Please check and upload a valid one or contact support."
+            )
+        elif status == "medicinesReady":
+            await send_notification(
+                user=prescription.user_id,
+                title="💊 Medicines Ready",
+                body="Medicines are ready for your order. Review them now and place your order."
+            )
+    except:
+        print('Notification sending failed.')
 
     return {
         "status": "success",
@@ -189,8 +218,14 @@ async def create_vendor_response(
 
         # Update total_amount in vendor_response
         vendor_response.total_amount = total_amount
-        vendor_response.status = "medicinesReady"
+        prescription.status = "medicinesReady"
         await vendor_response.save()
+        await prescription.save()
+        await send_notification(
+            user=prescription.user_id,
+            title="💊 Medicines Ready",
+            body="Medicines are ready for your order. Review them now and place your order."
+        )
 
     # Build JSON Response
     await vendor_response.fetch_related("medicines")
@@ -200,7 +235,7 @@ async def create_vendor_response(
         "prescription_id": vendor_response.prescription_id,
         "vendor_id": vendor_response.vendor_id,
         "total_amount": float(vendor_response.total_amount),
-        "status": vendor_response.status,
+        "status": prescription.status,
         "notes": vendor_response.notes,
         "responded_at": vendor_response.responded_at,
         "medicines": [

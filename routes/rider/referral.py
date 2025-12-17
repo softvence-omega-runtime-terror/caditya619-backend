@@ -31,7 +31,7 @@ async def generate_code() -> str:
 
 @router.get("/referral/dashboard")
 async def referral_dashboard(request:Request, current_user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=current_user)
 
     # Generate code if missing
@@ -74,7 +74,7 @@ async def referral_qr(current_user: User = Depends(get_current_user)):
 
 @router.post("/referral/apply/{code}")
 async def apply_referral(request:Request, code: str, current_user: User = Depends(get_current_user)):
-    lang = request.headers.get("Accept-Language", "bn").split(",")[0].strip().lower()
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider = await RiderProfile.get(user=current_user)
     if rider.referral_code:
         raise HTTPException(400, translate("Already used a referral code", lang))
