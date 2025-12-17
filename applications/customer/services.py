@@ -58,7 +58,6 @@ class ShippingAddressService:
         address = await CustomerShippingAddress.create(
             id=address_id,
             user=current_user,
-            is_default=True,
             **address_data
         )
         
@@ -295,7 +294,8 @@ class OrderService:
                 "state": order_data.shipping_address.state or "",
                 "postal_code": order_data.shipping_address.postal_code or "",
                 "country": order_data.shipping_address.country or "",
-                "phone_number": order_data.shipping_address.phone_number or ""
+                "phone_number": order_data.shipping_address.phone_number or "",
+                "is_default": True
             }
             
             order_metadata = {
