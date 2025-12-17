@@ -58,6 +58,7 @@ class ShippingAddressService:
         address = await CustomerShippingAddress.create(
             id=address_id,
             user=current_user,
+            is_default=True,
             **address_data
         )
         
