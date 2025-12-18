@@ -129,6 +129,9 @@ class ShippingAddressBase(BaseModel):
     phone_number: str = Field(..., max_length=50)
     email: str = Field(..., max_length=100)
     addressType: AddressType = Field(default="HOME")
+    flat_house_building: Optional[str] = Field(None, max_length=255)
+    floor_number: Optional[str] = Field(None, max_length=100)
+    nearby_landmark: Optional[str] = Field(None, max_length=500)
 
     @validator('addressType')
     def validate_address_type(cls, v):
@@ -152,6 +155,9 @@ class ShippingAddressUpdate(BaseModel):
     phone_number: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, max_length=100)
     is_default: Optional[bool] = None
+    flat_house_building: Optional[str] = Field(None, max_length=255)
+    floor_number: Optional[str] = Field(None, max_length=100)
+    nearby_landmark: Optional[str] = Field(None, max_length=500)
 
 class ShippingAddressResponse(BaseModel):
     """Schema for shipping address response"""
@@ -170,6 +176,9 @@ class ShippingAddressResponse(BaseModel):
     is_default: bool
     created_at: datetime
     updated_at: datetime
+    flat_house_building: Optional[str] = None
+    floor_number: Optional[str] = None
+    nearby_landmark: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -199,6 +208,9 @@ class ShippingAddressSchema(BaseModel):
     country: Optional[str] = Field(None, max_length=255)
     phone_number: str = Field(..., alias="phoneNumber", max_length=50)
     is_default: bool = Field(False, alias="isDefault")
+    flat_house_building: Optional[str] = Field(None, alias="flatHouseBuilding", max_length=255)
+    floor_number: Optional[str] = Field(None, alias="floorNumber", max_length=100)
+    nearby_landmark: Optional[str] = Field(None, alias="nearbyLandmark", max_length=500)
     
     @validator('phone_number')
     def validate_phone(cls, v):
@@ -224,7 +236,9 @@ class ShippingAddressResponseSchema(BaseModel):
     country: str
     phone_number: str
     isDefault: Optional[bool] = Field(default=False, alias="is_default")  # FIXED: Made optional with alias
-    
+    flat_house_building: Optional[str] = None
+    floor_number: Optional[str] = None
+    nearby_landmark: Optional[str] = None
     class Config:
         from_attributes = True
         populate_by_name = True
