@@ -61,6 +61,5 @@ class CustomerShippingAddress(models.Model):
             ("user_id", "addressType", "is_default"),  # Composite index for queries
         ]
 
-
     def __str__(self):
         return f"{self.addressType} - {self.full_name} ({self.id})"
