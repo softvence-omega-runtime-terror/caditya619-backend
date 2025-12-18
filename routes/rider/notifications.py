@@ -26,10 +26,6 @@ async def save_device_token(data: DeviceTokenIn, user: User = Depends(get_curren
         await DeviceToken.create(**data.dict())
     return {"status": "success"}
 
-
-
-
-
 class NotificationIn(BaseModel):
     user_id: int
     title: str
