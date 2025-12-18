@@ -302,6 +302,9 @@ class OrderService:
                 "postal_code": order_data.shipping_address.postal_code or "",
                 "country": order_data.shipping_address.country or "",
                 "phone_number": order_data.shipping_address.phone_number or "",
+                "flat_house_building": order_data.shipping_address.flat_house_building or "",
+                "floor_number": order_data.shipping_address.floor_number or "",
+                "nearby_landmark": order_data.shipping_address.nearby_landmark or "",
                 "is_default": True
             }
             
@@ -394,6 +397,9 @@ class OrderService:
             phone_number=shipping_data.phone_number,
             email=getattr(shipping_data, 'email', ''),
             is_default=True,
+            flat_house_building=shipping_data.flat_house_building or "",
+            floor_number=shipping_data.floor_number or "",
+            nearby_landmark=shipping_data.nearby_landmark or "",
             addressType="HOME"  # Default type, can be modified if needed
         )
         
