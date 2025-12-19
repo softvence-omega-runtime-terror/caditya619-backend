@@ -55,7 +55,7 @@ async def create_dummy_items():
                     flash_sale = random.choice([True, False])
                     isOTC = random.choice([True, False])
                     isSignature = random.choice([True, False])
-                    image = sub_subcat_data.get("avatar", None)
+                    image = "https://i.ibb.co.com/tTK2448Z/photo-2025-12-19-15-02-11.jpg"
                     vendor = random.choice(vendors)
 
                     try:
