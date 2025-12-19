@@ -100,18 +100,6 @@ async def get_shipping_address(
         401: {"description": "Unauthorized"}
     }
 )
-# async def get_shipping_address_by_type(
-#     address_type: str,
-#     current_user: User = Depends(get_current_user)
-# ):
-#     """
-#     Get a specific shipping address by ID.
-#     """
-#     address = await ShippingAddressService.get_address_by_type(
-#         address_type=address_type,
-#         current_user=current_user
-#     )
-#     return address
 
 @router.put(
     "/{address_id}",

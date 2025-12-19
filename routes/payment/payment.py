@@ -15,11 +15,12 @@ from applications.user.models import User
 from applications.user.vendor import VendorProfile
 from app.redis import get_redis
 from routes.payment.payment_verification import verify_payment_status
-from routes.rider.notifications import send_notification
+from routes.rider.notifications import send_notification, NotificationIn  # Add NotificationIn
 import httpx
 import uuid
 from applications.customer.models import Order, OrderStatus
 from app.config import settings
+from app.utils.websocket_manager import manager
 
 CASHFREE_CLIENT_PAYMENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
 CASHFREE_CLIENT_PAYMENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
@@ -32,6 +33,8 @@ CASHFREE_API_VERSION = "2023-08-01"
 # ============================================================
 
 router = APIRouter(prefix="/payment", tags=["payment"])
+
+current_user = Depends(get_current_user)
 
 
 class PaymentWebhookData(BaseModel):
@@ -449,21 +452,20 @@ async def retry_payment_confirmation(
         }
 
 
+# routes.payment.payment.py
+# Fix for @router.post("/test/pay-last")
+
+# routes.payment.payment.py
+# CORRECTED VERSION - Matches your WebSocket manager structure
+
 @router.get("/test/pay-last")
 @router.post("/test/pay-last")
-async def pay_last_order_no_auth():
+async def pay_last_order_no_auth(redis = Depends(get_redis)):
     """
-    Test endpoint to mark the most recent unpaid order(s) as paid.
-    This simulates successful payment for testing purposes.
-    
-    ⚠️ REMOVE THIS ENDPOINT IN PRODUCTION!
+    Test endpoint to mark last unpaid order as paid
+    Sends proper notifications to customer and vendor
     """
     
-    print("=" * 60)
-    print("🧪 TEST PAYMENT ENDPOINT CALLED")
-    print("=" * 60)
-    
-    # Find the most recent unpaid order
     order = await Order.filter(
         payment_status="unpaid"
     ).order_by('-created_at').first().prefetch_related('user')
@@ -473,30 +475,17 @@ async def pay_last_order_no_auth():
             "success": False,
             "message": "No unpaid orders found in the system"
         }
-    
-    print(f"📦 Found unpaid order: {order.id}")
-    print(f"   Parent Order ID: {order.parent_order_id}")
-    print(f"   Status: {order.status}")
-    print(f"   Payment Status: {order.payment_status}")
-    
-    # Check if this order has a parent_order_id (combined payment)
+
+    # Get all orders in payment group
     orders_to_process = [order]
     is_combined = False
     
     if order.parent_order_id:
         is_combined = True
-        print(f"🔗 This is a combined payment with parent_order_id: {order.parent_order_id}")
-        
-        # Fetch all orders with the same parent_order_id
         orders_to_process = await Order.filter(
             parent_order_id=order.parent_order_id
         ).prefetch_related('user')
-        
-        print(f"   Found {len(orders_to_process)} orders in this payment group")
-    else:
-        print(f"📦 Single order payment (no parent_order_id)")
     
-    # Process all orders
     processed_orders = []
     total_amount = Decimal("0")
     
@@ -528,29 +517,88 @@ async def pay_last_order_no_auth():
         print(f"   Status: {old_status} → PROCESSING")
         print(f"   Payment: {old_payment_status} → paid")
         
-        # Send notification to customer
+        # 🔥 FIX: Send notifications to CUSTOMER
         try:
-            if ord.user:
-                await send_notification(
-                    ord.user.id,
-                    "Payment Successful (TEST)",
-                    f"Order #{ord.id} payment confirmed via test endpoint."
+            if ord.user_id:
+                # WebSocket notification (sends to notification channel)
+                await manager.send_notification(
+                    to_type="customers",
+                    to_id=str(ord.user_id),
+                    title="Payment Successful",
+                    body=f"Your payment for order #{ord.id} is confirmed!",
+                    data={
+                        "order_id": ord.id,
+                        "parent_order_id": ord.parent_order_id,
+                        "total": float(ord.total),
+                        "status": "PROCESSING"
+                    },
+                    urgency="normal"
                 )
-                print(f"   📧 Notification sent to user {ord.user.id}")
+                
+                # Push notification (Firebase)
+                from routes.rider.notifications import NotificationIn
+                await send_notification(NotificationIn(
+                    user_id=ord.user_id,
+                    title="Payment Successful",
+                    body=f"Order #{ord.id} payment confirmed."
+                ))
+                
+                # Redis publish for real-time updates
+                customer_payload = {
+                    "type": "payment_success",
+                    "order_id": ord.id,
+                    "parent_order_id": ord.parent_order_id,
+                    "total": float(ord.total),
+                    "status": "PROCESSING",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                await redis.publish("order_updates", json.dumps(customer_payload))
+                
+                print(f"   📧 Customer notifications sent to user {ord.user_id}")
         except Exception as e:
-            print(f"   ⚠️ Notification error: {e}")
+            print(f"   ⚠️ Customer notification error: {e}")
         
-        # Send notification to vendor
+        # 🔥 FIX: Send notifications to VENDOR
         try:
-            from applications.vendor.models import VendorProfile
+            from applications.user.vendor import VendorProfile
             vendor = await VendorProfile.get_or_none(id=ord.vendor_id)
+            
             if vendor:
-                await send_notification(
-                    vendor.user_id,
-                    "New Paid Order (TEST)",
-                    f"Order #{ord.id} received and paid via test endpoint."
+                # WebSocket notification (sends to notification channel)
+                await manager.send_notification(
+                    to_type="vendors",
+                    to_id=str(vendor.user_id),
+                    title="New Paid Order",
+                    body=f"Order #{ord.id} received and paid. Total: ₹{ord.total}",
+                    data={
+                        "order_id": ord.id,
+                        "parent_order_id": ord.parent_order_id,
+                        "customer_id": ord.user_id,
+                        "total": float(ord.total)
+                    },
+                    urgency="normal"
                 )
-                print(f"   📧 Notification sent to vendor {vendor.user_id}")
+                
+                # Push notification (Firebase)
+                from routes.rider.notifications import NotificationIn
+                await send_notification(NotificationIn(
+                    user_id=vendor.user_id,
+                    title="New Paid Order",
+                    body=f"Order #{ord.id} received and paid."
+                ))
+                
+                # Redis publish
+                vendor_payload = {
+                    "type": "new_paid_order",
+                    "order_id": ord.id,
+                    "parent_order_id": ord.parent_order_id,
+                    "customer_id": ord.user_id,
+                    "total": float(ord.total),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                await redis.publish("vendor_orders", json.dumps(vendor_payload))
+                
+                print(f"   📧 Vendor notifications sent to user {vendor.user_id}")
         except Exception as e:
             print(f"   ⚠️ Vendor notification error: {e}")
         
@@ -563,14 +611,9 @@ async def pay_last_order_no_auth():
             "total": float(ord.total)
         })
     
-    print("=" * 60)
-    print(f"✅ TEST PAYMENT COMPLETED: {len(processed_orders)} order(s) marked as paid")
-    print("=" * 60)
-    
-    # Prepare response
     response = {
         "success": True,
-        "message": f"✅ {len(processed_orders)} order(s) marked as paid!",
+        "message": f"✅ {len(processed_orders)} order(s) marked as paid with notifications!",
         "orders_count": len(processed_orders),
         "total_amount": float(total_amount),
         "is_combined_payment": is_combined,

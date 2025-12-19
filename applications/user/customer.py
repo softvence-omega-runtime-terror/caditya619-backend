@@ -17,7 +17,6 @@ class CustomerProfile(models.Model):
     customer_lat = fields.FloatField(null=True)
     customer_lng = fields.FloatField(null=True)
 
-    # photo = fields.CharField(max_length=20, null=True, blank=True)
     class Meta:
         table = "cus_profile"
 
@@ -37,7 +36,11 @@ class CustomerShippingAddress(models.Model):
     user = fields.ForeignKeyField(
         "models.User", related_name="shipping_addresses", on_delete=fields.CASCADE
     )
+
     full_name = fields.CharField(max_length=255, default="")
+    flat_house_building = fields.CharField(max_length=255, default="")
+    floor_number = fields.CharField(max_length=100, default="")
+    nearby_landmark = fields.CharField(max_length=500, default="")
     address_line1 = fields.CharField(max_length=500, default="")
     address_line2 = fields.CharField(max_length=500, default="")
     city = fields.CharField(max_length=255, null=True)
@@ -56,7 +59,6 @@ class CustomerShippingAddress(models.Model):
         indexes = [
             ("user_id", "addressType", "is_default"),  # Composite index for queries
         ]
-
 
     def __str__(self):
         return f"{self.addressType} - {self.full_name} ({self.id})"
