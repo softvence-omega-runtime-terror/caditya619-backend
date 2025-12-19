@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, UploadFile, Form, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, Form, Depends, Query
 from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.transactions import in_transaction
 from typing import Optional, List
+from tortoise.expressions import Q
 
 from watchfiles import awatch
 
@@ -155,6 +156,17 @@ async def get_all_items(
     isSignature: Optional[bool] = None,
     isOtc: Optional[bool] = None,
     name: Optional[str] = None,
+    tags: Optional[str] = Query(
+    None,
+        description=(
+            "Search keyword(s) to filter items. "
+            "Matches item title, category name, subcategory name, "
+            "and sub-subcategory name using case-insensitive partial search. "
+            "Multiple values can be provided as comma-separated keywords "
+            "(e.g. 'apple,fruit,organic')."
+        ),
+        example="apple,fruit"
+    ),
     offset: int = 0,
     limit: int = 20
 ):
@@ -192,6 +204,15 @@ async def get_all_items(
         query = query.filter(isOtc=isOtc)
     if name:
         query = query.filter(title__icontains=name)
+    if tags:
+        search_terms = [t.strip().lower() for t in tags.split(",") if t.strip()]
+        for term in search_terms:
+            query = query.filter(
+                Q(title__icontains=term) |
+                Q(category__name__icontains=term) |
+                Q(subcategory__name__icontains=term) |
+                Q(sub_subcategory__name__icontains=term)
+            )
 
     total_count = await query.count()
     items = await query.offset(offset).limit(limit)
