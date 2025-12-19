@@ -269,6 +269,7 @@ async def update_item(
         price: float = Form(0.0),
         discount: int = Form(0),
         stock: int = Form(0),
+        is_stock: bool = Form(False),
         popular: bool = Form(False),
         free_delivery: bool = Form(False),
         hot_deals: bool = Form(False),
@@ -302,6 +303,7 @@ async def update_item(
         item.price = price
         item.discount = discount
         item.stock = stock
+        item.is_stock = is_stock
         item.popular = popular
         item.free_delivery = free_delivery
         item.hot_deals = hot_deals
@@ -328,6 +330,7 @@ async def patch_item(
         price: Optional[float] = Form(None),
         discount: Optional[int] = Form(None),
         stock: Optional[int] = Form(None),
+        is_stock: bool = Form(False),
         popular: Optional[bool] = Form(None),
         free_delivery: Optional[bool] = Form(None),
         hot_deals: Optional[bool] = Form(None),
@@ -367,7 +370,7 @@ async def patch_item(
         # Dynamically update fields
         updates = {
             "title": title, "description": description, "price": price, "discount": discount,
-            "stock": stock, "popular": popular, "free_delivery": free_delivery,
+            "stock": stock, "is_stock" : is_stock, "popular": popular, "free_delivery": free_delivery,
             "hot_deals": hot_deals, "flash_sale": flash_sale,
             "weight": weight, "vendor_id": vendor_id
         }
