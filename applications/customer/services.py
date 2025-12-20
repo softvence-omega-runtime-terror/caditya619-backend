@@ -238,7 +238,7 @@ class OrderService:
                     'vendor': item.vendor
                 })
 
-                print(f"Added item '{item.price}' (Qty: {item.discounted_price}) to vendor {item.sell_price} order group.")
+                print(f"item.price = '{item.price}' (Qty: {item.discounted_price}) to item.sell_price = {item.sell_price} order group.")
                 
             except DoesNotExist:
                 raise ValueError(f"Item with id {item_input.item_id} not found")
@@ -250,6 +250,20 @@ class OrderService:
             raise ValueError("No valid items in order")
         # Generate parent order ID for this group
         parent_order_id = self._generate_parent_order_id()
+
+        # Calculate grand total of all orders to apply coupon
+        grand_subtotal = Decimal("0")
+        for items in vendor_items_map.values():
+            grand_subtotal += sum(item['price'] * item['quantity'] for item in items)
+        print(f"grand_subtotal =========== {grand_subtotal}")
+
+         # Apply coupon only once on the grand total
+        total_coupon_discount = self._apply_coupon(grand_subtotal, order_data.coupon_code)
+        
+        # Distribute discount proportionally across orders
+        vendor_count = len(vendor_items_map)
+        discount_per_order = total_coupon_discount / vendor_count if vendor_count > 0 else Decimal("0")
+        
 
         # Create one order per vendor
         created_orders = []
@@ -264,8 +278,8 @@ class OrderService:
             delivery_fee = fees.rider_delivery_fee
             print(f"delivery_fee =========== {delivery_fee}")
 
-            coupon_discount = self._apply_coupon(subtotal, order_data.coupon_code)
-            total = subtotal + delivery_fee - coupon_discount
+            # coupon_discount = self._apply_coupon(subtotal, order_data.coupon_code)
+            total = subtotal + delivery_fee - discount_per_order
             print(f"total =========== {total}")
             
             # Get vendor info
@@ -335,7 +349,7 @@ class OrderService:
                 delivery_fee=delivery_fee,
                 total=total,
                 coupon_code=order_data.coupon_code,
-                discount=coupon_discount,
+                discount=discount_per_order,
                 status=order_status_update,   
                 payment_status="unpaid",
                 tracking_number=self._generate_tracking_number(),
