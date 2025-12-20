@@ -1271,3 +1271,37 @@ async def list_orders(
     except Exception as e:
         logger.error(f"Error listing orders: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+
+@router.get("/current-orders/")
+async def current_orders_list(
+    request: Request,
+    skip: int = Query(default=0),
+    limit: int = Query(default=10),
+    user: User = Depends(get_current_user),
+):
+    """
+    List orders assigned to the current rider.
+    Supports pagination with skip and limit.
+    """
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    try:
+        rider = await RiderProfile.get_or_none(user=user)
+        if not rider:
+            raise HTTPException(status_code=403, detail="Not a rider")
+
+        orders = await Order.filter(
+            rider=rider, status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY]
+        ).offset(skip).limit(limit).order_by("-created_at").all()
+
+
+
+        return [await OrderOut.from_tortoise_orm(translate(order, lang)) for order in orders]
+
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
