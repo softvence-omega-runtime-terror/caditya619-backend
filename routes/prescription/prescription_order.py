@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from tortoise.transactions import in_transaction
 from pydantic import BaseModel
 from typing import List, Optional
-from routes.rider.notifications import send_notification
+from routes.rider.notifications import send_notification, NotificationIn
 
 from applications.prescription.models import (
     PrescriptionVendorResponse,
@@ -102,13 +102,13 @@ async def change_prescription_status(
     status: str = Query(..., description="New status for the prescription ")
 ):
     """
-    Change the status of a prescription.
-    
-    Available statuses:
-    - underReview
-    - valid
-    - invalid
-    - medicinesReady
+        Change the status of a prescription.
+        
+        Available statuses:
+        - underReview
+        - valid
+        - invalid
+        - medicinesReady
     """
     if status not in PRESCRIPTION_STATUS:
         raise HTTPException(
@@ -124,29 +124,29 @@ async def change_prescription_status(
 
     try:
         if status == "underReview":
-            await send_notification(
+            await send_notification(NotificationIn(
                 user_id=prescription.user_id,
                 title="⏳ Prescription Under Review",
                 body="A pharmacy has opened your prescription for review. You will be notified when medicines are available"
-            )
+            ))
         elif status == "valid":
-            await send_notification(
+            await send_notification(NotificationIn(
                 user_id=prescription.user_id,
                 title="✅ Prescription Valid",
                 body="Your prescription is valid. We are checking medicine availability."
-            )
+            ))
         elif status == "invalid":
-            await send_notification(
+            await send_notification(NotificationIn(
                 user_id=prescription.user_id,
                 title="❌ Prescription Invalid",
                 body="We could not validate your prescription. Please check and upload a valid one or contact support."
-            )
+            ))
         elif status == "medicinesReady":
-            await send_notification(
+            await send_notification(NotificationIn(
                 user_id=prescription.user_id,
                 title="💊 Medicines Ready",
                 body="Medicines are ready for your order. Review them now and place your order."
-            )
+            ))
     except:
         print('Notification sending failed.')
 
