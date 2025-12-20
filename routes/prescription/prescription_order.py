@@ -221,11 +221,11 @@ async def create_vendor_response(
         prescription.status = "medicinesReady"
         await vendor_response.save()
         await prescription.save()
-        await send_notification(
-            user=prescription.user_id,
+        await send_notification(NotificationIn(
+            user_id=prescription.user_id,
             title="💊 Medicines Ready",
             body="Medicines are ready for your order. Review them now and place your order."
-        )
+        ))
 
     # Build JSON Response
     await vendor_response.fetch_related("medicines")
