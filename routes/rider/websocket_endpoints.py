@@ -70,6 +70,22 @@ async def location_endpoint(
                 lat = data.get("latitude") or data.get("lat")
                 lng = data.get("longitude") or data.get("lng")
 
+                user = await User.filter(id=user_id).first()
+                if user.is_rider:
+                    rider = await RiderProfile.filter(user_id=user_id).first()
+                    if rider:
+                        location_obj, created = await RiderCurrentLocation.get_or_create(
+                            rider_profile_id=rider.id,
+                            defaults={"latitude": lat, "longitude": lng}
+                        )
+
+                        if not created:
+                            # update coordinates on existing record
+                            location_obj.latitude = lat
+                            location_obj.longitude = lng
+                            await location_obj.save()
+
+
                 if lat is None or lng is None:
                     await websocket.send_json({"error": "Missing latitude/longitude"})
                     continue
