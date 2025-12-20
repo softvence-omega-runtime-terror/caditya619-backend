@@ -485,7 +485,7 @@ async def create_order_offer(
             raise HTTPException(status_code=400, detail="No riders available in area")
 
         # Update order status to PROCESSING (waiting for acceptance)
-        order.status = OrderStatus.PROCESSING
+        order.status = OrderStatus.CONFIRMED
         order.metadata = order.metadata or {}
         order.metadata["candidate_riders"] = [r.id for r in candidates]
         order.metadata["offered_at"] = datetime.utcnow().isoformat()
@@ -579,7 +579,7 @@ async def accept_order(
             raise HTTPException(status_code=404, detail="Order not found")
 
         # Order must be in PROCESSING state
-        if order.status != OrderStatus.PROCESSING:
+        if order.status != OrderStatus.CONFIRMED:
             await redis.delete(claim_key)
             raise HTTPException(status_code=400, detail="Order not available (already accepted or expired)")
 
@@ -609,7 +609,7 @@ async def accept_order(
         async with in_transaction():
             # Re-verify order status inside transaction
             order = await Order.get(id=order_id)
-            if order.status != OrderStatus.PROCESSING:
+            if order.status != OrderStatus.CONFIRMED:
                 raise HTTPException(status_code=400, detail="Order not available")
 
             # Get all required data
@@ -667,7 +667,7 @@ async def accept_order(
             eta_minutes = pickup_eta_min + delivery_eta_min + (order.prepare_time or 10)
 
             # Update order
-            order.status = OrderStatus.CONFIRMED
+            #order.status = OrderStatus.CONFIRMED
             order.rider = rider_profile
             order.pickup_distance_km = Decimal(str(round(pickup_dist, 2)))
             order.base_rate = Decimal(str(base_rate))
@@ -1304,4 +1304,41 @@ async def current_orders_list(
     except Exception as e:
         logger.error(f"Error listing orders: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+
+
+
+
+@router.get("/offered-orders/")
+async def list_orders_offer(
+    request: Request,
+    skip: int = Query(default=0),
+    limit: int = Query(default=10),
+    user: User = Depends(get_current_user),
+):
+    """
+    List orders assigned to the current rider.
+    Supports pagination with skip and limit.
+    """
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    try:
+        rider = await RiderProfile.get_or_none(user=user)
+        if not rider:
+            raise HTTPException(status_code=403, detail="Not a rider")
+
+        orders = await Order.filter(
+            rider=None, metadata__contains={"candidate_riders": [rider.id]}, status=OrderStatus.CONFIRMED
+        ).offset(skip).limit(limit).order_by("-created_at").all()
+
+
+
+        return [await OrderOut.from_tortoise_orm(translate(order, lang)) for order in orders]
+
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
 
