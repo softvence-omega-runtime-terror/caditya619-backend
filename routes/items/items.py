@@ -154,7 +154,7 @@ async def get_all_items(
     hot_deals: Optional[bool] = None,
     flash_sale: Optional[bool] = None,
     isSignature: Optional[bool] = None,
-    isOtc: Optional[bool] = None,
+    # isOtc: Optional[bool] = None,
     name: Optional[str] = None,
     tags: Optional[str] = Query(
     None,
@@ -170,7 +170,7 @@ async def get_all_items(
     offset: int = 0,
     limit: int = 20
 ):
-    query = Item.all().prefetch_related("category", "subcategory", "sub_subcategory")
+    query = Item.filter(isOTC=True).prefetch_related("category", "subcategory", "sub_subcategory")
 
     if category_type:
         query = Item.filter(category__type=category_type)
@@ -200,8 +200,8 @@ async def get_all_items(
         query = query.filter(flash_sale=flash_sale)
     if isSignature is not None:
         query = query.filter(isSignature=isSignature)
-    if isOtc is not None:
-        query = query.filter(isOtc=isOtc)
+    # if isOtc is not None:
+    #     query = query.filter(isOtc=isOtc)
     if name:
         query = query.filter(title__icontains=name)
     if tags:
