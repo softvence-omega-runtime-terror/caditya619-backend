@@ -164,8 +164,7 @@ async def get_all_items(
             "and sub-subcategory name using case-insensitive partial search. "
             "Multiple values can be provided as comma-separated keywords "
             "(e.g. 'apple,fruit,organic')."
-        ),
-        example="apple,fruit"
+        )
     ),
     offset: int = 0,
     limit: int = 20
