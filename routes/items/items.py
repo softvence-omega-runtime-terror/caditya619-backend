@@ -36,6 +36,7 @@ async def serialize_item(item: Item):
         "title": item.title,
         "description": item.description,
         "category_id": item.category_id,
+        "category_type": item.category.type,
         "subcategory_id": item.subcategory_id,
         "sub_subcategory_id": item.sub_subcategory_id,
         "price": format_float(item.price),
@@ -143,7 +144,7 @@ async def get_all_items(
     category: Optional[int] = None,
     subcategory: Optional[int] = None,
     sub_subcategory: Optional[int] = None,
-    category_type: Optional[int] = None,
+    category_type: Optional[str] = None,
     vendor_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -164,8 +165,7 @@ async def get_all_items(
             "and sub-subcategory name using case-insensitive partial search. "
             "Multiple values can be provided as comma-separated keywords "
             "(e.g. 'apple,fruit,organic')."
-        ),
-        example="apple,fruit"
+        )
     ),
     offset: int = 0,
     limit: int = 20
