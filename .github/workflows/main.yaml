@@ -12,9 +12,6 @@ jobs:
   backend:
     name: Backend (FastAPI) Build & Test
     runs-on: ubuntu-latest
-#    defaults:
-#      run:
-#        working-directory: backend
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,73 +42,38 @@ jobs:
           ssh-private-key: ${{ secrets.QUIKLE_DEPLOY_KEY }}
 
       - name: Test SSH Connection
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo ✅ Connected to VPS!"
+        run: ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo ✅ Connected to VPS!"
 
       - name: Pull latest changes & deploy
-        run: ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "bash -s" <<'ENDSSH'
-          set -e
-          echo "🚀 Starting deployment on VPS..."
-          
-          cd ~/quikle
-          
-          echo "🔄 Checking for local changes..."
-          git fetch origin main
-          if ! git diff --quiet; then
-            echo "⚠️ Local changes detected. Stashing them..."
-            git stash
-          fi
-          
-          echo "⬇️ Pulling latest code..."
-          git pull https://moynul2k3:${{ secrets.DEPLOY_GITHUB_PAT }}@github.com/softvence-omega-runtime-terror/caditya619-backend.git main
-          
-          echo "🐳 Rebuilding Docker containers..."
-          docker-compose down
-          docker-compose up -d --build
-          
-          echo "🏃 Running Aerich migrations..."
-          docker compose exec -T backend-api aerich migrate --name auto --auto || true
-          
-          echo "📦 Applying migrations..."
-          if ! docker compose exec -T backend-api aerich upgrade; then
-            echo "⚠️ Real upgrade failed. Trying fake upgrade..."
-            docker compose exec -T backend-api aerich upgrade --fake || true
-          fi
-          
-          echo "✅ Deployment & migrations completed successfully!"
-          ENDSSH
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "bash -s" <<'ENDSSH'
+set -e
+echo "🚀 Starting deployment on VPS..."
 
-#      - name: Pull latest changes & deploy
-#        run: |
-#          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-#            set -e
-#            echo "🚀 Starting deployment on VPS..."
-#
-#            cd ~/quikle
-#
-#            echo "🔄 Checking for local changes..."
-#            git fetch origin main
-#            if ! git diff --quiet; then
-#              echo "⚠️ Local changes detected. Stashing them..."
-#              git stash
-#            fi
-#
-#            echo "⬇️ Pulling latest code..."
-#            git pull https://moynul2k3:${{ secrets.DEPLOY_GITHUB_PAT }}@github.com/softvence-omega-runtime-terror/caditya619-backend.git main
-#
-#            echo "🐳 Rebuilding Docker containers..."
-#            docker-compose down
-#            docker-compose up -d --build
-#
-#            echo "🏃 Running Aerich migrations..."
-#            docker compose exec -T backend-api aerich migrate --name auto --auto || true
-#
-#            echo "📦 Applying migrations..."
-#            if ! docker compose exec -T backend-api aerich upgrade; then
-#              echo "⚠️ Real upgrade failed. Trying fake upgrade..."
-#              docker compose exec -T backend-api aerich upgrade --fake || true
-#            fi
-#
-#
-#            echo "✅ Deployment & migrations completed successfully!"
-#          EOF
+cd ~/quikle
+
+echo "🔄 Checking for local changes..."
+git fetch origin main
+if ! git diff --quiet; then
+  echo "⚠️ Local changes detected. Stashing them..."
+  git stash
+fi
+
+echo "⬇️ Pulling latest code..."
+git pull https://moynul2k3:${{ secrets.DEPLOY_GITHUB_PAT }}@github.com/softvence-omega-runtime-terror/caditya619-backend.git main
+
+echo "🐳 Rebuilding Docker containers..."
+docker-compose down
+docker-compose up -d --build
+
+echo "🏃 Running Aerich migrations..."
+docker compose exec -T backend-api aerich migrate --name auto --auto || true
+
+echo "📦 Applying migrations..."
+if ! docker compose exec -T backend-api aerich upgrade; then
+  echo "⚠️ Real upgrade failed. Trying fake upgrade..."
+  docker compose exec -T backend-api aerich upgrade --fake || true
+fi
+
+echo "✅ Deployment & migrations completed successfully!"
+ENDSSH
