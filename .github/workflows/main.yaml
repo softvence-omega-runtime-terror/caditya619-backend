@@ -52,12 +52,8 @@ jobs:
         env:
           DEPLOY_GITHUB_PAT: ${{ secrets.DEPLOY_GITHUB_PAT }}
         run: |
-#          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << EOF
-         ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "\
-         cd ~/quikle; \
-         git remote set-url origin https://moynul2k3:${{ secrets.DEPLOY_GITHUB_PAT }}@github.com/softvence-omega-runtime-terror/caditya619-backend.git; \
-         git pull origin main \
-         "
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << EOF
+         
             set -e
             echo "🚀 Starting deployment on VPS..."
 
@@ -70,11 +66,16 @@ jobs:
               git stash
             fi
 
-#            echo "⬇️ Pulling latest code..."
+            echo "⬇️ Pulling latest code..."
 #            ssh -o StrictHostKeyChecking=no user@vps << EOF
 #            git remote set-url origin https://moynul2k3:$DEPLOY_GITHUB_PAT@github.com/softvence-omega-runtime-terror/caditya619-backend.git
 #            git pull origin main
 #            EOF
+            ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "\
+            cd ~/quikle; \
+            git remote set-url origin https://moynul2k3:${{ secrets.DEPLOY_GITHUB_PAT }}@github.com/softvence-omega-runtime-terror/caditya619-backend.git; \
+            git pull origin main \
+            "
 
             echo "🐳 Rebuilding Docker containers..."
             docker-compose down
