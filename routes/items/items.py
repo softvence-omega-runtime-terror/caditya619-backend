@@ -206,13 +206,16 @@ async def get_all_items(
         query = query.filter(title__icontains=name)
     if tags:
         search_terms = [t.strip().lower() for t in tags.split(",") if t.strip()]
-        for term in search_terms:
-            query = query.filter(
-                Q(title__icontains=term) |
-                Q(category__name__icontains=term) |
-                Q(subcategory__name__icontains=term) |
-                Q(sub_subcategory__name__icontains=term)
-            )
+        if search_terms:
+            query_filter = Q()  # empty Q object
+            for term in search_terms:
+                query_filter |= (
+                        Q(title__icontains=term) |
+                        Q(category__name__icontains=term) |
+                        Q(subcategory__name__icontains=term) |
+                        Q(sub_subcategory__name__icontains=term)
+                )
+            query = query.filter(query_filter)
 
     total_count = await query.count()
     items = await query.offset(offset).limit(limit)
