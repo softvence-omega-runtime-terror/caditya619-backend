@@ -72,9 +72,9 @@ jobs:
             docker-compose up -d
 
             echo "🏃 Running migrations..."
-            docker compose exec -T backend-api aerich migrate --name auto --auto || true
-            if ! docker compose exec -T backend-api aerich upgrade; then
-              docker compose exec -T backend-api aerich upgrade --fake || true
+            docker compose exec -T quikle-api aerich migrate --name auto --auto || true
+            if ! docker compose exec -T quikle-api aerich upgrade; then
+              docker compose exec -T quikle-api aerich upgrade --fake || true
             fi
 
             echo "✅ Deployment completed!"
