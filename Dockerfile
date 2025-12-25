@@ -2,10 +2,13 @@
 # Stage 1: Builder
 # ============================
 FROM python:3.12-slim AS builder
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
+
+# System dependencies required to build wheels
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libmariadb-dev-compat \
@@ -13,7 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels
+
+# Build wheels (faster + reproducible)
+RUN pip install --upgrade pip \
+    && pip wheel --no-cache-dir -r requirements.txt -w /wheels
 
 
 # ============================
@@ -21,22 +27,33 @@ RUN pip install --upgrade pip && pip wheel --no-cache-dir --no-deps -r requireme
 # ============================
 FROM python:3.12-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
+
+# Runtime-only system deps (no build-essential)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmariadb-dev-compat \
     libmariadb-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies from wheels
 COPY --from=builder /wheels /wheels
-RUN pip install --no-cache /wheels/* && rm -rf /wheels
+RUN pip install --no-cache-dir /wheels/* \
+    && rm -rf /wheels
 
+# Copy application code
 COPY . .
 
+# Create media directory
 RUN mkdir -p /app/media
 
-RUN useradd -m fastapiuser
-USER fastapiuser
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash quikle \
+    && chown -R quikle:quikle /app
 
+USER quikle
 
 EXPOSE 8000
 
