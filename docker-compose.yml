@@ -7,14 +7,9 @@ services:
     env_file:
       - .env
     ports:
-      - "3002:8000"   # HOST:CONTAINER
+      - "1000:8000"
     volumes:
       - /home/quikle/media:/app/media
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - redis
-
-volumes:
-  redis_data:
