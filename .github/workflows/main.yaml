@@ -82,4 +82,4 @@ jobs:
 
 
             echo "✅ Deployment & migrations completed successfully!"
-          EOF
+          ENDSSH
