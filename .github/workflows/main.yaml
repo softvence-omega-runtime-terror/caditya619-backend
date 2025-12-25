@@ -49,6 +49,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo ✅ Connected to VPS!"
 
       - name: Pull latest changes & deploy
+        env:
+          DEPLOY_GITHUB_PAT: ${{ secrets.DEPLOY_GITHUB_PAT }}
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
@@ -64,6 +66,7 @@ jobs:
             fi
 
             echo "⬇️ Pulling latest code..."
+            git remote set-url origin https://$DEPLOY_GITHUB_PAT@github.com/softvence-omega-runtime-terror/caditya619-backend.git
             git pull origin main
 
             echo "🐳 Rebuilding Docker containers..."
