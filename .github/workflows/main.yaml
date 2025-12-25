@@ -12,9 +12,9 @@ jobs:
   backend:
     name: Backend (FastAPI) Build & Test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
+#    defaults:
+#      run:
+#        working-directory: backend
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
