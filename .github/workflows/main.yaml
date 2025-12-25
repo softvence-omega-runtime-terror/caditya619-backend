@@ -52,7 +52,7 @@ jobs:
         env:
           DEPLOY_GITHUB_PAT: ${{ secrets.DEPLOY_GITHUB_PAT }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << EOF
             set -e
             echo "🚀 Starting deployment on VPS..."
 
