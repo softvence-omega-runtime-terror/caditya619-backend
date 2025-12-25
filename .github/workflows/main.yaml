@@ -66,8 +66,10 @@ jobs:
             fi
 
             echo "⬇️ Pulling latest code..."
-            git remote set-url origin https://moynul2k3:$DEPLOY_GITHUB_PAT@github.com/softvence-omega-runtime-terror/caditya619-backend.git
+            ssh -o StrictHostKeyChecking=no user@vps << EOF
+            git remote set-url origin https://moynul2k3:$DEPLOY_GITHUB_PAT@github.com/...git
             git pull origin main
+            EOF
 
             echo "🐳 Rebuilding Docker containers..."
             docker-compose down
