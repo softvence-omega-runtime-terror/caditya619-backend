@@ -65,7 +65,6 @@ jobs:
 
             echo "⬇️ Pulling latest code..."
             git pull origin main
-#            git pull https://moynul2k3:${{ secrets.DEPLOY_GITHUB_PAT }}@github.com/softvence-omega-runtime-terror/caditya619-backend.git main
 
             echo "🐳 Rebuilding Docker containers..."
             docker-compose down
@@ -82,4 +81,4 @@ jobs:
 
 
             echo "✅ Deployment & migrations completed successfully!"
-          ENDSSH
+          EOF
