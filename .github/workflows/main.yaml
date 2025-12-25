@@ -32,54 +32,50 @@ jobs:
   deploy:
     name: 🚀 Deploy Backend
     runs-on: ubuntu-latest
-    needs: [backend]
+    needs: [ backend ]
     if: github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/quikle-backend:latest .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/quikle-backend:latest
+
       - name: Setup SSH Agent
         uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.QUIKLE_DEPLOY_KEY }}
 
-      - name: Test SSH Connection
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo ✅ Connected to VPS!"
-
-      - name: Pull latest changes & deploy
+      - name: Deploy on VPS
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
-            echo "🚀 Starting deployment on VPS..."
+            cd ~/quikle   # Go to the folder with docker-compose.yml
 
-            cd ~/quikle
+            echo "🚀 Pulling latest Docker image..."
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/quikle-backend:latest
 
-            echo "🔄 Checking for local changes..."
-            git fetch origin main
-            if ! git diff --quiet; then
-              echo "⚠️ Local changes detected. Stashing them..."
-              git stash
-            fi
-
-            echo "⬇️ Pulling latest code..."
-            git pull origin main
-#            git pull https://moynul2k3:${{ secrets.DEPLOY_GITHUB_PAT }}@github.com/softvence-omega-runtime-terror/caditya619-backend.git main
-
-            echo "🐳 Rebuilding Docker containers..."
+            echo "🐳 Recreating containers..."
             docker-compose down
-            docker-compose up -d --build
+            docker-compose up -d
 
-            echo "🏃 Running Aerich migrations..."
-            docker compose exec -T backend-api aerich migrate --name auto --auto || true
-
-            echo "📦 Applying migrations..."
-            if ! docker compose exec -T backend-api aerich upgrade; then
-              echo "⚠️ Real upgrade failed. Trying fake upgrade..."
-              docker compose exec -T backend-api aerich upgrade --fake || true
+            echo "🏃 Running migrations..."
+            docker compose exec -T quikle-api aerich migrate --name auto --auto || true
+            if ! docker compose exec -T quikle-api aerich upgrade; then
+              docker compose exec -T quikle-api aerich upgrade --fake || true
             fi
 
-
-            echo "✅ Deployment & migrations completed successfully!"
-          ENDSSH
+            echo "✅ Deployment completed!"
+          EOF
