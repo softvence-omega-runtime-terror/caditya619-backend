@@ -37,4 +37,4 @@ USER fastapiuser
 
 EXPOSE 3002
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3002"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "1000"]
