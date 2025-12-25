@@ -62,6 +62,8 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
+            cd ~/quikle   # Go to the folder with docker-compose.yml
+
             echo "🚀 Pulling latest Docker image..."
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/quikle-backend:latest
 
