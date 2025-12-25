@@ -47,7 +47,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/quikle-backend:latest ./backend
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/quikle-backend:latest .
 
       - name: Push Docker image
         run: |
