@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: backend-api
+    container_name: quikle-api
     env_file:
       - .env
     ports:
