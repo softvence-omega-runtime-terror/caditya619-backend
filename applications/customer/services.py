@@ -274,8 +274,9 @@ class OrderService:
             subtotal = sum(item['price'] * item['quantity'] for item in items)
             print(f"subtotal =========== {subtotal}")
             # Apply delivery fee and discount
-            fees= await RiderFeesAndBonuses.filter().first()
-            delivery_fee = fees.rider_delivery_fee
+            # fees= await RiderFeesAndBonuses.filter().first()
+            # delivery_fee = fees.rider_delivery_fee
+            delivery_fee = Decimal(str(order_data.delivery_option.price))
             print(f"delivery_fee =========== {delivery_fee}")
 
             # coupon_discount = self._apply_coupon(subtotal, order_data.coupon_code)
