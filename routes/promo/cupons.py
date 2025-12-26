@@ -84,7 +84,6 @@ async def get_cupons(
             "up_to": c.up_to,
             "max_value": c.max_value,
             "uses_limit": c.uses_limit,
-            "used_by": [u.id for u in c.used_by]
         }
         for c in cupons
     ]
