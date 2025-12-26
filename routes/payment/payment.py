@@ -247,51 +247,79 @@ async def confirm_payment_from_app(
 ):
     """
     Confirm payment from Flutter app after redirect.
+    Hits Cashfree API to verify payment status first.
+    Marks orders as paid & processing only if payment is confirmed.
     """
+
     parent_order_id = request.parent_order_id
 
     try:
-        # Fetch orders for this parent_order_id
-        orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
+        # 1️⃣ Verify payment with Cashfree
+        verification_result = await verify_payment_status(parent_order_id)
+        if not verification_result.get("success"):
+            raise HTTPException(status_code=400, detail="Payment verification failed")
 
+        cashfree_status = verification_result.get("order_status")
+
+        # 2️⃣ Fetch orders for this parent_order_id
+        orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
         if not orders:
             raise HTTPException(status_code=404, detail="Orders not found")
 
-        # Mark each order as paid and processing
-        for order in orders:
-            order.payment_status = "paid"
-            order.status = OrderStatus.PROCESSING
-            await order.save()
+        # 3️⃣ If payment is PAID, mark orders & notify
+        if cashfree_status == "PAID":
+            for order in orders:
+                # Idempotency check
+                if order.payment_status == "paid":
+                    continue
 
-            # Publish update + notify vendor
-            payload = {
-                "type": "order_placed",
-                "order_id": order.id,
+                order.payment_status = "paid"
+                order.status = OrderStatus.PROCESSING
+                await order.save()
+
+                payload = {
+                    "type": "order_placed",
+                    "order_id": order.id,
+                    "parent_order_id": parent_order_id,
+                    "customer_name": order.user.name if order.user else "Customer",
+                    "payment_method": "Cashfree",
+                    "payment_status": "paid",
+                    "order_status": "PROCESSING",
+                    "created_at": datetime.utcnow().isoformat()
+                }
+
+                try:
+                    # Redis publish
+                    await redis.publish("order_updates", json.dumps(payload))
+
+                    # Vendor notification
+                    vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                    if vendor:
+                        await send_notification(
+                            vendor.user_id,
+                            "New Paid Order",
+                            f"Order #{order.id} paid successfully"
+                        )
+                except Exception as e:
+                    print(f"[CONFIRM] Notification error: {e}")
+
+            return {
+                "success": True,
+                "message": "Orders marked paid",
                 "parent_order_id": parent_order_id,
-                "customer_name": order.user.name if order.user else "Customer",
-                "payment_method": "Cashfree",
-                "payment_status": "paid",
-                "order_status": "PROCESSING",
-                "created_at": datetime.utcnow().isoformat()
+                "orders_count": len(orders),
+                "cashfree_status": cashfree_status,
+                "cashfree_response": verification_result
             }
 
-            try:
-                await redis.publish("order_updates", json.dumps(payload))
-                vendor = await VendorProfile.get_or_none(id=order.vendor_id)
-                if vendor:
-                    await send_notification(
-                        vendor.user_id,
-                        "New Paid Order",
-                        f"Order #{order.id} paid successfully"
-                    )
-            except Exception as e:
-                print(f"[CONFIRM] Notification error: {e}")
-
+        # 4️⃣ If payment NOT PAID → return status
         return {
-            "success": True,
-            "message": "Orders marked paid",
+            "success": False,
+            "message": f"Payment not completed. Status: {cashfree_status}",
             "parent_order_id": parent_order_id,
-            "orders_count": len(orders)
+            "orders_count": len(orders),
+            "cashfree_status": cashfree_status,
+            "cashfree_response": verification_result
         }
 
     except HTTPException:
@@ -299,6 +327,7 @@ async def confirm_payment_from_app(
     except Exception as e:
         print(f"[CONFIRM] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/status/{parent_order_id}")
 async def get_payment_status(
