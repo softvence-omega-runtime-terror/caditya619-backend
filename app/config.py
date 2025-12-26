@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     EXOTEL_SID: str = 'quikle1'
     EXOTEL_API_KEY: str = '94b292e4033d9fe63cc3b09baf99c4903a222d1ad2a529bd'
     EXOTEL_API_TOKEN: str = '56039c82a6c0a8f8573429ef4a172cafbf765bcc7530ff1e'
-    EXOTEL_CALLER_ID: str = '09513886363'
+    EXOTEL_CALLER_ID: str = '08047187992'
 
     class Config:
         env_file = ".env"
