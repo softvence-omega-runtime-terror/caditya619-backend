@@ -19,6 +19,7 @@ class Cupon(models.Model):
 
         # Check if coupon is restricted to specific items
         related_items = await self.items.all()
+
         if related_items:
             if item:
                 if not any(i.id == item.id for i in related_items):
