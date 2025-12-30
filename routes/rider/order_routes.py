@@ -2527,820 +2527,2581 @@ class CancelOrderRequest(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
-def to_utc(dt: Optional[datetime]) -> Optional[datetime]:
-    """Convert datetime to UTC if not already"""
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+# def to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+#     """Convert datetime to UTC if not already"""
+#     if dt is None:
+#         return None
+#     if dt.tzinfo is None:
+#         return dt.replace(tzinfo=timezone.utc)
+#     return dt.astimezone(timezone.utc)
 
-async def notify_rider_websocket(
-    rider_id: int,
-    order: Order,
-    notification_type: str = "order_offer"
-) -> bool:
-    """Send WebSocket notification to rider."""
-    try:
-        rider = await RiderProfile.get_or_none(id=rider_id)
-        if not rider:
-            logger.error(f"Rider {rider_id} not found for WebSocket notification")
-            return False
+# async def notify_rider_websocket(
+#     rider_id: int,
+#     order: Order,
+#     notification_type: str = "order_offer"
+# ) -> bool:
+#     """Send WebSocket notification to rider."""
+#     try:
+#         rider = await RiderProfile.get_or_none(id=rider_id)
+#         if not rider:
+#             logger.error(f"Rider {rider_id} not found for WebSocket notification")
+#             return False
         
-        payload = {
-            "type": notification_type,
-            "order_id": str(order.id),
-            "timestamp": datetime.utcnow().isoformat(),
-            "delivery_type": str(order.delivery_type)
-        }
+#         payload = {
+#             "type": notification_type,
+#             "order_id": str(order.id),
+#             "timestamp": datetime.utcnow().isoformat(),
+#             "delivery_type": str(order.delivery_type)
+#         }
         
-        await manager.send_notification(
-            "riders",
-            str(rider.user_id),
-            "New Order Offer",
-            f"Order {order.id} - Payout: ₹{order.base_rate + order.distance_bonus if order.base_rate else '0'}"
-        )
-        logger.info(f"WebSocket notification sent to rider {rider_id} for order {order.id}")
-        return True
-    except Exception as e:
-        logger.error(f"WebSocket notification error for rider {rider_id}: {str(e)}")
-        return False
+#         await manager.send_notification(
+#             "riders",
+#             str(rider.user_id),
+#             "New Order Offer",
+#             f"Order {order.id} - Payout: ₹{order.base_rate + order.distance_bonus if order.base_rate else '0'}"
+#         )
+#         logger.info(f"WebSocket notification sent to rider {rider_id} for order {order.id}")
+#         return True
+#     except Exception as e:
+#         logger.error(f"WebSocket notification error for rider {rider_id}: {str(e)}")
+#         return False
 
-async def notify_rider_pushnotification(
-    rider_id: int,
-    title: str,
-    body: str
-) -> bool:
-    """Send push notification to rider."""
-    try:
-        rider = await RiderProfile.get_or_none(id=rider_id)
-        if not rider or not rider.user_id:
-            logger.warning(f"Rider {rider_id} not found or no user_id for push notification")
-            return False
+# async def notify_rider_pushnotification(
+#     rider_id: int,
+#     title: str,
+#     body: str
+# ) -> bool:
+#     """Send push notification to rider."""
+#     try:
+#         rider = await RiderProfile.get_or_none(id=rider_id)
+#         if not rider or not rider.user_id:
+#             logger.warning(f"Rider {rider_id} not found or no user_id for push notification")
+#             return False
         
-        await send_notification(rider.user_id, title, body)
-        logger.info(f"Push notification sent to rider {rider_id}: {title}")
-        return True
-    except Exception as e:
-        logger.error(f"Push notification error for rider {rider_id}: {str(e)}")
-        return False
+#         await send_notification(rider.user_id, title, body)
+#         logger.info(f"Push notification sent to rider {rider_id}: {title}")
+#         return True
+#     except Exception as e:
+#         logger.error(f"Push notification error for rider {rider_id}: {str(e)}")
+#         return False
 
-def calculate_delivery_fee(delivery_type: str, distance_km: float, base_fee: Decimal = None) -> Decimal:
-    """Calculate delivery fee based on type and distance"""
-    if base_fee is None:
-        base_fee = Decimal("44.00")
+# def calculate_delivery_fee(delivery_type: str, distance_km: float, base_fee: Decimal = None) -> Decimal:
+#     """Calculate delivery fee based on type and distance"""
+#     if base_fee is None:
+#         base_fee = Decimal("44.00")
     
-    # Different fee structures by delivery type
-    fee_structure = {
-        "urgent": Decimal("75.00"),      # Premium for urgent
-        "combined": Decimal("44.00"),    # Standard for combined (splits cost)
-        "split": Decimal("50.00"),       # Slightly higher for individual rider
-    }
+#     # Different fee structures by delivery type
+#     fee_structure = {
+#         "urgent": Decimal("75.00"),      # Premium for urgent
+#         "combined": Decimal("44.00"),    # Standard for combined (splits cost)
+#         "split": Decimal("50.00"),       # Slightly higher for individual rider
+#     }
     
-    base = fee_structure.get(delivery_type.lower(), base_fee)
-    distance_bonus = Decimal(str(distance_km)) * Decimal("1.00")  # ₹1 per km
+#     base = fee_structure.get(delivery_type.lower(), base_fee)
+#     distance_bonus = Decimal(str(distance_km)) * Decimal("1.00")  # ₹1 per km
     
-    return base + distance_bonus
+#     return base + distance_bonus
 
-def determine_delivery_streams(
-    order_data: Dict[str, Any],
-    has_medicine: bool = False,
-    has_non_medicine: bool = False,
-    urgent_medicine: bool = False
-) -> List[Dict[str, Any]]:
-    """
-    Determine delivery streams based on order type and items.
+# def determine_delivery_streams(
+#     order_data: Dict[str, Any],
+#     has_medicine: bool = False,
+#     has_non_medicine: bool = False,
+#     urgent_medicine: bool = False
+# ) -> List[Dict[str, Any]]:
+#     """
+#     Determine delivery streams based on order type and items.
     
-    Returns list of streams, each with type (urgent/combined/split) and metadata.
-    """
-    delivery_type = order_data.get("delivery_option", {}).get("type", "combined")
-    streams = []
+#     Returns list of streams, each with type (urgent/combined/split) and metadata.
+#     """
+#     delivery_type = order_data.get("delivery_option", {}).get("type", "combined")
+#     streams = []
     
-    if delivery_type == "urgent" and urgent_medicine:
-        # URGENT MEDICINE: Send immediately as urgent
-        streams.append({
-            "type": "urgent_medicine",
-            "is_urgent": True,
-            "delivery_type": "urgent",
-            "items_filter": lambda item: item.get("category") == "MEDICINE"
-        })
+#     if delivery_type == "urgent" and urgent_medicine:
+#         # URGENT MEDICINE: Send immediately as urgent
+#         streams.append({
+#             "type": "urgent_medicine",
+#             "is_urgent": True,
+#             "delivery_type": "urgent",
+#             "items_filter": lambda item: item.get("category") == "MEDICINE"
+#         })
         
-        # Non-medicine items (if any) with normal delivery
-        if has_non_medicine:
-            streams.append({
-                "type": "normal",
-                "is_urgent": False,
-                "delivery_type": "combined",
-                "items_filter": lambda item: item.get("category") != "MEDICINE"
-            })
+#         # Non-medicine items (if any) with normal delivery
+#         if has_non_medicine:
+#             streams.append({
+#                 "type": "normal",
+#                 "is_urgent": False,
+#                 "delivery_type": "combined",
+#                 "items_filter": lambda item: item.get("category") != "MEDICINE"
+#             })
     
-    elif delivery_type == "combined":
-        # COMBINED: Keep together (but check for urgent medicine)
-        if urgent_medicine:
-            streams.append({
-                "type": "urgent_medicine",
-                "is_urgent": True,
-                "delivery_type": "urgent",
-                "items_filter": lambda item: item.get("category") == "MEDICINE"
-            })
-            streams.append({
-                "type": "combined_non_urgent",
-                "is_urgent": False,
-                "delivery_type": "combined",
-                "items_filter": lambda item: item.get("category") != "MEDICINE"
-            })
-        else:
-            streams.append({
-                "type": "combined",
-                "is_urgent": False,
-                "delivery_type": "combined",
-                "items_filter": lambda item: True
-            })
+#     elif delivery_type == "combined":
+#         # COMBINED: Keep together (but check for urgent medicine)
+#         if urgent_medicine:
+#             streams.append({
+#                 "type": "urgent_medicine",
+#                 "is_urgent": True,
+#                 "delivery_type": "urgent",
+#                 "items_filter": lambda item: item.get("category") == "MEDICINE"
+#             })
+#             streams.append({
+#                 "type": "combined_non_urgent",
+#                 "is_urgent": False,
+#                 "delivery_type": "combined",
+#                 "items_filter": lambda item: item.get("category") != "MEDICINE"
+#             })
+#         else:
+#             streams.append({
+#                 "type": "combined",
+#                 "is_urgent": False,
+#                 "delivery_type": "combined",
+#                 "items_filter": lambda item: True
+#             })
     
-    else:  # split
-        # SPLIT: Each order separate
-        if urgent_medicine:
-            streams.append({
-                "type": "urgent_medicine",
-                "is_urgent": True,
-                "delivery_type": "urgent",
-                "items_filter": lambda item: item.get("category") == "MEDICINE"
-            })
-        streams.append({
-            "type": "split",
-            "is_urgent": False,
-            "delivery_type": "split",
-            "items_filter": lambda item: item.get("category") != "MEDICINE" or delivery_type != "urgent"
-        })
+#     else:  # split
+#         # SPLIT: Each order separate
+#         if urgent_medicine:
+#             streams.append({
+#                 "type": "urgent_medicine",
+#                 "is_urgent": True,
+#                 "delivery_type": "urgent",
+#                 "items_filter": lambda item: item.get("category") == "MEDICINE"
+#             })
+#         streams.append({
+#             "type": "split",
+#             "is_urgent": False,
+#             "delivery_type": "split",
+#             "items_filter": lambda item: item.get("category") != "MEDICINE" or delivery_type != "urgent"
+#         })
     
-    return streams if streams else [{
-        "type": delivery_type,
-        "is_urgent": delivery_type == "urgent",
-        "delivery_type": delivery_type,
-        "items_filter": lambda item: True
-    }]
+#     return streams if streams else [{
+#         "type": delivery_type,
+#         "is_urgent": delivery_type == "urgent",
+#         "delivery_type": delivery_type,
+#         "items_filter": lambda item: True
+#     }]
 
-async def find_candidate_riders(
-    vendor_lat: float,
-    vendor_lng: float,
-    is_urgent: bool = False,
-    top_n: int = 20,
-    redis=None,
-    exclude_rider_id: int = None
-) -> List[RiderProfile]:
-    """
-    Find eligible rider candidates based on location and availability.
+# async def find_candidate_riders(
+#     vendor_lat: float,
+#     vendor_lng: float,
+#     is_urgent: bool = False,
+#     top_n: int = 20,
+#     redis=None,
+#     exclude_rider_id: int = None
+# ) -> List[RiderProfile]:
+#     """
+#     Find eligible rider candidates based on location and availability.
     
-    Strategy:
-    1. Find available riders nearby
-    2. For SPLIT/URGENT: exclude riders with active orders
-    3. Expand radius progressively if needed
-    """
-    candidates = []
-    radius = URGENT_RADIUS_KM if is_urgent else INITIAL_RADIUS_KM
-    max_radius = URGENT_RADIUS_KM if is_urgent else MAX_RADIUS_KM
-    existing_ids = set()
+#     Strategy:
+#     1. Find available riders nearby
+#     2. For SPLIT/URGENT: exclude riders with active orders
+#     3. Expand radius progressively if needed
+#     """
+#     candidates = []
+#     radius = URGENT_RADIUS_KM if is_urgent else INITIAL_RADIUS_KM
+#     max_radius = URGENT_RADIUS_KM if is_urgent else MAX_RADIUS_KM
+#     existing_ids = set()
     
-    if exclude_rider_id:
-        existing_ids.add(exclude_rider_id)
+#     if exclude_rider_id:
+#         existing_ids.add(exclude_rider_id)
     
-    while len(candidates) < top_n and radius <= max_radius:
-        try:
-            # Query all available riders
-            riders = await RiderProfile.filter(
-                is_available=True
-            ).prefetch_related("current_location").all()
+#     while len(candidates) < top_n and radius <= max_radius:
+#         try:
+#             # Query all available riders
+#             riders = await RiderProfile.filter(
+#                 is_available=True
+#             ).prefetch_related("current_location").all()
             
-            # Calculate distances and filter by radius
-            rider_distances = []
-            for r in riders:
-                if r.id in existing_ids:
-                    continue
+#             # Calculate distances and filter by radius
+#             rider_distances = []
+#             for r in riders:
+#                 if r.id in existing_ids:
+#                     continue
                 
-                loc = r.current_location
-                if not loc:
-                    continue
+#                 loc = r.current_location
+#                 if not loc:
+#                     continue
                 
-                dist = haversine(vendor_lat, vendor_lng, loc.latitude, loc.longitude)
-                if dist <= radius:
-                    rider_distances.append((r, dist))
-                    existing_ids.add(r.id)
+#                 dist = haversine(vendor_lat, vendor_lng, loc.latitude, loc.longitude)
+#                 if dist <= radius:
+#                     rider_distances.append((r, dist))
+#                     existing_ids.add(r.id)
             
-            # Sort by distance and append
-            rider_distances.sort(key=lambda x: x[1])
-            candidates.extend(rider_distances)
+#             # Sort by distance and append
+#             rider_distances.sort(key=lambda x: x[1])
+#             candidates.extend(rider_distances)
             
-        except Exception as e:
-            logger.error(f"Database query error at radius {radius}km: {str(e)}")
+#         except Exception as e:
+#             logger.error(f"Database query error at radius {radius}km: {str(e)}")
         
-        if len(candidates) >= top_n:
-            break
+#         if len(candidates) >= top_n:
+#             break
         
-        radius += RADIUS_STEP_KM
+#         radius += RADIUS_STEP_KM
     
-    # Remove duplicates and return top N
-    seen_ids = set()
-    result = []
-    for rider, _ in candidates:
-        if rider.id not in seen_ids:
-            result.append(rider)
-            seen_ids.add(rider.id)
-            if len(result) >= top_n:
-                break
+#     # Remove duplicates and return top N
+#     seen_ids = set()
+#     result = []
+#     for rider, _ in candidates:
+#         if rider.id not in seen_ids:
+#             result.append(rider)
+#             seen_ids.add(rider.id)
+#             if len(result) >= top_n:
+#                 break
     
-    logger.info(f"Found {len(result)} candidate riders (urgent={is_urgent})")
-    return result
+#     logger.info(f"Found {len(result)} candidate riders (urgent={is_urgent})")
+#     return result
 
-async def send_offer_to_rider(
-    order_id: str,
-    rider_id: int,
-    is_urgent: bool = False
-) -> bool:
-    """Send order offer to a single rider."""
-    try:
-        order = await Order.get_or_none(id=order_id)
-        rider = await RiderProfile.get_or_none(id=rider_id)
+# async def send_offer_to_rider(
+#     order_id: str,
+#     rider_id: int,
+#     is_urgent: bool = False
+# ) -> bool:
+#     """Send order offer to a single rider."""
+#     try:
+#         order = await Order.get_or_none(id=order_id)
+#         rider = await RiderProfile.get_or_none(id=rider_id)
         
-        if not order or not rider:
-            logger.error(f"Order {order_id} or Rider {rider_id} not found")
-            return False
+#         if not order or not rider:
+#             logger.error(f"Order {order_id} or Rider {rider_id} not found")
+#             return False
         
-        # Create OrderOffer record
-        offer = await OrderOffer.create(
-            order=order,
-            rider=rider,
-            status="PENDING",
-            is_urgent=is_urgent,
-            created_at=datetime.utcnow()
-        )
+#         # Create OrderOffer record
+#         offer = await OrderOffer.create(
+#             order=order,
+#             rider=rider,
+#             status="PENDING",
+#             is_urgent=is_urgent,
+#             created_at=datetime.utcnow()
+#         )
         
-        # Send WebSocket notification
-        ws_success = await notify_rider_websocket(rider_id, order, "order_offer")
+#         # Send WebSocket notification
+#         ws_success = await notify_rider_websocket(rider_id, order, "order_offer")
         
-        # Send push notification
-        is_urgent_order = order.delivery_type == DeliveryTypeEnum.URGENT
-        notification_title = "🚨 URGENT: Medicine Delivery" if is_urgent_order else "New Order Offer"
-        notification_body = f"Order {order.id} - Payout: ₹{order.base_rate + order.distance_bonus if order.base_rate else '0'}"
-        push_success = await notify_rider_pushnotification(rider_id, notification_title, notification_body)
+#         # Send push notification
+#         is_urgent_order = order.delivery_type == DeliveryTypeEnum.URGENT
+#         notification_title = "🚨 URGENT: Medicine Delivery" if is_urgent_order else "New Order Offer"
+#         notification_body = f"Order {order.id} - Payout: ₹{order.base_rate + order.distance_bonus if order.base_rate else '0'}"
+#         push_success = await notify_rider_pushnotification(rider_id, notification_title, notification_body)
         
-        # Update WorkDay stats
-        today = date.today()
-        workday, _ = await WorkDay.get_or_create(
-            rider=rider,
-            date=today,
-            defaults={"hours_worked": 0.0, "order_offer_count": 0}
-        )
-        workday.order_offer_count += 1
-        await workday.save()
+#         # Update WorkDay stats
+#         today = date.today()
+#         workday, _ = await WorkDay.get_or_create(
+#             rider=rider,
+#             date=today,
+#             defaults={"hours_worked": 0.0, "order_offer_count": 0}
+#         )
+#         workday.order_offer_count += 1
+#         await workday.save()
         
-        logger.info(f"Offer sent to rider {rider_id} for order {order_id}")
-        return ws_success or push_success
-    except Exception as e:
-        logger.error(f"Error sending offer to rider {rider_id}: {str(e)}")
-        return False
+#         logger.info(f"Offer sent to rider {rider_id} for order {order_id}")
+#         return ws_success or push_success
+#     except Exception as e:
+#         logger.error(f"Error sending offer to rider {rider_id}: {str(e)}")
+#         return False
 
-async def offer_order_sequentially(
-    order_id: str,
-    candidate_riders: List[RiderProfile],
-    background_tasks: BackgroundTasks
-):
-    """Offer order to riders sequentially with timeout logic."""
-    try:
-        order = await Order.get_or_none(id=order_id)
-        if not order:
-            logger.error(f"Order {order_id} not found for sequential offering")
-            return
+# async def offer_order_sequentially(
+#     order_id: str,
+#     candidate_riders: List[RiderProfile],
+#     background_tasks: BackgroundTasks
+# ):
+#     """Offer order to riders sequentially with timeout logic."""
+#     try:
+#         order = await Order.get_or_none(id=order_id)
+#         if not order:
+#             logger.error(f"Order {order_id} not found for sequential offering")
+#             return
         
-        is_urgent = order.delivery_type == DeliveryTypeEnum.URGENT
+#         is_urgent = order.delivery_type == DeliveryTypeEnum.URGENT
         
-        for idx, rider in enumerate(candidate_riders):
-            # Check if order is still available
-            await order.refresh_from_db()
-            if order.status != OrderStatus.CONFIRMED:
-                logger.info(f"Order {order_id} already accepted, stopping offers")
-                break
+#         for idx, rider in enumerate(candidate_riders):
+#             # Check if order is still available
+#             await order.refresh_from_db()
+#             if order.status != OrderStatus.CONFIRMED:
+#                 logger.info(f"Order {order_id} already accepted, stopping offers")
+#                 break
             
-            try:
-                # Send offer
-                success = await send_offer_to_rider(order.id, rider.id, is_urgent)
-                if not success:
-                    logger.warning(f"Failed to send offer to rider {rider.id}")
-                    continue
+#             try:
+#                 # Send offer
+#                 success = await send_offer_to_rider(order.id, rider.id, is_urgent)
+#                 if not success:
+#                     logger.warning(f"Failed to send offer to rider {rider.id}")
+#                     continue
                 
-                logger.info(f"Order {order_id} offered to rider {rider.id} ({idx + 1}/{len(candidate_riders)})")
+#                 logger.info(f"Order {order_id} offered to rider {rider.id} ({idx + 1}/{len(candidate_riders)})")
                 
-                if is_urgent:
-                    # Wait 60 seconds for urgent order
-                    await asyncio.sleep(URGENT_OFFER_TIMEOUT)
+#                 if is_urgent:
+#                     # Wait 60 seconds for urgent order
+#                     await asyncio.sleep(URGENT_OFFER_TIMEOUT)
                     
-                    # Check if rider accepted or rejected
-                    await order.refresh_from_db()
-                    offer = await OrderOffer.filter(
-                        order=order,
-                        rider=rider
-                    ).first()
+#                     # Check if rider accepted or rejected
+#                     await order.refresh_from_db()
+#                     offer = await OrderOffer.filter(
+#                         order=order,
+#                         rider=rider
+#                     ).first()
                     
-                    if offer and offer.status == "PENDING":
-                        # Auto-timeout
-                        offer.status = "TIMEOUT"
-                        offer.responded_at = datetime.utcnow()
-                        await offer.save()
-                        logger.info(f"Offer to rider {rider.id} timed out (60s)")
-                    elif offer and offer.status == "REJECTED":
-                        logger.info(f"Rider {rider.id} rejected order {order_id}")
-                    elif offer and offer.status == "ACCEPTED":
-                        break
-            except asyncio.CancelledError:
-                logger.warning(f"Sequential offering task cancelled for order {order_id}")
-                break
-            except Exception as e:
-                logger.error(f"Error offering order {order_id} to rider {rider.id}: {str(e)}")
-                continue
-    except Exception as e:
-        logger.error(f"Error in sequential offering for order {order_id}: {str(e)}")
+#                     if offer and offer.status == "PENDING":
+#                         # Auto-timeout
+#                         offer.status = "TIMEOUT"
+#                         offer.responded_at = datetime.utcnow()
+#                         await offer.save()
+#                         logger.info(f"Offer to rider {rider.id} timed out (60s)")
+#                     elif offer and offer.status == "REJECTED":
+#                         logger.info(f"Rider {rider.id} rejected order {order_id}")
+#                     elif offer and offer.status == "ACCEPTED":
+#                         break
+#             except asyncio.CancelledError:
+#                 logger.warning(f"Sequential offering task cancelled for order {order_id}")
+#                 break
+#             except Exception as e:
+#                 logger.error(f"Error offering order {order_id} to rider {rider.id}: {str(e)}")
+#                 continue
+#     except Exception as e:
+#         logger.error(f"Error in sequential offering for order {order_id}: {str(e)}")
 
-async def offer_order_broadcast(
-    order_id: str,
-    candidate_riders: List[RiderProfile],
-    background_tasks: BackgroundTasks
-):
-    """Offer order to all riders simultaneously."""
-    try:
-        order = await Order.get_or_none(id=order_id)
-        if not order:
-            logger.error(f"Order {order_id} not found for broadcast offering")
-            return
+# async def offer_order_broadcast(
+#     order_id: str,
+#     candidate_riders: List[RiderProfile],
+#     background_tasks: BackgroundTasks
+# ):
+#     """Offer order to all riders simultaneously."""
+#     try:
+#         order = await Order.get_or_none(id=order_id)
+#         if not order:
+#             logger.error(f"Order {order_id} not found for broadcast offering")
+#             return
         
-        # Send offers concurrently
-        tasks = [
-            send_offer_to_rider(order.id, rider.id, is_urgent=False)
-            for rider in candidate_riders
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+#         # Send offers concurrently
+#         tasks = [
+#             send_offer_to_rider(order.id, rider.id, is_urgent=False)
+#             for rider in candidate_riders
+#         ]
+#         results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        successful = sum(1 for r in results if r is True)
-        logger.info(f"Broadcast offers sent to {len(candidate_riders)} riders for order {order_id} ({successful} successful)")
-    except Exception as e:
-        logger.error(f"Error in broadcast offering for order {order_id}: {str(e)}")
+#         successful = sum(1 for r in results if r is True)
+#         logger.info(f"Broadcast offers sent to {len(candidate_riders)} riders for order {order_id} ({successful} successful)")
+#     except Exception as e:
+#         logger.error(f"Error in broadcast offering for order {order_id}: {str(e)}")
+
+# # ============================================================================
+# # VENDOR ENDPOINTS: Create Offers (Vendor Confirms Order)
+# # ============================================================================
+
+# @router.post("/vendor/create-offers/{parent_order_id}/")
+# async def vendor_create_offers(
+#     request: Request,
+#     parent_order_id: str,
+#     prepare_time: int = Form(...),
+#     background_tasks: BackgroundTasks = BackgroundTasks(),
+#     top_n: int = 20,
+#     current_user: User = Depends(get_current_user),
+#     redis=Depends(get_redis)
+# ):
+#     """
+#     VENDOR CONFIRMS ORDERS and creates offers for riders.
+    
+#     Called by vendor after receiving orders.
+    
+#     Flow:
+#     1. Get all child orders under parent_order_id
+#     2. Determine delivery streams (urgent medicine, combined, split)
+#     3. For each stream, find riders and send offers
+#     4. Update order status to CONFIRMED
+    
+#     Restrictions:
+#     - Only vendors can call this
+#     - All child orders must be from same parent
+#     """
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+#     if not current_user.is_vendor:
+#         raise HTTPException(status_code=403, detail=translate("Only vendors can create offers", lang))
+    
+#     if top_n <= 0 or top_n > 100:
+#         raise HTTPException(status_code=400, detail=translate("Invalid top_n parameter (1-100)", lang))
+    
+#     try:
+#         # Get parent order to determine type (combined/split)
+#         parent_orders = await Order.filter(parent_order_id=parent_order_id).all()
+#         if not parent_orders:
+#             raise HTTPException(status_code=404, detail="Parent order not found")
+        
+#         # Get vendor profile
+#         vendor_profile = await VendorProfile.get_or_none(user=current_user)
+#         if not vendor_profile:
+#             raise HTTPException(status_code=404, detail="Vendor profile not found")
+        
+#         # Get all child orders under this parent
+#         child_orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related(
+#             "items__item", "user"
+#         ).all()
+        
+#         if not child_orders:
+#             raise HTTPException(status_code=404, detail="No child orders found")
+        
+#         # All orders should have same delivery type
+#         first_order = child_orders[0]
+#         delivery_type = first_order.delivery_type
+        
+#         logger.info(f"Vendor processing {len(child_orders)} child orders (type={delivery_type})")
+        
+#         processed_orders = []
+        
+#         # Process each child order
+#         for order in child_orders:
+#             order_items = await OrderItem.filter(order=order).all()
+#             if not order_items:
+#                 continue
+            
+#             # Categorize items
+#             item_ids = [oi.item_id for oi in order_items]
+#             items = await Item.filter(id__in=item_ids).all()
+#             categories = {itm.id: itm.category for itm in items}
+            
+#             has_medicine = any(categories.get(iid) == "MEDICINE" for iid in item_ids)
+#             has_non_medicine = any(categories.get(iid) and categories.get(iid) != "MEDICINE" for iid in item_ids)
+#             urgent_medicine = order.delivery_type == DeliveryTypeEnum.URGENT and has_medicine
+            
+#             logger.info(f"Order {order.id}: medicine={has_medicine}, non_medicine={has_non_medicine}, urgent_medicine={urgent_medicine}")
+            
+#             # Determine delivery streams
+#             order_data = {
+#                 "delivery_option": {
+#                     "type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else order.delivery_type
+#                 }
+#             }
+            
+#             streams = determine_delivery_streams(
+#                 order_data,
+#                 has_medicine=has_medicine,
+#                 has_non_medicine=has_non_medicine,
+#                 urgent_medicine=urgent_medicine
+#             )
+            
+#             logger.info(f"Order {order.id} has {len(streams)} stream(s)")
+            
+#             # For each stream, find riders
+#             for stream in streams:
+#                 stream_type = stream["type"]
+#                 is_urgent = stream["is_urgent"]
+#                 delivery_type_str = stream["delivery_type"]
+                
+#                 # Find candidate riders
+#                 candidates = await find_candidate_riders(
+#                     vendor_profile.latitude,
+#                     vendor_profile.longitude,
+#                     is_urgent=is_urgent,
+#                     top_n=top_n,
+#                     redis=redis
+#                 )
+                
+#                 if not candidates:
+#                     logger.warning(f"No riders available for order {order.id} stream {stream_type}")
+#                     continue
+                
+#                 # Update order status and metadata
+#                 order.status = OrderStatus.CONFIRMED
+#                 order.metadata = order.metadata or {}
+#                 order.metadata["streams"] = order.metadata.get("streams", [])
+#                 order.metadata["streams"].append({
+#                     "stream_type": stream_type,
+#                     "is_urgent": is_urgent,
+#                     "candidate_riders": [r.id for r in candidates],
+#                     "offered_at": datetime.utcnow().isoformat()
+#                 })
+#                 order.prepare_time = prepare_time
+#                 await order.save()
+                
+#                 # Send offers based on stream type
+#                 if is_urgent:
+#                     # Sequential for urgent
+#                     background_tasks.add_task(
+#                         offer_order_sequentially,
+#                         order.id,
+#                         candidates,
+#                         background_tasks
+#                     )
+#                 else:
+#                     # Broadcast for combined/split
+#                     background_tasks.add_task(
+#                         offer_order_broadcast,
+#                         order.id,
+#                         candidates,
+#                         background_tasks
+#                     )
+                
+#                 processed_orders.append({
+#                     "order_id": order.id,
+#                     "stream_type": stream_type,
+#                     "is_urgent": is_urgent,
+#                     "candidate_count": len(candidates)
+#                 })
+        
+#         return translate({
+#             "success": True,
+#             "message": f"Offers created for {len(processed_orders)} order stream(s)",
+#             "data": {
+#                 "parent_order_id": parent_order_id,
+#                 "processed_orders": processed_orders
+#             }
+#         }, lang)
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error creating vendor offers: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+# # ============================================================================
+# # RIDER ENDPOINTS: View Offers & Accept Orders
+# # ============================================================================
+
+# @router.get("/rider/offers/")
+# async def get_rider_order_offers(
+#     request: Request,
+#     current_user: User = Depends(get_current_user),
+#     limit: int = Query(10, ge=1, le=100),
+#     offset: int = Query(0, ge=0)
+# ):
+#     """
+#     Get all pending order offers for current rider.
+    
+#     Returns list of offers with order details.
+#     """
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+#     try:
+#         rider_profile = await RiderProfile.get_or_none(user=current_user)
+#         if not rider_profile:
+#             raise HTTPException(status_code=403, detail="Not a rider profile")
+        
+#         # Get pending offers
+#         offers = await OrderOffer.filter(
+#             rider=rider_profile,
+#             status="PENDING"
+#         ).prefetch_related("order__user", "order__items__item").order_by("-created_at").offset(offset).limit(limit).all()
+        
+#         total = await OrderOffer.filter(rider=rider_profile, status="PENDING").count()
+        
+#         result = []
+#         for offer in offers:
+#             order = offer.order
+#             items = []
+#             for oi in order.items:
+#                 items.append({
+#                     "item_id": oi.item_id,
+#                     "title": oi.title,
+#                     "price": oi.price,
+#                     "quantity": oi.quantity
+#                 })
+            
+#             # Check if rider has active orders (for URGENT/SPLIT restrictions)
+#             can_accept = True
+#             restriction_reason = None
+            
+#             if order.delivery_type in [DeliveryTypeEnum.URGENT, DeliveryTypeEnum.SPLIT]:
+#                 active_orders = await Order.filter(
+#                     rider=rider_profile,
+#                     status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.PREPARED, OrderStatus.OUT_FOR_DELIVERY]
+#                 ).count()
+                
+#                 if active_orders > 0:
+#                     can_accept = False
+#                     restriction_reason = f"You have {active_orders} active URGENT/SPLIT order(s). Complete them first."
+            
+#             # Calculate time remaining for offer
+#             offer_expires_at = offer.created_at + timedelta(seconds=OFFER_TIMEOUT_SECONDS)
+#             time_remaining = (offer_expires_at - datetime.utcnow()).total_seconds()
+            
+#             result.append({
+#                 "offer_id": offer.id,
+#                 "order_id": order.id,
+#                 "parent_order_id": order.parent_order_id,
+#                 "customer_name": order.user.name,
+#                 "delivery_type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else order.delivery_type,
+#                 "items": items,
+#                 "total": float(order.total),
+#                 "base_rate": float(order.base_rate),
+#                 "distance_bonus": float(order.distance_bonus),
+#                 "is_urgent": offer.is_urgent,
+#                 "prepare_time_minutes": order.prepare_time,
+#                 "time_remaining_seconds": max(0, int(time_remaining)),
+#                 "can_accept": can_accept,
+#                 "restriction_reason": restriction_reason,
+#                 "offered_at": offer.created_at.isoformat()
+#             })
+        
+#         return translate({
+#             "success": True,
+#             "total": total,
+#             "limit": limit,
+#             "offset": offset,
+#             "offers": result
+#         }, lang)
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error fetching rider offers: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+# @router.post("/rider/accept/{order_id}/")
+# async def accept_order(
+#     request: Request,
+#     order_id: str,
+#     current_user: User = Depends(get_current_user),
+#     redis=Depends(get_redis),
+#     background_tasks: BackgroundTasks = BackgroundTasks()
+# ):
+#     """
+#     RIDER accepts an order.
+    
+#     Flow:
+#     1. Claim order via Redis (prevent race condition)
+#     2. Validate order status
+#     3. Assign rider to order
+#     4. Mark offer as ACCEPTED
+#     5. Reject all other offers
+#     6. Check restrictions (URGENT/SPLIT)
+#     7. Send notifications
+    
+#     Returns: Order details with assignment info
+#     """
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+#     try:
+#         # Get rider profile
+#         rider_profile = await RiderProfile.get_or_none(user=current_user)
+#         if not rider_profile:
+#             raise HTTPException(status_code=403, detail="Not a rider profile")
+        
+#         # Use Redis to prevent race condition
+#         claim_key = f"order_claim:{order_id}"
+#         claimed = await redis.set(claim_key, str(current_user.id), nx=True, ex=30)
+#         if not claimed:
+#             raise HTTPException(status_code=400, detail="Order already claimed by another rider")
+        
+#         # Get order
+#         order = await Order.get_or_none(id=order_id).prefetch_related("user", "vendor", "items__item")
+#         if not order:
+#             raise HTTPException(status_code=404, detail="Order not found")
+        
+#         # Validate order status
+#         if order.status != OrderStatus.CONFIRMED:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail=f"Cannot accept order with status: {order.status.value if hasattr(order.status, 'value') else order.status}"
+#             )
+        
+#         # Check delivery restrictions for URGENT/SPLIT
+#         if order.delivery_type in [DeliveryTypeEnum.URGENT, DeliveryTypeEnum.SPLIT]:
+#             active_orders = await Order.filter(
+#                 rider=rider_profile,
+#                 status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.PREPARED, OrderStatus.OUT_FOR_DELIVERY]
+#             ).count()
+            
+#             if active_orders > 0:
+#                 raise HTTPException(
+#                     status_code=400,
+#                     detail="Rider has active URGENT/SPLIT order. Cannot accept another."
+#                 )
+        
+#         # Assign rider
+#         order.rider = rider_profile
+#         order.status = OrderStatus.PROCESSING
+#         order.accepted_at = datetime.utcnow()
+        
+#         # Calculate payout
+#         vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+#         if vendor and rider_profile.current_location:
+#             distance = haversine(
+#                 vendor.latitude,
+#                 vendor.longitude,
+#                 rider_profile.current_location.latitude,
+#                 rider_profile.current_location.longitude
+#             )
+#             order.pickup_distance_km = distance
+            
+#             # Calculate delivery fee based on type
+#             delivery_type = order.delivery_type.value if hasattr(order.delivery_type, 'value') else str(order.delivery_type)
+#             fee = calculate_delivery_fee(delivery_type, distance)
+#             order.base_rate = Decimal(str(fee))
+        
+#         await order.save()
+        
+#         # Mark offer as ACCEPTED
+#         offer = await OrderOffer.get_or_none(order=order, rider=rider_profile)
+#         if offer:
+#             offer.status = "ACCEPTED"
+#             offer.accepted_at = datetime.utcnow()
+#             await offer.save()
+        
+#         # Reject all other offers
+#         other_offers = await OrderOffer.filter(order=order).exclude(rider=rider_profile).all()
+#         for other_offer in other_offers:
+#             if other_offer.status == "PENDING":
+#                 other_offer.status = "REJECTED"
+#                 other_offer.rejected_at = datetime.utcnow()
+#                 await other_offer.save()
+        
+#         # Send notifications
+#         try:
+#             await send_notification(
+#                 order.user.id,
+#                 "Rider Assigned",
+#                 f"Rider assigned to your order #{order_id}"
+#             )
+            
+#             vendor_user = await User.get_or_none(id=order.vendor_id)
+#             if vendor_user:
+#                 await send_notification(
+#                     vendor_user.id,
+#                     "Order Accepted",
+#                     f"Rider accepted order #{order_id}"
+#                 )
+#         except Exception as e:
+#             logger.warning(f"Notification error: {str(e)}")
+        
+#         # Start chat channel between rider and customer
+#         try:
+#             await start_chat(current_user.id, order.user.id, order.id)
+#         except Exception as e:
+#             logger.warning(f"Chat channel error: {str(e)}")
+        
+#         return translate({
+#             "success": True,
+#             "message": "Order accepted successfully",
+#             "data": {
+#                 "order_id": order.id,
+#                 "status": order.status.value if hasattr(order.status, 'value') else order.status,
+#                 "pickup_distance_km": order.pickup_distance_km,
+#                 "base_rate": float(order.base_rate),
+#                 "accepted_at": order.accepted_at.isoformat() if order.accepted_at else None
+#             }
+#         }, lang)
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error accepting order: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+# @router.post("/rider/reject/{order_id}/")
+# async def reject_order(
+#     request: Request,
+#     order_id: str,
+#     reject_data: OrderRejectRequest,
+#     current_user: User = Depends(get_current_user)
+# ):
+#     """RIDER rejects an order offer."""
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+#     try:
+#         rider_profile = await RiderProfile.get_or_none(user=current_user)
+#         if not rider_profile:
+#             raise HTTPException(status_code=403, detail="Not a rider profile")
+        
+#         order = await Order.get_or_none(id=order_id)
+#         if not order:
+#             raise HTTPException(status_code=404, detail="Order not found")
+        
+#         # Find and update offer
+#         offer = await OrderOffer.get_or_none(order=order, rider=rider_profile)
+#         if not offer:
+#             raise HTTPException(status_code=404, detail="Offer not found")
+        
+#         if offer.status != "PENDING":
+#             raise HTTPException(status_code=400, detail="Can only reject pending offers")
+        
+#         offer.status = "REJECTED"
+#         offer.reject_reason = reject_data.reason
+#         offer.responded_at = datetime.utcnow()
+#         await offer.save()
+        
+#         # Update WorkDay stats
+#         today = date.today()
+#         workday, _ = await WorkDay.get_or_create(
+#             rider=rider_profile,
+#             date=today,
+#             defaults={"hours_worked": 0.0, "rejection_count": 0}
+#         )
+#         workday.rejection_count += 1
+#         await workday.save()
+        
+#         logger.info(f"Rider {rider_profile.id} rejected order {order_id}: {reject_data.reason}")
+        
+#         return translate({
+#             "success": True,
+#             "message": "Order rejected",
+#             "order_id": order_id
+#         }, lang)
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error rejecting order: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+
+
+
+
+
+
+
+
 
 # ============================================================================
-# VENDOR ENDPOINTS: Create Offers (Vendor Confirms Order)
+# VENDOR CONFIRM ORDER ENDPOINT
 # ============================================================================
 
-@router.post("/vendor/create-offers/{parent_order_id}/")
-async def vendor_create_offers(
-    request: Request,
-    parent_order_id: str,
-    prepare_time: int = Form(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
-    top_n: int = 20,
-    current_user: User = Depends(get_current_user),
-    redis=Depends(get_redis)
-):
-    """
-    VENDOR CONFIRMS ORDERS and creates offers for riders.
+# @router.post("/vendors/orders/{order_id}/confirm")
+# async def vendor_confirm_order(
+#     request: Request,
+#     order_id: str,
+#     current_user: User = Depends(get_current_user),
+#     redis = Depends(get_redis),
+#     background_tasks: BackgroundTasks = BackgroundTasks()
+# ):
+#     """
+#     Vendor confirms their portion of an order.
     
-    Called by vendor after receiving orders.
+#     Logic:
+#     - URGENT orders: Auto-assign rider immediately after confirmation
+#     - SPLIT orders: Trigger rider broadcast offers after confirmation
+#     - COMBINED orders: Check if ALL vendors confirmed, then trigger broadcast
+#     - Mixed urgent+non-urgent: Urgent gets auto-assigned, non-urgent waits
     
-    Flow:
-    1. Get all child orders under parent_order_id
-    2. Determine delivery streams (urgent medicine, combined, split)
-    3. For each stream, find riders and send offers
-    4. Update order status to CONFIRMED
+#     Returns: Order details with confirmation status and next steps
+#     """
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     
-    Restrictions:
-    - Only vendors can call this
-    - All child orders must be from same parent
-    """
-    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+#     try:
+#         # Verify vendor
+#         if not current_user.is_vendor:
+#             raise HTTPException(
+#                 status_code=403,
+#                 detail="Only vendors can confirm orders"
+#             )
+        
+#         # Get order
+#         order = await Order.get_or_none(id=order_id).prefetch_related(
+#             'user', 'items__item', 'vendor'
+#         )
+#         if not order:
+#             raise HTTPException(status_code=404, detail="Order not found")
+        
+#         # Verify vendor ownership
+#         if order.vendor_id != current_user.id:
+#             raise HTTPException(
+#                 status_code=403,
+#                 detail="You are not authorized to confirm this order"
+#             )
+        
+#         # Check order status - can only confirm pending or processing
+#         current_status = (
+#             order.status.value 
+#             if hasattr(order.status, 'value') 
+#             else str(order.status)
+#         ).lower()
+        
+#         if current_status not in ["pending", "processing"]:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail=f"Cannot confirm order with status: {current_status}"
+#             )
+        
+#         # Get order type and metadata
+#         order_type = "combined"
+#         requires_all_confirmations = False
+#         if order.metadata and "order_type" in order.metadata:
+#             order_type = order.metadata["order_type"]
+#         if order.metadata and "requires_all_vendor_confirmations" in order.metadata:
+#             requires_all_confirmations = order.metadata["requires_all_vendor_confirmations"]
+        
+#         # Update metadata - track vendor confirmations
+#         order.metadata = order.metadata or {}
+#         order.metadata["vendor_confirmations"] = order.metadata.get("vendor_confirmations", {})
+#         order.metadata["vendor_confirmations"][str(current_user.id)] = {
+#             "confirmed_at": datetime.utcnow().isoformat(),
+#             "confirmed": True
+#         }
+        
+#         # Get parent order for combined orders
+#         parent_order_id = order.parent_order_id
+#         related_orders = await Order.filter(
+#             parent_order_id=parent_order_id
+#         ).all() if parent_order_id else [order]
+        
+#         # Check if all vendors confirmed (for combined/split orders)
+#         all_confirmed = await _check_all_vendors_confirmed(
+#             related_orders, order.metadata
+#         )
+        
+#         # Update order status
+#         if order_type == "urgent":
+#             # URGENT: Auto-assign rider immediately
+#             order.status = OrderStatus.CONFIRMED
+#             await order.save()
+            
+#             # Get vendor location
+#             vendor_profile = await VendorProfile.get_or_none(user=current_user)
+#             if vendor_profile:
+#                 # Find and auto-assign nearest rider
+#                 background_tasks.add_task(
+#                     _auto_assign_rider_for_urgent,
+#                     order.id,
+#                     vendor_profile.latitude,
+#                     vendor_profile.longitude,
+#                     redis
+#                 )
+            
+#             response_msg = f"Order confirmed. Assigning nearest rider for urgent delivery..."
+            
+#         elif order_type == "split":
+#             # SPLIT: Broadcast to riders immediately after this vendor confirms
+#             order.status = OrderStatus.CONFIRMED
+#             await order.save()
+            
+#             vendor_profile = await VendorProfile.get_or_none(user=current_user)
+#             if vendor_profile:
+#                 # Broadcast rider offers for this split order
+#                 background_tasks.add_task(
+#                     _broadcast_rider_offers,
+#                     order.id,
+#                     vendor_profile.latitude,
+#                     vendor_profile.longitude,
+#                     is_urgent=False,
+#                     redis=redis
+#                 )
+            
+#             response_msg = f"Order confirmed. Finding available riders..."
+            
+#         elif order_type == "combined" and all_confirmed:
+#             # COMBINED: All vendors confirmed, now broadcast
+#             order.status = OrderStatus.CONFIRMED
+#             await order.save()
+            
+#             # Update all related orders with confirmation status
+#             for related_order in related_orders:
+#                 related_order.metadata = related_order.metadata or {}
+#                 related_order.metadata["all_vendors_confirmed"] = True
+#                 related_order.status = OrderStatus.CONFIRMED
+#                 await related_order.save()
+            
+#             vendor_profile = await VendorProfile.get_or_none(user=current_user)
+#             if vendor_profile:
+#                 # Broadcast to riders
+#                 background_tasks.add_task(
+#                     _broadcast_rider_offers,
+#                     order.id,
+#                     vendor_profile.latitude,
+#                     vendor_profile.longitude,
+#                     is_urgent=False,
+#                     redis=redis
+#                 )
+            
+#             response_msg = f"All vendors confirmed. Finding available riders..."
+            
+#         elif order_type == "combined" and not all_confirmed:
+#             # COMBINED: Still waiting for other vendors
+#             order.status = OrderStatus.PROCESSING
+#             await order.save()
+            
+#             pending_count = len(related_orders) - len(
+#                 order.metadata.get("vendor_confirmations", {})
+#             )
+#             response_msg = f"Order confirmed. Waiting for {pending_count} more vendor(s)..."
+        
+#         else:
+#             # Default update
+#             order.status = OrderStatus.CONFIRMED
+#             await order.save()
+#             response_msg = "Order confirmed successfully"
+        
+#         # Send notifications
+#         try:
+#             # Notify customer
+#             await send_notification(
+#                 order.user_id,
+#                 "Vendor Confirmed",
+#                 f"Vendor confirmed order #{order.id}"
+#             )
+            
+#             # Broadcast via WebSocket
+#             await manager.send_to(
+#                 {
+#                     "type": "vendor_confirmed",
+#                     "order_id": order.id,
+#                     "parent_order_id": parent_order_id,
+#                     "order_type": order_type,
+#                     "timestamp": datetime.utcnow().isoformat()
+#                 },
+#                 "customers",
+#                 str(order.user_id),
+#                 "orders"
+#             )
+#         except Exception as e:
+#             print(f"[CONFIRM] Notification error: {e}")
+        
+#         # Build response
+#         vendor_profile = await VendorProfile.get_or_none(user=current_user)
+#         return {
+#             "success": True,
+#             "message": response_msg,
+#             "data": {
+#                 "order_id": order.id,
+#                 "parent_order_id": parent_order_id,
+#                 "order_type": order_type,
+#                 "status": "confirmed",
+#                 "vendor_id": current_user.id,
+#                 "vendor_name": current_user.name,
+#                 "all_vendors_confirmed": all_confirmed,
+#                 "pending_vendors": (
+#                     len(related_orders) - len(order.metadata.get("vendor_confirmations", {}))
+#                     if order_type == "combined" else 0
+#                 ),
+#                 "next_action": (
+#                     "Waiting for available rider" if all_confirmed 
+#                     else "Waiting for other vendors"
+#                 ),
+#                 "preparation_required": order_type == "split"  # Each split order needs prep
+#             }
+#         }
     
-    if not current_user.is_vendor:
-        raise HTTPException(status_code=403, detail=translate("Only vendors can create offers", lang))
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         print(f"[CONFIRM] Error: {e}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+# # ============================================================================
+# # RIDER ACCEPT ORDER ENDPOINT
+# # ============================================================================
+
+# @router.post("/riders/orders/{order_id}/accept")
+# async def rider_accept_order(
+#     request: Request,
+#     order_id: str,
+#     current_user: User = Depends(get_current_user),
+#     redis = Depends(get_redis),
+#     background_tasks: BackgroundTasks = BackgroundTasks()
+# ):
+#     """
+#     Rider accepts an order offer.
     
-    if top_n <= 0 or top_n > 100:
-        raise HTTPException(status_code=400, detail=translate("Invalid top_n parameter (1-100)", lang))
+#     Logic:
+#     - URGENT orders: Already auto-assigned, just confirm acceptance
+#     - SPLIT/COMBINED orders: Lock rider, expire other offers
+#     - Block rider from accepting other orders until delivery
     
-    try:
-        # Get parent order to determine type (combined/split)
-        parent_orders = await Order.filter(parent_order_id=parent_order_id).all()
-        if not parent_orders:
-            raise HTTPException(status_code=404, detail="Parent order not found")
+#     Returns: Assignment confirmation with pickup/delivery details
+#     """
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+#     try:
+#         # Verify rider
+#         rider_profile = await RiderProfile.get_or_none(user=current_user)
+#         if not rider_profile:
+#             raise HTTPException(status_code=403, detail="Rider profile not found")
         
-        # Get vendor profile
-        vendor_profile = await VendorProfile.get_or_none(user=current_user)
-        if not vendor_profile:
-            raise HTTPException(status_code=404, detail="Vendor profile not found")
+#         # Check rider availability
+#         if not rider_profile.is_available:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="You are currently not available for orders"
+#             )
         
-        # Get all child orders under this parent
-        child_orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related(
-            "items__item", "user"
-        ).all()
+#         # Get order
+#         order = await Order.get_or_none(id=order_id).prefetch_related(
+#             'user', 'items__item', 'vendor', 'rider'
+#         )
+#         if not order:
+#             raise HTTPException(status_code=404, detail="Order not found")
         
-        if not child_orders:
-            raise HTTPException(status_code=404, detail="No child orders found")
+#         # Get order type
+#         order_type = "combined"
+#         if order.metadata and "order_type" in order.metadata:
+#             order_type = order.metadata["order_type"]
         
-        # All orders should have same delivery type
-        first_order = child_orders[0]
-        delivery_type = first_order.delivery_type
+#         # Check rider lock for SPLIT/COMBINED orders
+#         if order_type in ["split", "combined"]:
+#             # Check if rider already has active orders
+#             active_orders = await Order.filter(
+#                 rider=rider_profile,
+#                 status__in=[
+#                     OrderStatus.CONFIRMED,
+#                     OrderStatus.SHIPPED,
+#                     OrderStatus.PREPARED,
+#                     OrderStatus.OUT_FOR_DELIVERY
+#                 ]
+#             ).count()
+            
+#             if active_orders > 0:
+#                 raise HTTPException(
+#                     status_code=400,
+#                     detail=f"You have {active_orders} active order(s). Complete them first before accepting new orders."
+#                 )
         
-        logger.info(f"Vendor processing {len(child_orders)} child orders (type={delivery_type})")
+#         # For URGENT orders: verify rider is auto-assigned
+#         if order_type == "urgent":
+#             if order.rider_id and order.rider_id != rider_profile.id:
+#                 raise HTTPException(
+#                     status_code=400,
+#                     detail="This urgent order is assigned to another rider"
+#                 )
+#             # Mark as accepted (if not already)
         
-        processed_orders = []
+#         # Update order with rider assignment
+#         order.rider_id = rider_profile.id
+#         order.status = OrderStatus.OUT_FOR_DELIVERY
         
-        # Process each child order
-        for order in child_orders:
-            order_items = await OrderItem.filter(order=order).all()
-            if not order_items:
-                continue
+#         # For SPLIT/COMBINED: Lock rider
+#         if order_type in ["split", "combined"]:
+#             order.metadata = order.metadata or {}
+#             order.metadata["rider_locked"] = True
+#             order.metadata["rider_locked_at"] = datetime.utcnow().isoformat()
+        
+#         await order.save()
+        
+#         # Create/update OrderOffer record
+#         order_offer = await OrderOffer.filter(
+#             order=order,
+#             rider=rider_profile
+#         ).first()
+        
+#         if order_offer:
+#             order_offer.status = "ACCEPTED"
+#             order_offer.responded_at = datetime.utcnow()
+#             await order_offer.save()
+#         else:
+#             # Create offer record if doesn't exist (for auto-assigned)
+#             await OrderOffer.create(
+#                 order=order,
+#                 rider=rider_profile,
+#                 status="ACCEPTED",
+#                 is_urgent=(order_type == "urgent"),
+#                 created_at=datetime.utcnow(),
+#                 responded_at=datetime.utcnow()
+#             )
+        
+#         # For SPLIT/COMBINED: Expire other offers
+#         if order_type in ["split", "combined"]:
+#             background_tasks.add_task(
+#                 _expire_other_offers,
+#                 order.id,
+#                 rider_profile.id
+#             )
+        
+#         # Send notifications
+#         try:
+#             # Notify vendor
+#             if order.vendor:
+#                 await send_notification(
+#                     order.vendor_id,
+#                     "Rider Assigned",
+#                     f"Rider {current_user.name} assigned to order #{order.id}"
+#                 )
             
-            # Categorize items
-            item_ids = [oi.item_id for oi in order_items]
-            items = await Item.filter(id__in=item_ids).all()
-            categories = {itm.id: itm.category for itm in items}
+#             # Notify customer
+#             await send_notification(
+#                 order.user_id,
+#                 "Rider Assigned",
+#                 f"Rider {current_user.name} is picking up your order"
+#             )
             
-            has_medicine = any(categories.get(iid) == "MEDICINE" for iid in item_ids)
-            has_non_medicine = any(categories.get(iid) and categories.get(iid) != "MEDICINE" for iid in item_ids)
-            urgent_medicine = order.delivery_type == DeliveryTypeEnum.URGENT and has_medicine
+#             # Broadcast via WebSocket
+#             await manager.send_to(
+#                 {
+#                     "type": "rider_assigned",
+#                     "order_id": order.id,
+#                     "rider_id": rider_profile.id,
+#                     "rider_name": current_user.name,
+#                     "rider_phone": current_user.phone,
+#                     "timestamp": datetime.utcnow().isoformat()
+#                 },
+#                 "vendors",
+#                 str(order.vendor_id),
+#                 "orders"
+#             )
             
-            logger.info(f"Order {order.id}: medicine={has_medicine}, non_medicine={has_non_medicine}, urgent_medicine={urgent_medicine}")
+#             await manager.send_to(
+#                 {
+#                     "type": "rider_assigned",
+#                     "order_id": order.id,
+#                     "rider_id": rider_profile.id,
+#                     "rider_name": current_user.name
+#                 },
+#                 "customers",
+#                 str(order.user_id),
+#                 "orders"
+#             )
+#         except Exception as e:
+#             print(f"[ACCEPT] Notification error: {e}")
+        
+#         # Build response
+#         vendor_info = order.metadata.get("vendor_info", {}) if order.metadata else {}
+#         return {
+#             "success": True,
+#             "message": f"Order accepted successfully. Heading to pickup location.",
+#             "data": {
+#                 "order_id": order.id,
+#                 "parent_order_id": order.parent_order_id,
+#                 "order_type": order_type,
+#                 "rider_id": rider_profile.id,
+#                 "rider_name": current_user.name,
+#                 "rider_phone": current_user.phone,
+#                 "status": "out_for_delivery",
+#                 "vendor_location": {
+#                     "latitude": vendor_info.get("store_latitude"),
+#                     "longitude": vendor_info.get("store_longitude"),
+#                     "name": vendor_info.get("store_name", "Store")
+#                 },
+#                 "estimated_pickup_time": "5-10 minutes",
+#                 "customer_info": {
+#                     "name": order.user.name if order.user else "Customer",
+#                     "phone": order.user.phone if order.user else None
+#                 }
+#             }
+#         }
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         print(f"[ACCEPT] Error: {e}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+# # ============================================================================
+# # ORDER STATUS ENDPOINT
+# # ============================================================================
+
+# @router.get("/orders/{order_id}/status")
+# async def get_order_status(
+#     request: Request,
+#     order_id: str,
+#     current_user: User = Depends(get_current_user)
+# ):
+#     """
+#     Get real-time order status with type-specific information.
+    
+#     Returns:
+#     - Order type (combined, split, urgent)
+#     - Vendor confirmation status (for combined orders)
+#     - Rider assignment status
+#     - Next actions required
+#     - Estimated times
+#     """
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+#     try:
+#         # Get order
+#         order = await Order.get_or_none(id=order_id).prefetch_related(
+#             'user', 'vendor', 'rider'
+#         )
+#         if not order:
+#             raise HTTPException(status_code=404, detail="Order not found")
+        
+#         # Verify authorization (customer, vendor, or rider)
+#         is_customer = order.user_id == current_user.id
+#         is_vendor = order.vendor_id == current_user.id
+#         is_rider = order.rider and order.rider.user_id == current_user.id
+        
+#         if not (is_customer or is_vendor or is_rider):
+#             raise HTTPException(
+#                 status_code=403,
+#                 detail="Not authorized to view this order"
+#             )
+        
+#         # Extract order type and metadata
+#         order_type = "combined"
+#         if order.metadata and "order_type" in order.metadata:
+#             order_type = order.metadata["order_type"]
+        
+#         vendor_confirmations = (
+#             order.metadata.get("vendor_confirmations", {})
+#             if order.metadata else {}
+#         )
+        
+#         current_status = (
+#             order.status.value 
+#             if hasattr(order.status, 'value') 
+#             else str(order.status)
+#         ).lower()
+        
+#         # Build status response
+#         status_response = {
+#             "order_id": order.id,
+#             "parent_order_id": order.parent_order_id,
+#             "order_type": order_type,
+#             "current_status": current_status,
+#             "total_amount": float(order.total),
+#             "created_at": order.order_date.isoformat() if order.order_date else None
+#         }
+        
+#         # Add type-specific information
+#         if order_type == "combined":
+#             # Get all related orders for confirmation tracking
+#             related_orders = await Order.filter(
+#                 parent_order_id=order.parent_order_id
+#             ).all() if order.parent_order_id else [order]
             
-            # Determine delivery streams
-            order_data = {
-                "delivery_option": {
-                    "type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else order.delivery_type
-                }
-            }
+#             vendor_count = len(related_orders)
+#             confirmed_count = len(vendor_confirmations)
             
-            streams = determine_delivery_streams(
-                order_data,
-                has_medicine=has_medicine,
-                has_non_medicine=has_non_medicine,
-                urgent_medicine=urgent_medicine
-            )
-            
-            logger.info(f"Order {order.id} has {len(streams)} stream(s)")
-            
-            # For each stream, find riders
-            for stream in streams:
-                stream_type = stream["type"]
-                is_urgent = stream["is_urgent"]
-                delivery_type_str = stream["delivery_type"]
+#             status_response.update({
+#                 "vendor_confirmations": {
+#                     "total": vendor_count,
+#                     "confirmed": confirmed_count,
+#                     "pending": vendor_count - confirmed_count,
+#                     "details": vendor_confirmations
+#                 },
+#                 "all_confirmed": confirmed_count == vendor_count,
+#                 "awaiting_vendors": current_status == "processing" and confirmed_count < vendor_count
+#             })
+        
+#         elif order_type == "split":
+#             status_response.update({
+#                 "independent_vendor": True,
+#                 "vendor_confirmed": len(vendor_confirmations) > 0,
+#                 "ready_for_rider": current_status in ["confirmed", "out_for_delivery"]
+#             })
+        
+#         elif order_type == "urgent":
+#             status_response.update({
+#                 "is_urgent": True,
+#                 "vendor_confirmed": len(vendor_confirmations) > 0,
+#                 "rider_auto_assigned": order.rider_id is not None,
+#                 "rider_locked": order.metadata.get("rider_locked", False) if order.metadata else False
+#             })
+        
+#         # Add rider assignment info if applicable
+#         if order.rider:
+#             status_response.update({
+#                 "rider_assigned": {
+#                     "rider_id": order.rider.id,
+#                     "rider_name": order.rider.user.name if order.rider.user else None,
+#                     "rider_phone": order.rider.user.phone if order.rider.user else None,
+#                     "assigned_at": order.metadata.get("rider_locked_at") if order.metadata else None
+#                 },
+#                 "rider_locked": True
+#             })
+#         else:
+#             status_response.update({
+#                 "rider_assigned": None,
+#                 "rider_locked": False
+#             })
+        
+#         # Add next action
+#         if current_status == "pending" or current_status == "processing":
+#             if order_type == "combined":
+#                 next_action = "Waiting for vendor confirmations" if len(vendor_confirmations) < vendor_count else "Waiting for rider"
+#             elif order_type == "split":
+#                 next_action = "Waiting for vendor confirmation" if not vendor_confirmations else "Waiting for rider"
+#             elif order_type == "urgent":
+#                 next_action = "Waiting for vendor confirmation" if not vendor_confirmations else "Rider auto-assigned"
+#             else:
+#                 next_action = "Processing order"
+#         else:
+#             next_action = None
+        
+#         status_response["next_action"] = next_action
+        
+#         return {
+#             "success": True,
+#             "data": status_response
+#         }
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         print(f"[STATUS] Error: {e}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+# # ============================================================================
+# # HELPER FUNCTIONS
+# # ============================================================================
+
+# async def _check_all_vendors_confirmed(related_orders: list, metadata: dict) -> bool:
+#     """Check if all vendors for this order have confirmed"""
+#     vendor_confirmations = metadata.get("vendor_confirmations", {})
+#     vendor_ids = {order.vendor_id for order in related_orders}
+#     confirmed_vendors = set(int(v) for v in vendor_confirmations.keys())
+#     return vendor_ids == confirmed_vendors
+
+
+# async def _auto_assign_rider_for_urgent(
+#     order_id: str,
+#     vendor_lat: float,
+#     vendor_lng: float,
+#     redis
+# ):
+#     """
+#     Auto-assign nearest available rider for urgent orders.
+#     Called in background task after vendor confirms.
+#     """
+#     try:
+#         order = await Order.get_or_none(id=order_id)
+#         if not order:
+#             print(f"[AUTO_ASSIGN] Order {order_id} not found")
+#             return
+        
+#         # Find nearest available riders (within 10km for urgent)
+#         riders = await _find_nearby_riders(
+#             vendor_lat, vendor_lng,
+#             radius_km=10.0,
+#             is_urgent=True,
+#             redis=redis
+#         )
+        
+#         if not riders:
+#             print(f"[AUTO_ASSIGN] No riders available for order {order_id}")
+#             # TODO: Send notification to vendor/customer - no riders available
+#             return
+        
+#         # Assign first nearest rider
+#         assigned_rider = riders[0]
+#         order.rider_id = assigned_rider.id
+#         order.status = OrderStatus.CONFIRMED
+        
+#         # Create OrderOffer
+#         await OrderOffer.create(
+#             order=order,
+#             rider=assigned_rider,
+#             status="AUTO_ASSIGNED",
+#             is_urgent=True,
+#             created_at=datetime.utcnow()
+#         )
+        
+#         await order.save()
+        
+#         # Send notification to rider
+#         try:
+#             await send_notification(
+#                 assigned_rider.user_id,
+#                 "🚨 URGENT ORDER ASSIGNED",
+#                 f"Urgent order #{order.id} assigned. Pick up immediately!"
+#             )
+#         except:
+#             pass
+        
+#         print(f"[AUTO_ASSIGN] Assigned rider {assigned_rider.id} to urgent order {order_id}")
+    
+#     except Exception as e:
+#         print(f"[AUTO_ASSIGN] Error: {e}")
+
+
+# async def _broadcast_rider_offers(
+#     order_id: str,
+#     vendor_lat: float,
+#     vendor_lng: float,
+#     is_urgent: bool = False,
+#     redis = None
+# ):
+#     """
+#     Broadcast order offer to all available riders.
+#     First rider to accept wins.
+#     """
+#     try:
+#         order = await Order.get_or_none(id=order_id)
+#         if not order:
+#             print(f"[BROADCAST] Order {order_id} not found")
+#             return
+        
+#         # Find available riders
+#         riders = await _find_nearby_riders(
+#             vendor_lat, vendor_lng,
+#             radius_km=3.0 if not is_urgent else 10.0,
+#             is_urgent=is_urgent,
+#             redis=redis
+#         )
+        
+#         if not riders:
+#             print(f"[BROADCAST] No riders available for order {order_id}")
+#             # TODO: Handle no riders scenario
+#             return
+        
+#         # Create offers for all riders
+#         for rider in riders:
+#             try:
+#                 offer = await OrderOffer.create(
+#                     order=order,
+#                     rider=rider,
+#                     status="PENDING",
+#                     is_urgent=is_urgent,
+#                     created_at=datetime.utcnow()
+#                 )
                 
-                # Find candidate riders
-                candidates = await find_candidate_riders(
-                    vendor_profile.latitude,
-                    vendor_profile.longitude,
-                    is_urgent=is_urgent,
-                    top_n=top_n,
-                    redis=redis
-                )
-                
-                if not candidates:
-                    logger.warning(f"No riders available for order {order.id} stream {stream_type}")
-                    continue
-                
-                # Update order status and metadata
-                order.status = OrderStatus.CONFIRMED
-                order.metadata = order.metadata or {}
-                order.metadata["streams"] = order.metadata.get("streams", [])
-                order.metadata["streams"].append({
-                    "stream_type": stream_type,
-                    "is_urgent": is_urgent,
-                    "candidate_riders": [r.id for r in candidates],
-                    "offered_at": datetime.utcnow().isoformat()
-                })
-                order.prepare_time = prepare_time
-                await order.save()
-                
-                # Send offers based on stream type
-                if is_urgent:
-                    # Sequential for urgent
-                    background_tasks.add_task(
-                        offer_order_sequentially,
-                        order.id,
-                        candidates,
-                        background_tasks
-                    )
-                else:
-                    # Broadcast for combined/split
-                    background_tasks.add_task(
-                        offer_order_broadcast,
-                        order.id,
-                        candidates,
-                        background_tasks
-                    )
-                
-                processed_orders.append({
-                    "order_id": order.id,
-                    "stream_type": stream_type,
-                    "is_urgent": is_urgent,
-                    "candidate_count": len(candidates)
-                })
+#                 # Send notification
+#                 try:
+#                     await send_notification(
+#                         rider.user_id,
+#                         "New Order Offer",
+#                         f"Order #{order_id} - ₹{order.total}"
+#                     )
+#                 except:
+#                     pass
+#             except:
+#                 continue
         
-        return translate({
-            "success": True,
-            "message": f"Offers created for {len(processed_orders)} order stream(s)",
-            "data": {
-                "parent_order_id": parent_order_id,
-                "processed_orders": processed_orders
-            }
-        }, lang)
+#         print(f"[BROADCAST] Order {order_id} offered to {len(riders)} riders")
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating vendor offers: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+#     except Exception as e:
+#         print(f"[BROADCAST] Error: {e}")
+
+
+# async def _expire_other_offers(order_id: str, accepted_rider_id: int):
+#     """
+#     Expire other rider offers for this order after acceptance.
+#     """
+#     try:
+#         # Get all pending offers for this order
+#         pending_offers = await OrderOffer.filter(
+#             order_id=order_id,
+#             status="PENDING"
+#         ).exclude(rider_id=accepted_rider_id).all()
+        
+#         for offer in pending_offers:
+#             offer.status = "EXPIRED"
+#             offer.responded_at = datetime.utcnow()
+#             await offer.save()
+        
+#         print(f"[EXPIRE] Expired {len(pending_offers)} offers for order {order_id}")
+#     except Exception as e:
+#         print(f"[EXPIRE] Error: {e}")
+
+
+# async def _find_nearby_riders(
+#     latitude: float,
+#     longitude: float,
+#     radius_km: float = 3.0,
+#     is_urgent: bool = False,
+#     redis = None
+# ) -> list:
+#     """
+#     Find available riders within radius.
+#     Uses Redis geo-spatial queries if available, falls back to database.
+#     """
+#     try:
+#         riders = []
+        
+#         # Try Redis first (if available)
+#         if redis:
+#             try:
+#                 # Execute GEORADIUS command
+#                 geo_results = await redis.execute_command(
+#                     "GEORADIUS",
+#                     "riders_locations",
+#                     longitude,
+#                     latitude,
+#                     radius_km,
+#                     "km",
+#                     "ASC",
+#                     "COUNT",
+#                     20
+#                 )
+                
+#                 if geo_results:
+#                     rider_ids = [int(x) for x in geo_results]
+#                     riders = await RiderProfile.filter(
+#                         id__in=rider_ids,
+#                         is_available=True
+#                     ).all()
+#                     return riders
+#             except:
+#                 pass
+        
+#         # Fallback: Query all available riders and filter by distance
+#         all_riders = await RiderProfile.filter(
+#             is_available=True
+#         ).prefetch_related("current_location").all()
+        
+#         from app.utils.geo import haversine
+        
+#         for rider in all_riders:
+#             if rider.current_location:
+#                 distance = haversine(
+#                     latitude, longitude,
+#                     rider.current_location.latitude,
+#                     rider.current_location.longitude
+#                 )
+#                 if distance <= radius_km:
+#                     riders.append(rider)
+        
+#         # Sort by distance
+#         riders.sort(
+#             key=lambda r: haversine(
+#                 latitude, longitude,
+#                 r.current_location.latitude,
+#                 r.current_location.longitude
+#             ) if r.current_location else float('inf')
+#         )
+        
+#         return riders[:20]  # Return top 20 nearest riders
+    
+#     except Exception as e:
+#         print(f"[FIND_RIDERS] Error: {e}")
+#         return []
+
+
+
+
+
+
+
+
+
+OFFER_TIMEOUT_SECONDS = 60  # adjust as needed
+
 
 # ============================================================================
-# RIDER ENDPOINTS: View Offers & Accept Orders
+# VENDOR CONFIRM ORDER
 # ============================================================================
 
-@router.get("/rider/offers/")
-async def get_rider_order_offers(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0)
-):
-    """
-    Get all pending order offers for current rider.
-    
-    Returns list of offers with order details.
-    """
-    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
-    
-    try:
-        rider_profile = await RiderProfile.get_or_none(user=current_user)
-        if not rider_profile:
-            raise HTTPException(status_code=403, detail="Not a rider profile")
-        
-        # Get pending offers
-        offers = await OrderOffer.filter(
-            rider=rider_profile,
-            status="PENDING"
-        ).prefetch_related("order__user", "order__items__item").order_by("-created_at").offset(offset).limit(limit).all()
-        
-        total = await OrderOffer.filter(rider=rider_profile, status="PENDING").count()
-        
-        result = []
-        for offer in offers:
-            order = offer.order
-            items = []
-            for oi in order.items:
-                items.append({
-                    "item_id": oi.item_id,
-                    "title": oi.title,
-                    "price": oi.price,
-                    "quantity": oi.quantity
-                })
-            
-            # Check if rider has active orders (for URGENT/SPLIT restrictions)
-            can_accept = True
-            restriction_reason = None
-            
-            if order.delivery_type in [DeliveryTypeEnum.URGENT, DeliveryTypeEnum.SPLIT]:
-                active_orders = await Order.filter(
-                    rider=rider_profile,
-                    status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.PREPARED, OrderStatus.OUT_FOR_DELIVERY]
-                ).count()
-                
-                if active_orders > 0:
-                    can_accept = False
-                    restriction_reason = f"You have {active_orders} active URGENT/SPLIT order(s). Complete them first."
-            
-            # Calculate time remaining for offer
-            offer_expires_at = offer.created_at + timedelta(seconds=OFFER_TIMEOUT_SECONDS)
-            time_remaining = (offer_expires_at - datetime.utcnow()).total_seconds()
-            
-            result.append({
-                "offer_id": offer.id,
-                "order_id": order.id,
-                "parent_order_id": order.parent_order_id,
-                "customer_name": order.user.name,
-                "delivery_type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else order.delivery_type,
-                "items": items,
-                "total": float(order.total),
-                "base_rate": float(order.base_rate),
-                "distance_bonus": float(order.distance_bonus),
-                "is_urgent": offer.is_urgent,
-                "prepare_time_minutes": order.prepare_time,
-                "time_remaining_seconds": max(0, int(time_remaining)),
-                "can_accept": can_accept,
-                "restriction_reason": restriction_reason,
-                "offered_at": offer.created_at.isoformat()
-            })
-        
-        return translate({
-            "success": True,
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "offers": result
-        }, lang)
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching rider offers: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-@router.post("/rider/accept/{order_id}/")
-async def accept_order(
+@router.post("/vendors/orders/{order_id}/confirm")
+async def vendor_confirm_order(
     request: Request,
     order_id: str,
     current_user: User = Depends(get_current_user),
     redis=Depends(get_redis),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """
-    RIDER accepts an order.
-    
-    Flow:
-    1. Claim order via Redis (prevent race condition)
-    2. Validate order status
-    3. Assign rider to order
-    4. Mark offer as ACCEPTED
-    5. Reject all other offers
-    6. Check restrictions (URGENT/SPLIT)
-    7. Send notifications
-    
-    Returns: Order details with assignment info
+    Vendor confirms their portion of an order.
+
+    Logic:
+    - URGENT orders: Auto-assign rider immediately after confirmation
+    - SPLIT orders: Trigger rider broadcast offers after confirmation
+    - COMBINED orders: Check if ALL vendors confirmed (by group key), then trigger broadcast
+
+    Returns: Order details with confirmation status and next steps
     """
     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
-    
+
     try:
-        # Get rider profile
-        rider_profile = await RiderProfile.get_or_none(user=current_user)
-        if not rider_profile:
-            raise HTTPException(status_code=403, detail="Not a rider profile")
-        
-        # Use Redis to prevent race condition
-        claim_key = f"order_claim:{order_id}"
-        claimed = await redis.set(claim_key, str(current_user.id), nx=True, ex=30)
-        if not claimed:
-            raise HTTPException(status_code=400, detail="Order already claimed by another rider")
-        
+        # Verify vendor
+        if not current_user.is_vendor:
+            raise HTTPException(
+                status_code=403,
+                detail="Only vendors can confirm orders",
+            )
+
         # Get order
-        order = await Order.get_or_none(id=order_id).prefetch_related("user", "vendor", "items__item")
+        order = await Order.get_or_none(id=order_id).prefetch_related(
+            "user", "items__item", "vendor"
+        )
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
-        
-        # Validate order status
-        if order.status != OrderStatus.CONFIRMED:
+
+        # Verify vendor ownership
+        if order.vendor_id != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="You are not authorized to confirm this order",
+            )
+
+        # Check order status
+        current_status = (
+            order.status.value if hasattr(order.status, "value") else str(order.status)
+        ).lower()
+        if current_status not in ["pending", "processing"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot accept order with status: {order.status.value if hasattr(order.status, 'value') else order.status}"
+                detail=f"Cannot confirm order with status: {current_status}",
             )
-        
-        # Check delivery restrictions for URGENT/SPLIT
-        if order.delivery_type in [DeliveryTypeEnum.URGENT, DeliveryTypeEnum.SPLIT]:
+
+        # Get order type
+        order_type = "combined"
+        if order.metadata and "order_type" in order.metadata:
+            order_type = order.metadata["order_type"]
+
+        # Determine group key and group orders
+        group_key = order.parent_order_id or order.id
+
+        # All orders that belong to this combined group (including this order)
+        related_orders = await Order.filter(
+            # if parent_order_id is set, group by that, otherwise single order group
+            parent_order_id=group_key
+        ).all()
+
+        # For non-combined orders, there may be no parent_order_id; ensure at least current order
+        if not related_orders:
+            related_orders = [order]
+
+        # Group master: use the first order in group to hold shared metadata
+        group_master = related_orders[0]
+
+        # Initialize group metadata
+        group_master.metadata = group_master.metadata or {}
+        group_master.metadata["vendor_confirmations"] = group_master.metadata.get(
+            "vendor_confirmations", {}
+        )
+
+        # Store confirmation on group master keyed by vendor id
+        group_master.metadata["vendor_confirmations"][str(current_user.id)] = {
+            "confirmed_at": datetime.utcnow().isoformat(),
+            "confirmed": True,
+        }
+        await group_master.save()
+
+        shared_metadata = group_master.metadata or {}
+        vendor_confirmations = shared_metadata.get("vendor_confirmations", {})
+
+        # Check if all vendors confirmed: compare vendor ids across group with confirmed ids
+        all_confirmed = await _check_all_vendors_confirmed(related_orders, shared_metadata)
+
+        # Status & rider flow
+        if order_type == "urgent":
+            order.status = OrderStatus.CONFIRMED
+            await order.save()
+
+            vendor_profile = await VendorProfile.get_or_none(user=current_user)
+            if vendor_profile:
+                background_tasks.add_task(
+                    _auto_assign_rider_for_urgent,
+                    order.id,
+                    vendor_profile.latitude,
+                    vendor_profile.longitude,
+                    redis,
+                )
+            response_msg = "Order confirmed. Assigning nearest rider for urgent delivery..."
+
+        elif order_type == "split":
+            order.status = OrderStatus.CONFIRMED
+            await order.save()
+
+            vendor_profile = await VendorProfile.get_or_none(user=current_user)
+            if vendor_profile:
+                background_tasks.add_task(
+                    _broadcast_rider_offers,
+                    order.id,
+                    vendor_profile.latitude,
+                    vendor_profile.longitude,
+                    is_urgent=False,
+                    redis=redis,
+                )
+            response_msg = "Order confirmed. Finding available riders..."
+
+        elif order_type == "combined" and all_confirmed:
+            # Mark all group orders as confirmed
+            for related in related_orders:
+                related.metadata = related.metadata or {}
+                related.metadata["all_vendors_confirmed"] = True
+                related.status = OrderStatus.CONFIRMED
+                await related.save()
+
+            vendor_profile = await VendorProfile.get_or_none(user=current_user)
+            if vendor_profile:
+                # Use group_key as the broadcast id (any id is fine as long as rider accepts one)
+                broadcast_order_id = group_key if group_key != order.id else order.id
+                background_tasks.add_task(
+                    _broadcast_rider_offers,
+                    broadcast_order_id,
+                    vendor_profile.latitude,
+                    vendor_profile.longitude,
+                    is_urgent=False,
+                    redis=redis,
+                )
+
+            response_msg = "All vendors confirmed. Finding available riders..."
+
+        elif order_type == "combined" and not all_confirmed:
+            order.status = OrderStatus.PROCESSING
+            await order.save()
+
+            pending_count = len(related_orders) - len(vendor_confirmations)
+            response_msg = f"Order confirmed. Waiting for {pending_count} more vendor(s)..."
+
+        else:
+            order.status = OrderStatus.CONFIRMED
+            await order.save()
+            response_msg = "Order confirmed successfully"
+
+        # Notifications
+        try:
+            await send_notification(
+                order.user_id,
+                "Vendor Confirmed",
+                f"Vendor confirmed order #{order.id}",
+            )
+
+            await manager.send_to(
+                {
+                    "type": "vendor_confirmed",
+                    "order_id": order.id,
+                    "parent_order_id": order.parent_order_id,
+                    "order_type": order_type,
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+                "customers",
+                str(order.user_id),
+                "orders",
+            )
+        except Exception as e:
+            print(f"[CONFIRM] Notification error: {e}")
+
+        pending_vendors = (
+            len(related_orders) - len(vendor_confirmations)
+            if order_type == "combined"
+            else 0
+        )
+
+        return {
+            "success": True,
+            "message": response_msg,
+            "data": {
+                "order_id": order.id,
+                "parent_order_id": order.parent_order_id,
+                "order_type": order_type,
+                "status": "confirmed",
+                "vendor_id": current_user.id,
+                "vendor_name": current_user.name,
+                "all_vendors_confirmed": all_confirmed,
+                "pending_vendors": pending_vendors,
+                "next_action": (
+                    "Waiting for available rider"
+                    if all_confirmed
+                    else "Waiting for other vendors"
+                )
+                if order_type == "combined"
+                else None,
+                "preparation_required": order_type == "split",
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[CONFIRM] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+# ============================================================================
+# RIDER ACCEPT ORDER
+# ============================================================================
+
+@router.post("/riders/orders/{order_id}/accept")
+async def rider_accept_order(
+    request: Request,
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    redis=Depends(get_redis),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    """
+    Rider accepts an order offer.
+
+    Logic:
+    - URGENT orders: Already auto-assigned, just confirm acceptance
+    - SPLIT/COMBINED orders: Lock rider, expire other offers
+    - For COMBINED: one acceptance assigns rider to all orders with same parent_order_id
+
+    Returns: Assignment confirmation with pickup/delivery details
+    """
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+
+    try:
+        rider_profile = await RiderProfile.get_or_none(user=current_user).prefetch_related(
+            "current_location"
+        )
+        if not rider_profile:
+            raise HTTPException(status_code=403, detail="Rider profile not found")
+
+        if not rider_profile.is_available:
+            raise HTTPException(
+                status_code=400,
+                detail="You are currently not available for orders",
+            )
+
+        # Base order of the offer
+        order = await Order.get_or_none(id=order_id).prefetch_related(
+            "user", "items__item", "vendor", "rider"
+        )
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        order_type = "combined"
+        if order.metadata and "order_type" in order.metadata:
+            order_type = order.metadata["order_type"]
+
+        # Rider active lock for split/combined
+        if order_type in ["split", "combined"]:
             active_orders = await Order.filter(
                 rider=rider_profile,
-                status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.PREPARED, OrderStatus.OUT_FOR_DELIVERY]
+                status__in=[
+                    OrderStatus.CONFIRMED,
+                    OrderStatus.SHIPPED,
+                    OrderStatus.PREPARED,
+                    OrderStatus.OUT_FOR_DELIVERY,
+                ],
             ).count()
-            
             if active_orders > 0:
                 raise HTTPException(
                     status_code=400,
-                    detail="Rider has active URGENT/SPLIT order. Cannot accept another."
+                    detail=f"You have {active_orders} active order(s). Complete them first before accepting new orders.",
                 )
-        
-        # Assign rider
-        order.rider = rider_profile
-        order.status = OrderStatus.PROCESSING
-        order.accepted_at = datetime.utcnow()
-        
-        # Calculate payout
-        vendor = await VendorProfile.get_or_none(id=order.vendor_id)
-        if vendor and rider_profile.current_location:
-            distance = haversine(
-                vendor.latitude,
-                vendor.longitude,
-                rider_profile.current_location.latitude,
-                rider_profile.current_location.longitude
+
+        # URGENT assignment check
+        if order_type == "urgent":
+            if order.rider_id and order.rider_id != rider_profile.id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="This urgent order is assigned to another rider",
+                )
+
+        # Determine combined group: by parent_order_id or single
+        if order_type == "combined":
+            group_key = order.parent_order_id or order.id
+            group_orders = await Order.filter(parent_order_id=group_key).prefetch_related(
+                "vendor"
             )
-            order.pickup_distance_km = distance
-            
-            # Calculate delivery fee based on type
-            delivery_type = order.delivery_type.value if hasattr(order.delivery_type, 'value') else str(order.delivery_type)
-            fee = calculate_delivery_fee(delivery_type, distance)
-            order.base_rate = Decimal(str(fee))
-        
-        await order.save()
-        
-        # Mark offer as ACCEPTED
-        offer = await OrderOffer.get_or_none(order=order, rider=rider_profile)
-        if offer:
-            offer.status = "ACCEPTED"
-            offer.accepted_at = datetime.utcnow()
-            await offer.save()
-        
-        # Reject all other offers
-        other_offers = await OrderOffer.filter(order=order).exclude(rider=rider_profile).all()
-        for other_offer in other_offers:
-            if other_offer.status == "PENDING":
-                other_offer.status = "REJECTED"
-                other_offer.rejected_at = datetime.utcnow()
-                await other_offer.save()
-        
-        # Send notifications
+            if not group_orders:
+                group_orders = [order]
+        else:
+            group_orders = [order]
+
+        # Fees / distance setup
+        fees_config = await RiderFeesAndBonuses.first()
+        base_rate_single = float(fees_config.rider_delivery_fee or 44.00)
+        distance_bonus_per_km = float(fees_config.distance_bonus_per_km or 1.0)
+
+        customer = order.user
+        customer_lat = getattr(customer, "customer_lat", None)
+        customer_lng = getattr(customer, "customer_lng", None)
+
+        current_location = await RiderCurrentLocation.get_or_none(rider=rider_profile)
+
+        if not current_location:
+            raise HTTPException(
+                status_code=400,
+                detail="Rider location not available",
+            )
+
+        rider_lat = current_location.latitude
+        rider_lng = current_location.longitude
+
+        # Calculate pickup distances
+        total_pickup_dist = 0.0
+        pickup_distances = []  # (order, pickup_dist)
+
+        for o in group_orders:
+            vendor_info = o.metadata.get("vendor_info", {}) if o.metadata else {}
+            v_lat = vendor_info.get("store_latitude")
+            v_lng = vendor_info.get("store_longitude")
+
+            if v_lat is None or v_lng is None:
+                if o.vendor_id:
+                    v_profile = await VendorProfile.get_or_none(user_id=o.vendor_id)
+                    if v_profile:
+                        v_lat = v_profile.latitude
+                        v_lng = v_profile.longitude
+
+            if v_lat is None or v_lng is None:
+                continue
+
+            pickup_dist = haversine(
+                rider_lat,
+                rider_lng,
+                v_lat,
+                v_lng,
+            )
+            pickup_distances.append((o, pickup_dist))
+            total_pickup_dist += pickup_dist
+
+        # Delivery distance from last pickup to customer
+        delivery_dist = 0.0
+        if customer_lat is not None and customer_lng is not None and pickup_distances:
+            last_order, _ = pickup_distances[-1]
+            vendor_info = last_order.metadata.get("vendor_info", {}) if last_order.metadata else {}
+            v_lat = vendor_info.get("store_latitude")
+            v_lng = vendor_info.get("store_longitude")
+            if v_lat is not None and v_lng is not None:
+                delivery_dist = haversine(v_lat, v_lng, customer_lat, customer_lng)
+
+        total_dist = total_pickup_dist + delivery_dist
+
+        # Payout
+        is_combined = order_type == "combined" and len(group_orders) > 1
+        base_rate = base_rate_single
+        distance_bonus = max(total_dist - 3, 0) * distance_bonus_per_km
+
+        if is_combined:
+            base_rate += (len(group_orders) - 1) * base_rate_single
+
+        pickup_eta_min = int(estimate_eta(total_pickup_dist).total_seconds() / 60)
+        delivery_eta_min = int(estimate_eta(delivery_dist).total_seconds() / 60)
+        eta_minutes = pickup_eta_min + delivery_eta_min + (order.prepare_time or 10)
+
+        # Assign rider to all orders in group
+        now = datetime.utcnow()
+
+        for o, pickup_dist in pickup_distances:
+            o.rider_id = rider_profile.id
+            o.status = OrderStatus.OUT_FOR_DELIVERY
+
+            if order_type in ["split", "combined"]:
+                o.metadata = o.metadata or {}
+                o.metadata["rider_locked"] = True
+                o.metadata["rider_locked_at"] = now.isoformat()
+
+            o.pickup_distance_km = float(round(pickup_dist, 2))
+            o.base_rate = Decimal(str(base_rate))
+            o.distance_bonus = Decimal(str(round(distance_bonus, 2)))
+            o.eta_minutes = eta_minutes
+            o.accepted_at = now
+            o.expires_at = now + timedelta(seconds=OFFER_TIMEOUT_SECONDS)
+            o.metadata = o.metadata or {}
+            o.metadata["rider_id"] = rider_profile.id
+            o.metadata["accepted_at"] = now.isoformat()
+
+            await o.save()
+
+        if order_type == "urgent" and not pickup_distances:
+            order.rider_id = rider_profile.id
+            order.status = OrderStatus.OUT_FOR_DELIVERY
+            await order.save()
+
+        # Offer record on the base (accepted) order
+        offer_order = order
+        order_offer = await OrderOffer.filter(
+            order=offer_order,
+            rider=rider_profile,
+        ).first()
+
+        if order_offer:
+            order_offer.status = "ACCEPTED"
+            order_offer.responded_at = now
+            await order_offer.save()
+        else:
+            await OrderOffer.create(
+                order=offer_order,
+                rider=rider_profile,
+                status="ACCEPTED",
+                is_urgent=(order_type == "urgent"),
+                created_at=now,
+                responded_at=now,
+            )
+
+        # Expire other offers for this group order id
+        if order_type in ["split", "combined"]:
+            background_tasks.add_task(
+                _expire_other_offers,
+                offer_order.id,
+                rider_profile.id,
+            )
+
+        # Notifications
         try:
+            # Notify vendors for each order
+            for o in group_orders:
+                if o.vendor:
+                    await send_notification(
+                        o.vendor_id,
+                        "Rider Assigned",
+                        f"Rider {current_user.name} assigned to order #{o.id}",
+                    )
+
+                await manager.send_to(
+                    {
+                        "type": "rider_assigned",
+                        "order_id": o.id,
+                        "rider_id": rider_profile.id,
+                        "rider_name": current_user.name,
+                        "rider_phone": current_user.phone,
+                        "timestamp": now.isoformat(),
+                    },
+                    "vendors",
+                    str(o.vendor_id),
+                    "orders",
+                )
+
+            # Notify customer (combined info)
             await send_notification(
-                order.user.id,
+                order.user_id,
                 "Rider Assigned",
-                f"Rider assigned to your order #{order_id}"
+                f"Rider {current_user.name} is picking up your order(s)",
             )
-            
-            vendor_user = await User.get_or_none(id=order.vendor_id)
-            if vendor_user:
+
+            await manager.send_to(
+                {
+                    "type": "rider_assigned",
+                    "group_key": order.parent_order_id or order.id,
+                    "orders": [o.id for o in group_orders],
+                    "rider_id": rider_profile.id,
+                    "rider_name": current_user.name,
+                    "total_payout": float(base_rate + distance_bonus),
+                    "eta_minutes": eta_minutes,
+                },
+                "customers",
+                str(order.user_id),
+                "orders",
+            )
+
+            # Rider combined notification
+            if order_type == "combined":
+                pickup_list = []
+                for o in group_orders:
+                    vendor_info = o.metadata.get("vendor_info", {}) if o.metadata else {}
+                    pickup_list.append(
+                        {
+                            "order_id": o.id,
+                            "store_name": vendor_info.get("store_name")
+                            or (o.vendor.name if o.vendor else "Store"),
+                            "amount": float(o.total),
+                        }
+                    )
+
                 await send_notification(
-                    vendor_user.id,
-                    "Order Accepted",
-                    f"Rider accepted order #{order_id}"
+                    rider_profile.user_id,
+                    "Combined Order Accepted",
+                    f"You accepted {len(group_orders)} combined orders. Total payout ₹{base_rate + distance_bonus:.2f}.",
                 )
+
+                await manager.send_to(
+                    {
+                        "type": "combined_order_accepted",
+                        "group_key": order.parent_order_id or order.id,
+                        "orders": pickup_list,
+                        "total_orders": len(group_orders),
+                        "total_payout": float(base_rate + distance_bonus),
+                        "eta_minutes": eta_minutes,
+                    },
+                    "riders",
+                    str(rider_profile.user_id),
+                    "orders",
+                )
+
         except Exception as e:
-            logger.warning(f"Notification error: {str(e)}")
-        
-        # Start chat channel between rider and customer
-        try:
-            await start_chat(current_user.id, order.user.id, order.id)
-        except Exception as e:
-            logger.warning(f"Chat channel error: {str(e)}")
-        
-        return translate({
+            print(f"[ACCEPT] Notification error: {e}")
+
+        vendor_info = order.metadata.get("vendor_info", {}) if order.metadata else {}
+        return {
             "success": True,
-            "message": "Order accepted successfully",
+            "message": "Order accepted successfully. Heading to pickup location.",
             "data": {
                 "order_id": order.id,
-                "status": order.status.value if hasattr(order.status, 'value') else order.status,
-                "pickup_distance_km": order.pickup_distance_km,
-                "base_rate": float(order.base_rate),
-                "accepted_at": order.accepted_at.isoformat() if order.accepted_at else None
-            }
-        }, lang)
-    
+                "parent_order_id": order.parent_order_id,
+                "order_type": order_type,
+                "rider_id": rider_profile.id,
+                "rider_name": current_user.name,
+                "rider_phone": current_user.phone,
+                "status": "out_for_delivery",
+                "vendor_location": {
+                    "latitude": vendor_info.get("store_latitude"),
+                    "longitude": vendor_info.get("store_longitude"),
+                    "name": vendor_info.get("store_name", "Store"),
+                },
+                "estimated_pickup_time": "5-10 minutes",
+                "customer_info": {
+                    "name": order.user.name if order.user else "Customer",
+                    "phone": order.user.phone if order.user else None,
+                },
+                "combined_orders": [o.id for o in group_orders]
+                if order_type == "combined"
+                else None,
+                "total_payout": float(base_rate + distance_bonus),
+                "eta_minutes": eta_minutes,
+            },
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error accepting order: {str(e)}")
+        print(f"[ACCEPT] Error: {e}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@router.post("/rider/reject/{order_id}/")
-async def reject_order(
+
+# ============================================================================
+# ORDER STATUS
+# ============================================================================
+
+@router.get("/orders/{order_id}/status")
+async def get_order_status(
     request: Request,
     order_id: str,
-    reject_data: OrderRejectRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """RIDER rejects an order offer."""
+    """
+    Get real-time order status with type-specific information.
+    """
     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
-    
+
     try:
-        rider_profile = await RiderProfile.get_or_none(user=current_user)
-        if not rider_profile:
-            raise HTTPException(status_code=403, detail="Not a rider profile")
-        
-        order = await Order.get_or_none(id=order_id)
+        order = await Order.get_or_none(id=order_id).prefetch_related("user", "vendor", "rider")
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
-        
-        # Find and update offer
-        offer = await OrderOffer.get_or_none(order=order, rider=rider_profile)
-        if not offer:
-            raise HTTPException(status_code=404, detail="Offer not found")
-        
-        if offer.status != "PENDING":
-            raise HTTPException(status_code=400, detail="Can only reject pending offers")
-        
-        offer.status = "REJECTED"
-        offer.reject_reason = reject_data.reason
-        offer.responded_at = datetime.utcnow()
-        await offer.save()
-        
-        # Update WorkDay stats
-        today = date.today()
-        workday, _ = await WorkDay.get_or_create(
-            rider=rider_profile,
-            date=today,
-            defaults={"hours_worked": 0.0, "rejection_count": 0}
+
+        is_customer = order.user_id == current_user.id
+        is_vendor = order.vendor_id == current_user.id
+        is_rider = order.rider and order.rider.user_id == current_user.id
+
+        if not (is_customer or is_vendor or is_rider):
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to view this order",
+            )
+
+        order_type = "combined"
+        if order.metadata and "order_type" in order.metadata:
+            order_type = order.metadata["order_type"]
+
+        # Group key and master for vendor confirmations
+        group_key = order.parent_order_id or order.id
+        group_orders = await Order.filter(parent_order_id=group_key).all()
+        if not group_orders:
+            group_orders = [order]
+        group_master = group_orders[0]
+
+        vendor_confirmations = (
+            group_master.metadata.get("vendor_confirmations", {})
+            if group_master.metadata
+            else {}
         )
-        workday.rejection_count += 1
-        await workday.save()
-        
-        logger.info(f"Rider {rider_profile.id} rejected order {order_id}: {reject_data.reason}")
-        
-        return translate({
+
+        current_status = (
+            order.status.value if hasattr(order.status, "value") else str(order.status)
+        ).lower()
+
+        status_response = {
+            "order_id": order.id,
+            "parent_order_id": order.parent_order_id,
+            "order_type": order_type,
+            "current_status": current_status,
+            "total_amount": float(order.total),
+            "created_at": order.order_date.isoformat() if order.order_date else None,
+        }
+
+        if order_type == "combined":
+            vendor_count = len(group_orders)
+            confirmed_count = len(vendor_confirmations)
+
+            status_response.update(
+                {
+                    "vendor_confirmations": {
+                        "total": vendor_count,
+                        "confirmed": confirmed_count,
+                        "pending": vendor_count - confirmed_count,
+                        "details": vendor_confirmations,
+                    },
+                    "all_confirmed": confirmed_count == vendor_count,
+                    "awaiting_vendors": current_status == "processing"
+                    and confirmed_count < vendor_count,
+                }
+            )
+        elif order_type == "split":
+            status_response.update(
+                {
+                    "independent_vendor": True,
+                    "vendor_confirmed": len(vendor_confirmations) > 0,
+                    "ready_for_rider": current_status in ["confirmed", "out_for_delivery"],
+                }
+            )
+        elif order_type == "urgent":
+            status_response.update(
+                {
+                    "is_urgent": True,
+                    "vendor_confirmed": len(vendor_confirmations) > 0,
+                    "rider_auto_assigned": order.rider_id is not None,
+                    "rider_locked": order.metadata.get("rider_locked", False)
+                    if order.metadata
+                    else False,
+                }
+            )
+
+        if order.rider:
+            status_response.update(
+                {
+                    "rider_assigned": {
+                        "rider_id": order.rider.id,
+                        "rider_name": order.rider.user.name if order.rider.user else None,
+                        "rider_phone": order.rider.user.phone
+                        if order.rider.user
+                        else None,
+                        "assigned_at": order.metadata.get("rider_locked_at")
+                        if order.metadata
+                        else None,
+                    },
+                    "rider_locked": True,
+                }
+            )
+        else:
+            status_response.update(
+                {
+                    "rider_assigned": None,
+                    "rider_locked": False,
+                }
+            )
+
+        if current_status in ["pending", "processing"]:
+            if order_type == "combined":
+                vendor_count = len(group_orders)
+                confirmed_count = len(vendor_confirmations)
+                next_action = (
+                    "Waiting for vendor confirmations"
+                    if confirmed_count < vendor_count
+                    else "Waiting for rider"
+                )
+            elif order_type == "split":
+                next_action = (
+                    "Waiting for vendor confirmation"
+                    if not vendor_confirmations
+                    else "Waiting for rider"
+                )
+            elif order_type == "urgent":
+                next_action = (
+                    "Waiting for vendor confirmation"
+                    if not vendor_confirmations
+                    else "Rider auto-assigned"
+                )
+            else:
+                next_action = "Processing order"
+        else:
+            next_action = None
+
+        status_response["next_action"] = next_action
+
+        return {
             "success": True,
-            "message": "Order rejected",
-            "order_id": order_id
-        }, lang)
-    
+            "data": status_response,
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error rejecting order: {str(e)}")
+        print(f"[STATUS] Error: {e}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+async def _check_all_vendors_confirmed(related_orders: list[Order], metadata: dict) -> bool:
+    vendor_confirmations = metadata.get("vendor_confirmations", {})
+    vendor_ids = {o.vendor_id for o in related_orders}
+    confirmed_vendors = set(int(v) for v in vendor_confirmations.keys())
+    return vendor_ids == confirmed_vendors
+
+
+async def _auto_assign_rider_for_urgent(
+    order_id: str,
+    vendor_lat: float,
+    vendor_lng: float,
+    redis,
+):
+    try:
+        order = await Order.get_or_none(id=order_id)
+        if not order:
+            print(f"[AUTO_ASSIGN] Order {order_id} not found")
+            return
+
+        riders = await _find_nearby_riders(
+            vendor_lat, vendor_lng, radius_km=10.0, is_urgent=True, redis=redis
+        )
+
+        if not riders:
+            print(f"[AUTO_ASSIGN] No riders available for order {order_id}")
+            return
+
+        assigned_rider = riders[0]
+        order.rider_id = assigned_rider.id
+        order.status = OrderStatus.CONFIRMED
+
+        await OrderOffer.create(
+            order=order,
+            rider=assigned_rider,
+            status="AUTO_ASSIGNED",
+            is_urgent=True,
+            created_at=datetime.utcnow(),
+        )
+
+        await order.save()
+
+        try:
+            await manager.send_notification(
+                "riders",
+                assigned_rider.user_id,
+                "🚨 URGENT ORDER ASSIGNED",
+                f"Urgent order #{order.id} assigned. Pick up immediately!",
+            )
+        except Exception:
+            pass
+
+        try:
+            await send_notification(
+                assigned_rider.user_id,
+                "🚨 URGENT ORDER ASSIGNED",
+                f"Urgent order #{order.id} assigned. Pick up immediately!",
+            )
+        except Exception:
+            pass
+
+        print(f"[AUTO_ASSIGN] Assigned rider {assigned_rider.id} to urgent order {order_id}")
+
+    except Exception as e:
+        print(f"[AUTO_ASSIGN] Error: {e}")
+
+
+async def _broadcast_rider_offers(
+    order_id: str,
+    vendor_lat: float,
+    vendor_lng: float,
+    is_urgent: bool = False,
+    redis=None,
+):
+    try:
+        orders = None
+        order = await Order.get_or_none(id=order_id)
+        if not order:
+            print(f"[BROADCAST] Order {order_id} not found")
+            order = await Order.filter(parent_order_id=order_id).first()
+            orders = await Order.filter(parent_order_id=order_id).all()
+            if not order:
+                print(f"[BROADCAST] No order found for broadcast id {order_id}")
+                return
+            #return
+
+        riders = await _find_nearby_riders(
+            vendor_lat,
+            vendor_lng,
+            radius_km=3.0 if not is_urgent else 10.0,
+            is_urgent=is_urgent,
+            redis=redis,
+        )
+
+        if not riders:
+            print(f"[BROADCAST] No riders available for order {order_id}")
+            return
+        print(f"orders {orders}")
+
+        for rider in riders:
+            try:
+                await OrderOffer.create(
+                    order=order,
+                    rider=rider,
+                    status="PENDING",
+                    is_urgent=is_urgent,
+                    created_at=datetime.utcnow(),
+                )
+                print(f"[BROADCAST] Offered order {order_id} to rider {rider.id}")
+                try:
+                    print(f"rider user id {rider.user_id}")
+                    await manager.send_notification(
+                        "riders",
+                        rider.user_id,
+                        "New Order Offer",
+                        f"you have a new order offer🗣📢. Orders #{', '.join(str(o.id) for o in orders) if orders else order.id}",
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    await send_notification(
+                        rider.user_id,
+                        "New Order Offer",
+                        f"Order #{order_id} - ₹{order.total}",
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                continue
+
+        print(f"[BROADCAST] Order {order_id} offered to {len(riders)} riders")
+
+    except Exception as e:
+        print(f"[BROADCAST] Error: {e}")
+
+
+async def _expire_other_offers(order_id: str, accepted_rider_id: int):
+    try:
+        pending_offers = (
+            await OrderOffer.filter(order_id=order_id, status="PENDING")
+            .exclude(rider_id=accepted_rider_id)
+            .all()
+        )
+
+        for offer in pending_offers:
+            offer.status = "EXPIRED"
+            offer.responded_at = datetime.utcnow()
+            await offer.save()
+
+        print(f"[EXPIRE] Expired {len(pending_offers)} offers for order {order_id}")
+
+    except Exception as e:
+        print(f"[EXPIRE] Error: {e}")
+
+
+async def _find_nearby_riders(
+    latitude: float,
+    longitude: float,
+    radius_km: float = 3.0,
+    is_urgent: bool = False,
+    redis=None,
+) -> list[RiderProfile]:
+    try:
+        riders = []
+
+        if redis:
+            try:
+                geo_results = await redis.execute_command(
+                    "GEORADIUS",
+                    "riders_locations",
+                    longitude,
+                    latitude,
+                    radius_km,
+                    "km",
+                    "ASC",
+                    "COUNT",
+                    20,
+                )
+
+                if geo_results:
+                    rider_ids = [int(x) for x in geo_results]
+                    riders = await RiderProfile.filter(
+                        id__in=rider_ids,
+                        is_available=True,
+                    ).all()
+                    return riders
+            except Exception:
+                pass
+
+        all_riders = (
+            await RiderProfile.filter(is_available=True)
+            .prefetch_related("current_location")
+            .all()
+        )
+
+        print(f"[FIND_RIDERS] Checking {len(all_riders)} available riders {all_riders}")
+        rider_with_distance = []
+
+        for rider in all_riders:
+            location = await RiderCurrentLocation.get_or_none(rider_profile=rider)
+            if location:
+                print(f"[FIND_RIDERS] Rider {rider.id} location: {location.latitude}, {location.longitude}, vendoer: {latitude}, {longitude}")
+                distance = haversine(
+                    latitude,
+                    longitude,
+                    location.latitude,
+                    location.longitude,
+                )
+                print(f"[FIND_RIDERS] Rider {rider.id} is {distance:.2f} km away {radius_km} km")
+                if distance <= radius_km:
+                    rider_with_distance.append((rider, distance))
+                    #riders.append(rider)
+
+        rider_with_distance.sort(key=lambda x: x[1])
+        riders = [r[0] for r in rider_with_distance]
+
+        return riders[:20]
+
+    except Exception as e:
+        print(f"[FIND_RIDERS] Error: {e}")
+        return []
+
+
 
 # ============================================================================
 # RIDER ENDPOINTS: View Active Orders
