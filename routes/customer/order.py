@@ -34,6 +34,86 @@ router = APIRouter(prefix="/orders", tags=["Orders"])
 
 # routes.customer.order.py
 
+async def handle_phonepe_payment(orders):
+    print("this is phone pe payment")
+    
+    # 1. PhonePe Authentication
+    auth_url = "https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token"
+    auth_payload = {
+        "client_version": 1,
+        "grant_type": "client_credentials",
+        "client_id": "M23KQHM53S73C_2512240944",
+        "client_secret": "NDk3MzcyNzUtMjYxNi00MjE1LWExYzMtMDdkZTY2OWJkYWI2"
+    }
+    auth_headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    
+    access_token = None
+    try:
+        async with httpx.AsyncClient() as client:
+            auth_response = await client.post(auth_url, data=auth_payload, headers=auth_headers)
+            if auth_response.status_code == 200:
+                token_data = auth_response.json()
+                access_token = token_data.get("access_token")
+                print(f"PhonePe Access Token acquired")
+            else:
+                print(f"PhonePe Auth Failed: {auth_response.text}")
+    except Exception as e:
+        print(f"Error fetching PhonePe token: {e}")
+
+    if not access_token:
+        # Fallback for development if needed, or raise exception
+        raise HTTPException(status_code=500, detail="Failed to authenticate with PhonePe")
+
+    # 2. Create order on PhonePe
+    order_url = "https://api-preprod.phonepe.com/apis/pg-sandbox/checkout/v2/sdk/order"
+    
+    # Calculate amount in paisa (e.g., ₹10 = 1000 paisa)
+    total_amount = sum(float(order.total) for order in orders)
+    amount_in_paisa = int(round(total_amount * 100))
+    
+    # Use parent_order_id from our database
+    parent_order_id = orders[0].parent_order_id if orders else None
+    
+    order_payload = {
+        "merchantOrderId": parent_order_id,
+        "amount": amount_in_paisa,
+        "expireAfter": 1200,
+        "paymentFlow": {
+            "type": "PG_CHECKOUT"
+        }
+    }
+    
+    order_headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"O-Bearer {access_token}"
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            order_response = await client.post(order_url, json=order_payload, headers=order_headers)
+            print(f"PhonePe Order Response: {order_response.text}")
+            
+            if order_response.status_code == 200:
+                resp_data = order_response.json()
+                # resp_data contains: orderId, state, expireAt, token
+                return {
+                    "orderId": resp_data.get("orderId"),
+                    "merchantId": parent_order_id,
+                    "token": resp_data.get("token"),
+                    "paymentMode": {"type": "PAY_PAGE"}
+                }
+            else:
+                print(f"PhonePe Order Creation Failed: {order_response.status_code} - {order_response.text}")
+                raise HTTPException(status_code=order_response.status_code, detail="PhonePe order creation failed")
+                
+    except Exception as e:
+        print(f"Error creating PhonePe order: {e}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"PhonePe integration error: {str(e)}")
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def place_order(
     order_data: OrderCreateSchema, 
@@ -56,12 +136,13 @@ async def place_order(
             payment_method = payment_method.value
         payment_method = str(payment_method)
         
-        requires_payment = payment_method.lower() == "cashfree"
+        requires_payment = payment_method.lower() in ["cashfree", "phonepe"]
         
         # Calculate total amount across all orders
         total_amount = sum(float(order.total) for order in orders)
         
-        parent_order_id = None
+        # Get parent_order_id from the first order (all share the same parent_order_id)
+        parent_order_id = orders[0].parent_order_id if orders else None
 
 
         response_data = {
@@ -81,26 +162,40 @@ async def place_order(
                 ],
                 "total_amount": total_amount,
                 "payment_status": "unpaid",
-                "requires_payment": requires_payment
+                "requires_payment": requires_payment,
+                "parent_order_id": parent_order_id  # Include parent_order_id in response
             }
         }
         
         if requires_payment:
-            # Generate payment session for Flutter SDK
+            # Generate payment session
             try:
-                payment_response = await create_payment_session_for_orders(orders)
-                response_data["data"]["payment_session_id"] = payment_response["payment_session_id"]
-                response_data["data"]["cf_order_id"] = payment_response["cf_order_id"]
-                response_data["data"]["parent_order_id"] = payment_response["order_id"]
+                if payment_method.lower() == "phonepe":
+                    payment_response = await handle_phonepe_payment(orders)
+                else:
+                    payment_response = await create_payment_session_for_orders(orders)
                 
                 
                 # Update all orders with payment session info
                 for order in orders:
-                    order.payment_session_id = payment_response["payment_session_id"]
-                    order.cf_order_id = payment_response["cf_order_id"]
-                    order.parent_order_id = payment_response["order_id"]
+                    if payment_method.lower() == "phonepe":
+                        order.payment_session_id = payment_response.get("token")
+                        order.cf_order_id = payment_response.get("orderId")
+                        order.parent_order_id = payment_response.get("merchantId")
+                    else:
+                        order.payment_session_id = payment_response["payment_session_id"]
+                        order.cf_order_id = payment_response["cf_order_id"]
+                        order.parent_order_id = payment_response["order_id"]
                     await order.save()
                 
+                if payment_method.lower() == "phonepe":
+                    return payment_response
+                
+                # Update the parent_order_id in response data if it changed (though it shouldn't for consistency, 
+                # but payment_response["order_id"] likely generates a NEW ID which overwrites the one from service.
+                # Let's trust payment_helper logic for online payments, but for COD we stick to service one)
+                response_data["data"]["parent_order_id"] = payment_response["order_id"]
+
                 response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
             except Exception as e:
                 print(f"Payment session creation error: {e}")
