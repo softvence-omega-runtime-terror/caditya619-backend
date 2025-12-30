@@ -61,7 +61,8 @@ async def place_order(
         # Calculate total amount across all orders
         total_amount = sum(float(order.total) for order in orders)
         
-        parent_order_id = None
+        # Get parent_order_id from the first order (all share the same parent_order_id)
+        parent_order_id = orders[0].parent_order_id if orders else None
 
 
         response_data = {
@@ -81,7 +82,8 @@ async def place_order(
                 ],
                 "total_amount": total_amount,
                 "payment_status": "unpaid",
-                "requires_payment": requires_payment
+                "requires_payment": requires_payment,
+                "parent_order_id": parent_order_id  # Include parent_order_id in response
             }
         }
         
@@ -91,7 +93,7 @@ async def place_order(
                 payment_response = await create_payment_session_for_orders(orders)
                 response_data["data"]["payment_session_id"] = payment_response["payment_session_id"]
                 response_data["data"]["cf_order_id"] = payment_response["cf_order_id"]
-                response_data["data"]["parent_order_id"] = payment_response["order_id"]
+                # response_data["data"]["parent_order_id"] = payment_response["order_id"] # already set above
                 
                 
                 # Update all orders with payment session info
@@ -101,6 +103,11 @@ async def place_order(
                     order.parent_order_id = payment_response["order_id"]
                     await order.save()
                 
+                # Update the parent_order_id in response data if it changed (though it shouldn't for consistency, 
+                # but payment_response["order_id"] likely generates a NEW ID which overwrites the one from service.
+                # Let's trust payment_helper logic for online payments, but for COD we stick to service one)
+                response_data["data"]["parent_order_id"] = payment_response["order_id"]
+
                 response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
             except Exception as e:
                 print(f"Payment session creation error: {e}")
