@@ -680,4 +680,115 @@ async def get_orders_status():
         "success": True,
         "total_orders": len(orders_data),
         "orders": orders_data
-    }    
+    }
+
+
+class PhonePeStatusRequest(BaseModel):
+    merchantOrderId: str
+    token: str
+
+
+@router.post("/phonepe/status")
+async def get_phonepe_status(
+    req_data: PhonePeStatusRequest,
+    redis = Depends(get_redis)
+):
+    """
+    Check PhonePe payment status and mark orders as paid if COMPLETED.
+    """
+    url = f"https://api-preprod.phonepe.com/apis/pg-sandbox/checkout/v2/order/{req_data.merchantOrderId}/status?details=false"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"O-Bearer {req_data.token}"
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            print(f"PhonePe Status Response for {req_data.merchantOrderId}: {response.text}")
+            
+            if response.status_code != 200:
+                return response.json()
+                
+            resp_data = response.json()
+            
+            # If payment is COMPLETED, process the orders
+            if resp_data.get("state") == "COMPLETED":
+                parent_order_id = req_data.merchantOrderId
+                orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
+                
+                if orders:
+                    for order in orders:
+                        # Only update if not already paid
+                        if order.payment_status != "paid":
+                            order.payment_status = "paid"
+                            order.status = OrderStatus.PROCESSING
+                            order.transaction_id = f"PHONEPE_{resp_data.get('orderId')}"
+                            await order.save()
+                            
+                            # 1. Notify Customer
+                            try:
+                                # WebSocket
+                                await manager.send_notification(
+                                    to_type="customers",
+                                    to_id=str(order.user_id),
+                                    title="Payment Successful",
+                                    body=f"Your PhonePe payment for order #{order.id} is confirmed!",
+                                    data={"order_id": order.id, "total": float(order.total), "status": "PROCESSING"}
+                                )
+                                # Push
+                                await send_notification(NotificationIn(
+                                    user_id=order.user_id,
+                                    title="Payment Successful",
+                                    body=f"Order #{order.id} payment confirmed via PhonePe."
+                                ))
+                                # Redis
+                                customer_payload = {
+                                    "type": "payment_success",
+                                    "order_id": order.id,
+                                    "parent_order_id": parent_order_id,
+                                    "payment_method": "PhonePe",
+                                    "timestamp": datetime.utcnow().isoformat()
+                                }
+                                await redis.publish("order_updates", json.dumps(customer_payload))
+                            except Exception as e:
+                                print(f"Customer notification error: {e}")
+                                
+                            # 2. Notify Vendor
+                            try:
+                                vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                                if vendor:
+                                    # WebSocket
+                                    await manager.send_notification(
+                                        to_type="vendors",
+                                        to_id=str(vendor.user_id),
+                                        title="New Paid Order (PhonePe)",
+                                        body=f"Order #{order.id} received and paid via PhonePe. Total: ₹{order.total}",
+                                        data={"order_id": order.id, "customer_id": order.user_id, "total": float(order.total)}
+                                    )
+                                    # Push
+                                    await send_notification(NotificationIn(
+                                        user_id=vendor.user_id,
+                                        title="New Paid Order",
+                                        body=f"Order #{order.id} received and paid via PhonePe."
+                                    ))
+                                    # Redis
+                                    vendor_payload = {
+                                        "type": "new_paid_order",
+                                        "order_id": order.id,
+                                        "parent_order_id": parent_order_id,
+                                        "payment_method": "PhonePe",
+                                        "timestamp": datetime.utcnow().isoformat()
+                                    }
+                                    await redis.publish("vendor_orders", json.dumps(vendor_payload))
+                            except Exception as e:
+                                print(f"Vendor notification error: {e}")
+                                
+                    print(f"✅ orders with parent_order_id {parent_order_id} marked as paid via PhonePe")
+            
+            return resp_data
+            
+    except Exception as e:
+        print(f"Error checking PhonePe status: {e}")
+        raise HTTPException(status_code=500, detail=f"PhonePe status check error: {str(e)}")

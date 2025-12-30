@@ -40,6 +40,7 @@ class DeliveryOption(models.Model):
 class PaymentMethodType(str, Enum):
     CASHFREE = "cashfree"
     COD = "cod"
+    PHONEPE = "phonepe"
     
 
 class PaymentMethod(models.Model):
