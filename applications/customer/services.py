@@ -697,21 +697,111 @@ class OrderService:
         related_order_ids = []
 
         for vendor_id, items in vendor_items_map.items():
-            try:
-                subtotal = sum(item["price"] * item['quantity'] for item in items)
-                delivery_fee = Decimal(str(order_data.delivery_option.price))
-                total = subtotal + delivery_fee - discount_per_order
+            # Calculate subtotal for this vendor
+            
+            subtotal = sum(item['price'] * item['quantity'] for item in items)
+            print(f"subtotal =========== {subtotal}")
+            # Apply delivery fee and discount
+            # fees= await RiderFeesAndBonuses.filter().first()
+            # delivery_fee = fees.rider_delivery_fee
+            delivery_fee = Decimal(str(order_data.delivery_option.price))
+            print(f"delivery_fee =========== {delivery_fee}")
 
-                first_item_vendor = items[0]['vendor']
-                vendor_profile = await VendorProfile.get_or_none(user=first_item_vendor)
-                
-                vendor_info = self._build_vendor_info(first_item_vendor, vendor_profile)
-                order_metadata = self._build_order_metadata(order_data, vendor_info, "split")
+            # coupon_discount = self._apply_coupon(subtotal, order_data.coupon_code)
+            total = subtotal + delivery_fee - discount_per_order
+            print(f"total =========== {total}")
+            
+            # Get vendor info
+            first_item_vendor = items[0]['vendor']
+            vendor_profile = await VendorProfile.get_or_none(user=first_item_vendor)
+            
+            vendor_info = {
+                "vendor_id": vendor_id,
+                "vendor_name": first_item_vendor.name,
+                "vendor_phone": first_item_vendor.phone,
+                "vendor_email": first_item_vendor.email or None,
+                "is_vendor": first_item_vendor.is_vendor,
+                "is_active": first_item_vendor.is_active
+            }
+            
+            if vendor_profile:
+                vendor_info.update({
+                    "store_name": vendor_profile.owner_name,
+                    "store_type": vendor_profile.type,
+                    "store_latitude": vendor_profile.latitude,
+                    "store_longitude": vendor_profile.longitude,
+                    "kyc_status": vendor_profile.kyc_status,
+                    "profile_is_active": vendor_profile.is_active
+                })
+            
+            # Store shipping address in metadata
+            shipping_data = {
+                "full_name": order_data.shipping_address.full_name or "",
+                "address_line1": order_data.shipping_address.address_line1 or "",
+                "address_line2": order_data.shipping_address.address_line2 or "",
+                "city": order_data.shipping_address.city or "",
+                "state": order_data.shipping_address.state or "",
+                "postal_code": order_data.shipping_address.postal_code or "",
+                "country": order_data.shipping_address.country or "",
+                "phone_number": order_data.shipping_address.phone_number or ""
+            }
+            
+            order_metadata = {
+                "shipping_address": shipping_data,
+                "delivery_option": {
+                    "type": order_data.delivery_option.type,
+                    "title": getattr(order_data.delivery_option, 'title', ''),
+                    "description": getattr(order_data.delivery_option, 'description', ''),
+                    "price": float(order_data.delivery_option.price)
+                },
+                "payment_method": {
+                    "type": order_data.payment_method.type,
+                    "name": getattr(order_data.payment_method, 'name', '')
+                },
+                "vendor_info": vendor_info
+            }
+            
+            # order_status_update = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
 
-                order_status_update = (
-                    OrderStatus.PROCESSING 
-                    if order_data.payment_method.type != "cashfree" 
-                    else OrderStatus.PENDING
+            if order_data.payment_method.type == "phonepe" or order_data.payment_method.type == "cashfree":
+                order_status_update = OrderStatus.PENDING
+            else:
+                order_status_update = OrderStatus.PROCESSING
+
+
+            # Create order with parent_order_id
+            order_id = self._generate_order_id()
+            order = await Order.create(
+                id=order_id,
+                parent_order_id=parent_order_id,
+                user_id=user_id,
+                vendor_id=vendor_id,
+                shipping_address_id=None,
+                delivery_type=order_data.delivery_option.type,
+                payment_method=order_data.payment_method.type,
+                subtotal=subtotal,
+                delivery_fee=delivery_fee,
+                total=total,
+                coupon_code=order_data.coupon_code,
+                discount=discount_per_order,
+                status=order_status_update,   
+                payment_status="unpaid",
+                tracking_number=self._generate_tracking_number(),
+                estimated_delivery=self._calculate_estimated_delivery(
+                    order_data.delivery_option.type
+                ),
+                metadata=order_metadata
+            )
+            
+            # Create order items
+            for item_data in items:
+                await OrderItem.create(
+                    order_id=order.id,
+                    item_id=item_data['item'].id,
+                    title=item_data['title'],
+                    price=str(item_data['price']),
+                    quantity=item_data['quantity'],
+                    image_path=item_data['image_path']
                 )
 
                 order_id = self._generate_order_id()
