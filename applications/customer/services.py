@@ -333,7 +333,12 @@ class OrderService:
                 "vendor_info": vendor_info
             }
             
-            order_status_update = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
+            # order_status_update = OrderStatus.PROCESSING if order_data.payment_method.type != "cashfree" else OrderStatus.PENDING
+
+            if order_data.payment_method.type == "phonepe" or order_data.payment_method.type == "cashfree":
+                order_status_update = OrderStatus.PENDING
+            else:
+                order_status_update = OrderStatus.PROCESSING
 
 
             # Create order with parent_order_id

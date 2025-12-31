@@ -99,10 +99,22 @@ async def handle_phonepe_payment(orders):
                 resp_data = order_response.json()
                 # resp_data contains: orderId, state, expireAt, token
                 return {
-                    "orderId": resp_data.get("orderId"),
+                    "phonePE_orderId": resp_data.get("orderId"),
                     "merchantId": parent_order_id,
                     "token": resp_data.get("token"),
-                    "paymentMode": {"type": "PAY_PAGE"}
+                    "paymentMode": {"type": "PAY_PAGE"},
+                    "orders": [
+                        {
+                            "order_id": order.id,
+                            "vendor_id": order.vendor_id,
+                            "status": order.status.value if hasattr(order.status, 'value') else order.status,
+                            "tracking_number": order.tracking_number,
+                            "total": float(order.total)
+                        }
+                        for order in orders
+                    ]
+                    ,
+                    "parent_order_id": parent_order_id
                 }
             else:
                 print(f"PhonePe Order Creation Failed: {order_response.status_code} - {order_response.text}")
@@ -180,8 +192,8 @@ async def place_order(
                 for order in orders:
                     if payment_method.lower() == "phonepe":
                         order.payment_session_id = payment_response.get("token")
-                        order.cf_order_id = payment_response.get("orderId")
-                        order.parent_order_id = payment_response.get("merchantId")
+                        order.cf_order_id = payment_response.get("phonePE_orderId")
+                        order.parent_order_id = payment_response.get("merchantId_or_parent_order_id")
                     else:
                         order.payment_session_id = payment_response["payment_session_id"]
                         order.cf_order_id = payment_response["cf_order_id"]
@@ -195,6 +207,8 @@ async def place_order(
                 # but payment_response["order_id"] likely generates a NEW ID which overwrites the one from service.
                 # Let's trust payment_helper logic for online payments, but for COD we stick to service one)
                 response_data["data"]["parent_order_id"] = payment_response["order_id"]
+                response_data["data"]["payment_session_id"] = payment_response["payment_session_id"]
+                response_data["data"]["cf_order_id"] = payment_response["cf_order_id"]
 
                 response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
             except Exception as e:
