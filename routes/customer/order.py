@@ -116,21 +116,37 @@ async def handle_phonepe_payment(orders):
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def place_order(
-    order_data: OrderCreateSchema, 
+    order_data: OrderCreateSchema,
     current_user: User = Depends(get_current_user),
-    redis = Depends(get_redis)
+    redis = Depends(get_redis),
+    order_type: str = Query("combined", description="Order type: combined, split, or urgent")
 ):
     """
-    STEP 1: Create orders (one per vendor) with PENDING status
+    STEP 1: Create orders based on type (combined/split/urgent)
     STEP 2: Return payment session_id and cf_order_id if payment method is Cashfree
     STEP 3: Orders progress only after successful payment
-    """
     
+    Order Types:
+    - combined: Single order per vendor group. Requires vendor confirmation before rider offer.
+    - split: One order per vendor. Each vendor confirms independently.
+    - urgent: One order per urgent vendor. Auto-assigns rider after vendor confirmation.
+    """
     service = OrderService()
     try:
-        # Create orders (one per vendor, all share same parent_order_id)
-        orders = await service.create_orders(order_data, current_user)
-        
+        # Validate order type
+        if order_type not in ["combined", "split", "urgent"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid order type. Must be 'combined', 'split', or 'urgent'"
+            )
+
+        # Create orders based on type
+        orders = await service.create_orders(
+            order_data,
+            current_user,
+            order_type=order_type
+        )
+
         payment_method = order_data.payment_method.type
         if hasattr(payment_method, 'value'):
             payment_method = payment_method.value
@@ -140,33 +156,36 @@ async def place_order(
         
         # Calculate total amount across all orders
         total_amount = sum(float(order.total) for order in orders)
-        
-        # Get parent_order_id from the first order (all share the same parent_order_id)
+
+        # Get parent_order_id from the first order
         parent_order_id = orders[0].parent_order_id if orders else None
 
+        # Build order summaries
+        order_summaries = [
+            {
+                "order_id": order.id,
+                "vendor_id": order.vendor_id,
+                "status": order.status.value if hasattr(order.status, 'value') else order.status,
+                "tracking_number": order.tracking_number,
+                "total": float(order.total),
+                "order_type": order_type
+            }
+            for order in orders
+        ]
 
         response_data = {
             "success": True,
-            "message": f"{len(orders)} order(s) created successfully",
+            "message": f"{len(orders)} order(s) created successfully ({order_type.upper()})",
             "data": {
-                
-                "orders": [
-                    {
-                        "order_id": order.id,
-                        "vendor_id": order.vendor_id,
-                        "status": order.status.value if hasattr(order.status, 'value') else order.status,
-                        "tracking_number": order.tracking_number,
-                        "total": float(order.total)
-                    }
-                    for order in orders
-                ],
+                "orders": order_summaries,
                 "total_amount": total_amount,
                 "payment_status": "unpaid",
                 "requires_payment": requires_payment,
-                "parent_order_id": parent_order_id  # Include parent_order_id in response
+                "parent_order_id": parent_order_id,
+                "order_type": order_type
             }
         }
-        
+
         if requires_payment:
             # Generate payment session
             try:
@@ -195,13 +214,15 @@ async def place_order(
                 # but payment_response["order_id"] likely generates a NEW ID which overwrites the one from service.
                 # Let's trust payment_helper logic for online payments, but for COD we stick to service one)
                 response_data["data"]["parent_order_id"] = payment_response["order_id"]
+                response_data["message"] = f"{len(orders)} order(s) created ({order_type.upper()}). Please complete payment to proceed."
 
-                response_data["message"] = f"{len(orders)} order(s) created. Please complete payment to proceed."
+                print(f"[ORDER] Payment session created for {len(orders)} orders (parent: {payment_response['order_id']})")
+
             except Exception as e:
-                print(f"Payment session creation error: {e}")
+                print(f"[ERROR] Payment session creation error: {e}")
                 response_data["message"] = f"{len(orders)} order(s) created but payment session generation failed."
         else:
-            # COD orders - notify immediately
+            # COD orders - notify vendors immediately
             for order in orders:
                 payload = {
                     "type": "order_placed",
@@ -209,30 +230,35 @@ async def place_order(
                     "parent_order_id": parent_order_id,
                     "customer_name": current_user.name,
                     "payment_method": "COD",
+                    "order_type": order_type,
                     "created_at": datetime.utcnow().isoformat()
                 }
-                
+
                 try:
                     await redis.publish("order_updates", json.dumps(payload))
                     await manager.send_to(payload, "customers", str(current_user.id), "notifications")
-                    
+
                     # Notify vendor
-                    vendor = await VendorProfile.get_or_none(id=order.vendor_id)
+                    vendor = await VendorProfile.get_or_none(user_id=order.vendor_id)
                     if vendor:
                         await manager.send_to(payload, "vendors", str(vendor.user_id), "notifications")
                         await send_notification(
-                            vendor.user_id, 
-                            "New COD Order", 
-                            f"New order #{order.id} received"
+                            vendor.user_id,
+                            f"New {order_type.upper()} Order",
+                            f"Order #{order.id} received - {len(order.items)} items"
                         )
+
+                    print(f"[ORDER] {order_type.upper()} order {order.id} notified to vendor")
+
                 except Exception as e:
-                    print(f"Notification error for order {order.id}: {e}")
-        
+                    print(f"[ERROR] Notification error for order {order.id}: {e}")
+
         return response_data
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        print(f"[ERROR] Order creation error: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating order: {str(e)}")
 
 
@@ -240,11 +266,12 @@ async def place_order(
 # 2. GET ALL ORDERS (with filters and pagination)
 # ============================================================
 
-@router.get("/")  # ✅ NO response_model here!
+@router.get("/")
 async def get_all_orders(
     current_user: User = Depends(get_current_user),
     status_filter: Optional[str] = Query(None, description="Filter by status: pending, processing, confirmed, etc."),
     payment_status: Optional[str] = Query(None, description="Filter by payment status: unpaid, paid, failed"),
+    order_type_filter: Optional[str] = Query(None, description="Filter by order type: combined, split, urgent"),
     limit: int = Query(10, ge=1, le=100, description="Number of orders to return"),
     offset: int = Query(0, ge=0, description="Number of orders to skip"),
     sort_by: str = Query("created_at", description="Sort field: created_at, total, status"),
@@ -254,13 +281,12 @@ async def get_all_orders(
     Get all orders for current user with filters and pagination.
     Admins can see all orders, regular users see only their own.
     """
-    
     # Build query
     if current_user.is_superuser:
         query = Order.all()
     else:
         query = Order.filter(user_id=current_user.id)
-    
+
     # Apply status filter
     if status_filter:
         try:
@@ -268,21 +294,29 @@ async def get_all_orders(
             query = query.filter(status=status_enum)
         except KeyError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status_filter}")
-    
+
     # Apply payment status filter
     if payment_status:
         query = query.filter(payment_status=payment_status.lower())
-    
+
+    # Apply order type filter
+    if order_type_filter:
+        if order_type_filter not in ["combined", "split", "urgent"]:
+            raise HTTPException(status_code=400, detail=f"Invalid order type: {order_type_filter}")
+        # Filter by metadata order_type
+        # Note: This assumes metadata contains order_type; adjust if needed
+        query = query.filter(metadata__order_type=order_type_filter)
+
     # Apply sorting
     sort_field = sort_by if sort_by in ['created_at', 'total', 'order_date'] else 'created_at'
     if sort_order.lower() == 'desc':
         query = query.order_by(f'-{sort_field}')
     else:
         query = query.order_by(sort_field)
-    
+
     # Get total count
     total_count = await query.count()
-    
+
     # Apply pagination
     orders = await query.offset(offset).limit(limit).prefetch_related(
         'user',
@@ -290,7 +324,7 @@ async def get_all_orders(
         'rider__user',
         'vendor__vendor_profile'
     )
-    
+
     # Build response
     results = []
     for order in orders:
@@ -298,17 +332,17 @@ async def get_all_orders(
         shipping_address = None
         if order.metadata and "shipping_address" in order.metadata:
             shipping_address = order.metadata["shipping_address"]
-        
+
         # Get delivery and payment info
         delivery_option = order.metadata.get("delivery_option", {}) if order.metadata else {
             "type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else str(order.delivery_type),
             "price": float(order.delivery_fee)
         }
-        
+
         payment_method = order.metadata.get("payment_method", {}) if order.metadata else {
             "type": order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
         }
-        
+
         # Build items list
         items = []
         for order_item in order.items:
@@ -319,153 +353,100 @@ async def get_all_orders(
                 "quantity": order_item.quantity,
                 "image_path": order_item.image_path
             })
-        
-        # Rider info (only if OUT_FOR_DELIVERY)
+
+        # Rider info
         rider_info = None
         order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
         if order_status.lower() == "outfordelivery" and order.rider:
-            
             rider_info = {
                 "rider_id": order.rider.user_id,
                 "rider_name": order.rider.user.name,
                 "rider_phone": order.rider.user.phone,
                 "rider_image": order.rider.profile_image
             }
-            print(f"RIDER INFO FOR ORDER {order.rider.user_id}")
-        
-        # Payment link
-        payment_link = None
-        if order.payment_status == "unpaid" and order.metadata:
-            cashfree_data = order.metadata.get("cashfree", {})
-            payment_link = cashfree_data.get("payment_link")
-        
-        # Get vendor info (preserved even if vendor deleted)
+
+        # Vendor info
         vendor_info = None
         if order.metadata and "vendor_info" in order.metadata:
             vendor_info = order.metadata["vendor_info"]
         elif order.vendor:
-            # Fallback to live vendor data if metadata not available
-            vendor_profile = await VendorProfile.get_or_none(user=order.vendor)
             vendor_info = {
                 "vendor_id": order.vendor_id,
-                "vendor_name": order.vendor.name,
-                "vendor_phone": order.vendor.phone,
-                "vendor_email": order.vendor.email or None,
-                "is_vendor": order.vendor.is_vendor,
-                "is_active": order.vendor.is_active
+                "vendor_name": order.vendor.name
             }
-            
-            if vendor_profile:
-                vendor_info.update({
-                    "store_name": vendor_profile.owner_name,
-                    "store_type": vendor_profile.type,
-                    "store_latitude": vendor_profile.latitude,
-                    "store_longitude": vendor_profile.longitude,
-                    "kyc_status": vendor_profile.kyc_status,
-                    "profile_is_active": vendor_profile.is_active
-                })
-        
+
+        # Get order type
+        order_type = "combined"
+        if order.metadata and "order_type" in order.metadata:
+            order_type = order.metadata["order_type"]
+
         results.append({
-            "id": order.id,
+            "order_id": order.id,
+            "parent_order_id": order.parent_order_id,
             "user_id": str(order.user_id),
+            "vendor_id": order.vendor_id,
             "items": items,
             "shipping_address": shipping_address,
             "delivery_option": delivery_option,
             "payment_method": payment_method,
             "subtotal": float(order.subtotal),
             "delivery_fee": float(order.delivery_fee),
+            "discount": float(order.discount),
             "total": float(order.total),
             "coupon_code": order.coupon_code,
-            "discount": float(order.discount),
             "order_date": order.order_date.isoformat(),
             "status": order_status,
-            "transaction_id": order.transaction_id,
+            "payment_status": order.payment_status,
             "tracking_number": order.tracking_number,
             "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
-            "payment_status": order.payment_status,
-            "payment_link": payment_link,
-            "parent_order_id": order.parent_order_id,
-            "cf_order_id": order.cf_order_id,
-            "payment_session_id": order.payment_session_id,
             "rider_info": rider_info,
-            "vendor_info": vendor_info
+            "vendor_info": vendor_info,
+            "order_type": order_type,
+            "is_combined": order.is_combined
         })
-    
-    # Return with pagination metadata
+
     return {
-        "total": total_count,
-        "limit": limit,
-        "offset": offset,
-        "orders": results
+        "success": True,
+        "data": results,
+        "pagination": {
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "returned": len(results)
+        }
     }
+
+
 # ============================================================
 # 3. GET SINGLE ORDER
 # ============================================================
 
 @router.get("/{order_id}")
-async def get_order_details(
+async def get_order(
     order_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Get detailed information about a specific order"""
-    
+    """Get a specific order by ID"""
     order = await Order.get_or_none(id=order_id).prefetch_related(
-        'user',
-        'items__item',
-        'rider__user',
-        'vendor__vendor_profile'
+        'user', 'items__item', 'rider__user', 'vendor'
     )
-    
+
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
-    # Check authorization
-    if order.user_id != current_user.id and not current_user.is_staff:
+
+    # Authorization check
+    if not (current_user.id == order.user_id or current_user.is_staff):
         raise HTTPException(status_code=403, detail="Not authorized to view this order")
-    
-    # # Get vendors locations
-    # vendors_locations = await order.get_all_vendors_locations()
-    
-    # Get shipping address from metadata
+
+    # Build response (similar to get_all_orders but with full detail)
     shipping_address = None
     if order.metadata and "shipping_address" in order.metadata:
         shipping_address = order.metadata["shipping_address"]
-    
-    # Get delivery and payment info
-    delivery_option = order.metadata.get("delivery_option", {}) if order.metadata else {
-        "type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else str(order.delivery_type),
-        "price": float(order.delivery_fee)
-    }
-    
-    payment_method = order.metadata.get("payment_method", {}) if order.metadata else {
-        "type": order.payment_method.value if hasattr(order.payment_method, 'value') else str(order.payment_method)
-    }
-    # NEW: Get vendor info (preserved even if vendor deleted)
-    vendor_info = None
-    if order.metadata and "vendor_info" in order.metadata:
-        vendor_info = order.metadata["vendor_info"]
-    elif order.vendor:
-        # Fallback to live vendor data if metadata not available
-        vendor_profile = await VendorProfile.get_or_none(user=order.vendor)
-        vendor_info = {
-            "vendor_id": order.vendor_id,
-            "vendor_name": order.vendor.name,
-            "vendor_phone": order.vendor.phone,
-            "vendor_email": order.vendor.email or None,
-            "is_vendor": order.vendor.is_vendor,
-            "is_active": order.vendor.is_active
-        }
-        
-        if vendor_profile:
-            vendor_info.update({
-                "store_name": vendor_profile.owner_name,
-                "store_type": vendor_profile.type,
-                "store_latitude": vendor_profile.latitude,
-                "store_longitude": vendor_profile.longitude,
-                "kyc_status": vendor_profile.kyc_status,
-                "profile_is_active": vendor_profile.is_active
-            })
-    # Build items list
+
+    delivery_option = order.metadata.get("delivery_option", {}) if order.metadata else {}
+    payment_method = order.metadata.get("payment_method", {}) if order.metadata else {}
+    vendor_info = order.metadata.get("vendor_info", {}) if order.metadata else {}
+
     items = []
     for order_item in order.items:
         items.append({
@@ -475,49 +456,41 @@ async def get_order_details(
             "quantity": order_item.quantity,
             "image_path": order_item.image_path
         })
-    
-    # Rider info (only if OUT_FOR_DELIVERY)
-    rider_info = None
-    order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-    if order_status.lower() == "outfordelivery" and order.rider:
-        rider_info = {
-            "rider_id": order.rider.id,
-            "rider_name": order.rider.user.name,
-            "rider_phone": order.rider.user.phone,
-            "rider_image": order.rider.profile_image
-        }
-    
-    # Payment link
-    payment_link = None
-    if order.payment_status == "unpaid" and order.metadata:
-        cashfree_data = order.metadata.get("cashfree", {})
-        payment_link = cashfree_data.get("payment_link")
-    
+
+    order_type = "combined"
+    if order.metadata and "order_type" in order.metadata:
+        order_type = order.metadata["order_type"]
+
     return {
-        "order_id": order.id,
-        "user_id": str(order.user_id),
-        "items": items,
-        "shipping_address": shipping_address,
-        "delivery_option": delivery_option,
-        "payment_method": payment_method,
-        "subtotal": float(order.subtotal),
-        "delivery_fee": float(order.delivery_fee),
-        "total": float(order.total),
-        "coupon_code": order.coupon_code,
-        "discount": float(order.discount),
-        "order_date": order.order_date.isoformat(),
-        "status": order_status,
-        "transaction_id": order.transaction_id,
-        "tracking_number": order.tracking_number,
-        "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
-        "payment_status": order.payment_status,
-        "parent_order_id": order.parent_order_id,
-        "cf_order_id": order.cf_order_id,
-        "payment_session_id": order.payment_session_id,
-        "rider_info": rider_info,
-        "vendor_info": vendor_info,
-        "can_cancel": order_status.lower() == "pending"
+        "success": True,
+        "data": {
+            "order_id": order.id,
+            "parent_order_id": order.parent_order_id,
+            "order_type": order_type,
+            "user_id": str(order.user_id),
+            "vendor_id": order.vendor_id,
+            "vendor_name": order.vendor.name if order.vendor else None,
+            "items": items,
+            "shipping_address": shipping_address,
+            "delivery_option": delivery_option,
+            "payment_method": payment_method,
+            "vendor_info": vendor_info,
+            "subtotal": float(order.subtotal),
+            "delivery_fee": float(order.delivery_fee),
+            "discount": float(order.discount),
+            "total": float(order.total),
+            "coupon_code": order.coupon_code,
+            "order_date": order.order_date.isoformat(),
+            "status": order.status.value if hasattr(order.status, 'value') else order.status,
+            "payment_status": order.payment_status,
+            "tracking_number": order.tracking_number,
+            "estimated_delivery": order.estimated_delivery.isoformat() if order.estimated_delivery else None,
+            "is_combined": order.is_combined,
+            "created_at": order.created_at.isoformat(),
+            "updated_at": order.updated_at.isoformat()
+        }
     }
+
 
 
 # ============================================================
