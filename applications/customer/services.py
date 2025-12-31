@@ -565,9 +565,15 @@ class OrderService:
         
         elif order_type == "split":
             print(f"[ORDER] Split order - one order per vendor ({len(vendor_items_map)} vendors)")
-            return await self._create_split_orders(
-                vendor_items_map, order_data, current_user
-            )
+            created_orders = []
+            urgent_vendors, non_urgent_vendors = self._classify_items_by_urgency(vendor_items_map)
+            if urgent_vendors:
+                urgent_orders = await self._create_urgent_orders(urgent_vendors, order_data, current_user)
+                created_orders.extend(urgent_orders)
+            if non_urgent_vendors:
+                split_orders = await self._create_split_orders(non_urgent_vendors, order_data, current_user)
+                created_orders.extend(split_orders)
+            return created_orders
         
         elif order_type == "urgent":
             print(f"[ORDER] Urgent orders for {len(vendor_items_map)} vendors")
@@ -807,6 +813,7 @@ class OrderService:
                     if order_data.payment_method.type != "cashfree" 
                     else OrderStatus.PENDING
                 )
+                delivery_type = "urgent"
 
                 order_id = self._generate_order_id()
                 order = await Order.create(
@@ -815,7 +822,8 @@ class OrderService:
                     user_id=current_user.id,
                     vendor_id=vendor_id,
                     shipping_address_id=None,
-                    delivery_type=order_data.delivery_option.type,
+                    delivery_type=delivery_type,
+                    # delivery_type=order_data.delivery_option.type,
                     payment_method=order_data.payment_method.type,
                     subtotal=subtotal,
                     delivery_fee=delivery_fee,
