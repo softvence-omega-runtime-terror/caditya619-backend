@@ -4214,9 +4214,11 @@ async def vendor_confirm_order(
             )
 
         # Get order type
-        order_type = "combined"
-        if order.metadata and "order_type" in order.metadata:
-            order_type = order.metadata["order_type"]
+        # order_type = "combined"
+        # if order.metadata and "order_type" in order.metadata:
+        #     order_type = order.metadata["order_type"]
+        order_type = order.delivery_type
+
 
         # Determine group key and group orders
         group_key = order.parent_order_id or order.id
@@ -4428,7 +4430,7 @@ async def rider_accept_order(
             order_type = order.metadata["order_type"]
 
         # Rider active lock for split/combined
-        if order_type in ["split", "combined"]:
+        if order_type in ["split", "combined", "urgent"]:
             active_orders = await Order.filter(
                 rider=rider_profile,
                 status__in=[
@@ -4468,11 +4470,18 @@ async def rider_accept_order(
         base_rate_single = float(fees_config.rider_delivery_fee or 44.00)
         distance_bonus_per_km = float(fees_config.distance_bonus_per_km or 1.0)
 
-        customer = order.user
-        customer_lat = getattr(customer, "customer_lat", None)
-        customer_lng = getattr(customer, "customer_lng", None)
+        #customer = order.user
+        customer = await CustomerProfile.get_or_none(user_id=order.user_id)
+        if not customer:
+            raise HTTPException(
+                status_code=400,
+                detail="Customer profile not found",
+            )
 
-        current_location = await RiderCurrentLocation.get_or_none(rider=rider_profile)
+        customer_lat = customer.customer_lat #getattr(customer, "customer_lat", None)
+        customer_lng = customer.customer_lng #getattr(customer, "customer_lng", None)
+
+        current_location = await RiderCurrentLocation.get_or_none(rider_profile=rider_profile)
 
         if not current_location:
             raise HTTPException(
@@ -4486,6 +4495,7 @@ async def rider_accept_order(
         # Calculate pickup distances
         total_pickup_dist = 0.0
         pickup_distances = []  # (order, pickup_dist)
+        total_prepare_time = 0
 
         for o in group_orders:
             vendor_info = o.metadata.get("vendor_info", {}) if o.metadata else {}
@@ -4508,8 +4518,12 @@ async def rider_accept_order(
                 v_lat,
                 v_lng,
             )
+            print(f"rider lat lng: {rider_lat},{rider_lng} to vendor lat lng: {v_lat},{v_lng} = {pickup_dist} km")
             pickup_distances.append((o, pickup_dist))
             total_pickup_dist += pickup_dist
+            rider_lat = v_lat
+            rider_lng = v_lng
+            total_prepare_time += o.prepare_time or 10
 
         # Delivery distance from last pickup to customer
         delivery_dist = 0.0
@@ -4518,10 +4532,13 @@ async def rider_accept_order(
             vendor_info = last_order.metadata.get("vendor_info", {}) if last_order.metadata else {}
             v_lat = vendor_info.get("store_latitude")
             v_lng = vendor_info.get("store_longitude")
-            if v_lat is not None and v_lng is not None:
+            if v_lat is not None and v_lng is not None:                   
                 delivery_dist = haversine(v_lat, v_lng, customer_lat, customer_lng)
+                print(f"last vendor lat lng: {v_lat},{v_lng} to customer lat lng: {customer_lat},{customer_lng} = {delivery_dist} km")
 
         total_dist = total_pickup_dist + delivery_dist
+
+        print(f"total distance: {total_dist} km, pickup: {total_pickup_dist} km, delivery: {delivery_dist} km")
 
         # Payout
         is_combined = order_type == "combined" and len(group_orders) > 1
@@ -4533,7 +4550,7 @@ async def rider_accept_order(
 
         pickup_eta_min = int(estimate_eta(total_pickup_dist).total_seconds() / 60)
         delivery_eta_min = int(estimate_eta(delivery_dist).total_seconds() / 60)
-        eta_minutes = pickup_eta_min + delivery_eta_min + (order.prepare_time or 10)
+        eta_minutes = pickup_eta_min + delivery_eta_min + int(total_prepare_time)
 
         # Assign rider to all orders in group
         now = datetime.utcnow()
@@ -4730,7 +4747,7 @@ async def get_order_status(
     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
 
     try:
-        order = await Order.get_or_none(id=order_id).prefetch_related("user", "vendor", "rider")
+        order = await Order.get_or_none(id=order_id).prefetch_related("rider", "user", "vendor")
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
 
@@ -4905,11 +4922,28 @@ async def _auto_assign_rider_for_urgent(
         if not riders:
             print(f"[AUTO_ASSIGN] No riders available for order {order_id}")
             return
-
-        assigned_rider = riders[0]
-        order.rider_id = assigned_rider.id
-        order.status = OrderStatus.CONFIRMED
-
+        
+        while riders:
+            rider_profile = riders.pop(0)
+            active_orders = await Order.filter(
+                rider=rider_profile,
+                status__in=[
+                    OrderStatus.CONFIRMED,
+                    OrderStatus.SHIPPED,
+                    OrderStatus.PREPARED,
+                    OrderStatus.OUT_FOR_DELIVERY,
+                ],
+            ).count()
+            if active_orders > 0:
+               continue
+            else:
+                assigned_rider = rider_profile
+                order.rider_id = rider_profile.id
+                order.status = OrderStatus.CONFIRMED
+                break
+        if not assigned_rider:
+            print(f"[AUTO_ASSIGN] No available riders found for order {order_id}")
+            return
         await OrderOffer.create(
             order=order,
             rider=assigned_rider,
@@ -5595,4 +5629,67 @@ async def rider_mark_delivered(
         raise
     except Exception as e:
         logger.error(f"Error marking order as delivered: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+
+
+@router.get("/rider-offered-orders/")
+async def get_rider_offered_orders(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    """Get all orders offered to the current rider."""
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+    try:
+        rider_profile = await RiderProfile.get_or_none(user=current_user)
+        if not rider_profile:
+            raise HTTPException(status_code=403, detail="Not a rider profile")
+        
+        # Get offered orders
+        query = OrderOffer.filter(rider=rider_profile, status="PENDING").prefetch_related("order__user", "order__items__item", "order__vendor")
+        
+        total = await query.count()
+        offers = await query.order_by("-created_at").offset(offset).limit(limit).all()
+        
+        result = []
+        for offer in offers:
+            order = offer.order
+            items = []
+            orders = await Order.filter(parent_order_id=order.parent_order_id).all().prefetch_related("items__item", "user")
+            for order in orders:
+                for oi in order.items:
+                    items.append({
+                        "item_id": oi.item_id,
+                        "title": oi.title,
+                        "price": oi.price,
+                        "quantity": oi.quantity
+                    })
+            
+            result.append({
+                "offer_id": offer.id,
+                "order_id": order.id,
+                "parent_order_id": order.parent_order_id,
+                "customer_name": order.user.name,
+                "customer_phone": order.user.phone,
+                "items": items,
+                "total": float(order.total),
+                "status": order.status.value if hasattr(order.status, 'value') else order.status,
+                "offered_at": offer.created_at.isoformat() if offer.created_at else None
+            })
+        
+        return translate({
+            "success": True,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "offers": result
+        }, lang)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching rider offered orders: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")

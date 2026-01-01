@@ -180,7 +180,7 @@ async def place_order(
                 "status": order.status.value if hasattr(order.status, 'value') else order.status,
                 "tracking_number": order.tracking_number,
                 "total": float(order.total),
-                "order_type": order_type
+                "order_type": order.delivery_type
             }
             for order in orders
         ]
