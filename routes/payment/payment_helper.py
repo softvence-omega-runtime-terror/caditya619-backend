@@ -39,11 +39,11 @@ async def create_payment_session_for_orders(orders: List[Order]):
             "customer_name": customer_name,
             "customer_email": customer_email
         },
-        "order_meta": {
-            # ✅ Fixed: Correct URLs without double slashes
-            "return_url": f"{settings.BACKEND_URL}/api/payment/test/pay-last",  # For testing
-            "notify_url": f"{settings.BACKEND_URL}/api/payment/webhook"
-        },
+        # "order_meta": {
+        #     # ✅ Fixed: Correct URLs without double slashes
+        #     "return_url": f"{settings.BACKEND_URL}/api/payment/test/pay-last",  # For testing
+        #     "notify_url": f"{settings.BACKEND_URL}/api/payment/webhook"
+        # },
         "order_note": f"Payment for {len(orders)} order(s)"
     }
     
