@@ -2507,6 +2507,7 @@ URGENT_RADIUS_KM = 10.0
 # PYDANTIC MODELS
 # ============================================================================
 
+OrderOut = pydantic_model_creator(Order, name='OrderOut')
 class OrderRejectRequest(BaseModel):
     """Rejection request with reason"""
     order_id: str
@@ -4557,7 +4558,7 @@ async def rider_accept_order(
 
         for o, pickup_dist in pickup_distances:
             o.rider_id = rider_profile.id
-            o.status = OrderStatus.OUT_FOR_DELIVERY
+            #o.status = OrderStatus.OUT_FOR_DELIVERY
 
             if order_type in ["split", "combined"]:
                 o.metadata = o.metadata or {}
@@ -5693,3 +5694,38 @@ async def get_rider_offered_orders(
     except Exception as e:
         logger.error(f"Error fetching rider offered orders: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+
+
+@router.get("/orders/")
+async def list_orders(
+    request: Request,
+    skip: int = Query(default=0),
+    limit: int = Query(default=10),
+    user: User = Depends(get_current_user),
+):
+    """
+    List orders assigned to the current rider.
+    Supports pagination with skip and limit.
+    """
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    try:
+        rider = await RiderProfile.get_or_none(user=user)
+        if not rider:
+            raise HTTPException(status_code=403, detail="Not a rider")
+
+        orders = await Order.filter(
+            rider=rider
+        ).offset(skip).limit(limit).order_by("-created_at").group_by("parent_order_id").all()
+
+
+
+        return [await OrderOut.from_tortoise_orm(translate(order, lang)) for order in orders]
+
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
