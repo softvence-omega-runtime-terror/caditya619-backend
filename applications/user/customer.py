@@ -54,6 +54,23 @@ class CustomerShippingAddress(models.Model):
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
+
+
+
+    async def save(self, *args, **kwargs):
+        is_new = not self.id
+        await super().save(*args, **kwargs)
+        if self.is_default:
+            await CustomerShippingAddress.filter(
+                user_id=self.user_id
+            ).exclude(id=self.id).update(is_default=False)
+
+        return {
+            "status": True,
+            "message": "Active address updated successfully",
+            "address_id": self.id
+        }
+
     class Meta:
         table = "customer_shipping_address"
         indexes = [
