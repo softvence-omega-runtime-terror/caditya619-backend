@@ -4,19 +4,37 @@ from tortoise.validators import MinValueValidator, MaxValueValidator
 
 
 class RiderProfile(models.Model):
+    verification_status_option = [
+        ("not_verified", "Not Verified"),
+        ("pending_approval", "Pending Approval"),
+        ("verified", "Verified"),
+        ("rejected", "Rejected")
+    ]
+
+    ID_Type_CHOICES = [
+        ("aadhaar", " Aadhaar"),
+        ("pan", "PAN"),
+        ("voter_id", "Voter ID")
+    ]
+
     id = fields.IntField(pk=True)
     user = fields.OneToOneField("models.User", related_name="rider_profile", on_delete=fields.CASCADE)
-    driving_license = fields.CharField(max_length=100)
-    nid = fields.CharField(max_length=60)
+    driving_license = fields.CharField(max_length=100, null=True, blank=True)
+    dl_expiry_date = fields.DateField(null=True, blank=True)
+    nid = fields.CharField(max_length=60, null=True, blank=True)
+    nid_type = fields.CharField(max_length=20, choices=ID_Type_CHOICES, null=True, blank=True)
     profile_image = fields.CharField(max_length=255, null=True)
     national_id_document = fields.CharField(max_length=255, null=True)
     driving_license_document = fields.CharField(max_length=255, null=True)
     vehicle_registration_document = fields.CharField(max_length=255, null=True)
+    vehicle_registration_number = fields.CharField(max_length=50, null=True, blank=True)
     vehicle_insurance_document = fields.CharField(max_length=255, null=True)
+    vehicle_insurance_expiry_date = fields.DateField(null=True, blank=True)
     current_balance = fields.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     is_available = fields.BooleanField(default=False)
     online_start_time = fields.DatetimeField(null=True, default=None)
-    is_verified = fields.BooleanField(default=False)
+    verification_status = fields.CharField(max_length=20, choices=verification_status_option, default="not verified")
+    verification_rejection_reason = fields.TextField(null=True, blank=True)
     fcm_token = fields.CharField(max_length=255, null=True, blank=True)
     referral_code = fields.CharField(max_length=20, unique=True, null=True)
     is_document_uploaded = fields.BooleanField(default=False)
