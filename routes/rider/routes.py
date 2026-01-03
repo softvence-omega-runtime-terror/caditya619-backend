@@ -62,6 +62,12 @@ class VehicleCreate(BaseModel):
     license_plate_number: str
 
 
+class IDType(str, Enum):
+    aadhaar = "Aadhaar"
+    pan = "PAN"
+    voter_id = "Voter ID"
+
+
 
 class RiderListResponse(BaseModel):
     count: int
@@ -95,6 +101,10 @@ async def rider_profile_me(request: Request, user: User = Depends(get_current_us
 @router.put("/rider-documents/me/", response_model=RiderProfile_Pydantic)
 async def update_rider_documents_me(
      request: Request,
+     id_type: IDType = Form(...),
+     nid_num: str = Form(...),
+     dl_num: str = Form(...),
+     vi_reg_num: str = Form(...),
      pi: UploadFile = File(...),
      nid: UploadFile = File(...), 
      dl: UploadFile = File(...), 
@@ -128,16 +138,21 @@ async def update_rider_documents_me(
          vi_path = await update_file(
             vi, rider_profile.vehicle_insurance_document, upload_to="Documents", allowed_extensions=['png', 'jpg', 'svg', 'jpeg', 'pdf']
         )
-         
-    
-    if pi_path and nid_path and dl_path and vr_path and vi_path:
+
+
+    if pi_path and nid_path and dl_path and vr_path and vi_path and nid_num and dl_num and vi_reg_num and id_type:
         rider_profile.profile_image = pi_path
         rider_profile.national_id_document = nid_path
         rider_profile.driving_license_document = dl_path
         rider_profile.vehicle_registration_document = vr_path
         rider_profile.vehicle_insurance_document = vi_path
+        rider_profile.nid = nid_num
+        rider_profile.driving_license = dl_num
+        rider_profile.vehicle_registration_number = vi_reg_num
+        rider_profile.nid_type = id_type.value
 
         rider_profile.is_document_uploaded = True
+        rider_profile.verification_status = "Pending Approval"
 
     else:
         raise HTTPException(status_code=400, detail=translate("All documents must be provided", lang))
@@ -175,12 +190,12 @@ async def update_is_document_uploaded(
 
 
 @router.get("/is-verified")
-async def is_verified(request: Request, user: User = Depends(get_current_user)):
+async def verified_status(request: Request, user: User = Depends(get_current_user)):
     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     rider_profile = await RiderProfile.get_or_none(user=user)
     if not rider_profile:
         raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
-    return translate({"is_verified": rider_profile.is_verified}, lang)
+    return translate({"verification_status": rider_profile.verification_status}, lang)
 
 
 
