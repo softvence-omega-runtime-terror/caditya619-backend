@@ -715,8 +715,10 @@ async def get_phonepe_status(
             
             # If payment is COMPLETED, process the orders
             if resp_data.get("state") == "COMPLETED":
+                print("✅ PhonePe payment completed. Processing orders...")
                 parent_order_id = req_data.merchantOrderId
                 orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
+                print(f"Orders fetched for PhonePe status update: {len(orders)}")
                 
                 if orders:
                     for order in orders:
@@ -724,6 +726,7 @@ async def get_phonepe_status(
                         if order.payment_status != "paid":
                             order.payment_status = "paid"
                             order.status = OrderStatus.PROCESSING
+                            print(f"Marking Order {order.id} as paid via PhonePe")
                             order.transaction_id = f"PHONEPE_{resp_data.get('orderId')}"
                             await order.save()
                             
