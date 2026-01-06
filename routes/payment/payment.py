@@ -717,7 +717,10 @@ async def get_phonepe_status(
             if resp_data.get("state") == "COMPLETED":
                 print("✅ PhonePe payment completed. Processing orders...")
                 parent_order_id = req_data.merchantOrderId
-                orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
+
+                print(f"Fetching orders with parent_order_id: {parent_order_id}")
+                orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user").all()
+                print("orders",orders)
                 print(f"Orders fetched for PhonePe status update: {len(orders)}")
                 
                 if orders:

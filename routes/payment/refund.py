@@ -12,7 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from tortoise import fields
 from tortoise.models import Model
 from pydantic import BaseModel
+from typing import Optional
 import httpx
+from app.config import settings
+from applications.payment.models import Refund, RefundLog
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/refunds", tags=["refunds"])
@@ -21,43 +24,43 @@ router = APIRouter(prefix="/refunds", tags=["refunds"])
 # DATABASE MODELS
 # ============================================================
 
-class Refund(Model):
-    """Refund tracking"""
-    id = fields.CharField(max_length=255, pk=True)
-    order_id = fields.CharField(max_length=255, index=True)
-    user_id = fields.IntField(index=True)
+# class Refund(Model):
+#     """Refund tracking"""
+#     id = fields.CharField(max_length=255, pk=True)
+#     order_id = fields.CharField(max_length=255, index=True)
+#     user_id = fields.IntField(index=True)
     
-    refund_amount = fields.DecimalField(max_digits=10, decimal_places=2)
-    cancellation_fee = fields.DecimalField(max_digits=10, decimal_places=2, default=0)
-    original_amount = fields.DecimalField(max_digits=10, decimal_places=2)
+#     refund_amount = fields.DecimalField(max_digits=10, decimal_places=2)
+#     cancellation_fee = fields.DecimalField(max_digits=10, decimal_places=2, default=0)
+#     original_amount = fields.DecimalField(max_digits=10, decimal_places=2)
     
-    status = fields.CharField(max_length=50, default="initiated", index=True)
-    reason = fields.CharField(max_length=100, default="customer_cancellation")
+#     status = fields.CharField(max_length=50, default="initiated", index=True)
+#     reason = fields.CharField(max_length=100, default="customer_cancellation")
     
-    payment_method = fields.CharField(max_length=50, null=True)
-    gateway_refund_id = fields.CharField(max_length=255, null=True, unique=True)
+#     payment_method = fields.CharField(max_length=50, null=True)
+#     gateway_refund_id = fields.CharField(max_length=255, null=True, unique=True)
     
-    expected_completion = fields.DatetimeField(null=True)
-    completed_at = fields.DatetimeField(null=True)
-    created_at = fields.DatetimeField(auto_now_add=True, index=True)
+#     expected_completion = fields.DatetimeField(null=True)
+#     completed_at = fields.DatetimeField(null=True)
+#     created_at = fields.DatetimeField(auto_now_add=True, index=True)
 
-    class Meta:
-        table = "refunds"
+#     class Meta:
+#         table = "refunds"
 
 
-class RefundLog(Model):
-    """Audit trail"""
-    refund_id = fields.CharField(max_length=255, index=True)
-    order_id = fields.CharField(max_length=255)
-    action = fields.CharField(max_length=100)
-    old_status = fields.CharField(max_length=50, null=True)
-    new_status = fields.CharField(max_length=50, null=True)
-    actor_type = fields.CharField(max_length=50)  # customer, gateway, system
-    error = fields.TextField(null=True)
-    created_at = fields.DatetimeField(auto_now_add=True, index=True)
+# class RefundLog(Model):
+#     """Audit trail"""
+#     refund_id = fields.CharField(max_length=255, index=True)
+#     order_id = fields.CharField(max_length=255)
+#     action = fields.CharField(max_length=100)
+#     old_status = fields.CharField(max_length=50, null=True)
+#     new_status = fields.CharField(max_length=50, null=True)
+#     actor_type = fields.CharField(max_length=50)  # customer, gateway, system
+#     error = fields.TextField(null=True)
+#     created_at = fields.DatetimeField(auto_now_add=True, index=True)
 
-    class Meta:
-        table = "refund_logs"
+#     class Meta:
+#         table = "refund_logs"
 
 
 # ============================================================
@@ -84,7 +87,7 @@ class RefundStatusResponse(BaseModel):
     refund_id: str
     status: str
     refund_amount: float
-    completed_at: str = None
+    completed_at: Optional[str] = None
 
 
 # ============================================================
@@ -94,7 +97,7 @@ class RefundStatusResponse(BaseModel):
 async def get_order(order_id: str):
     """Get order - replace with your actual import"""
     from applications.customer.models import Order
-    return await Order.get_or_none(id=order_id)
+    return await Order.get_or_none(parent_order_id=order_id)
 
 
 def can_cancel(status: str) -> bool:
@@ -105,9 +108,9 @@ def can_cancel(status: str) -> bool:
 
 def get_fee(status: str, amount: float) -> float:
     """Calculate cancellation fee"""
-    if status in ["pending", "confirmed"]:
+    if status in ["processing"]:
         return 0.0
-    if status in ["preparing", "packing"]:
+    if status in ["preparing", "confirmed"]:
         return amount * 0.10
     return 0.0
 
@@ -136,8 +139,8 @@ async def cashfree_refund(order_id: str, amount: float, refund_id: str) -> tuple
     """Create refund in Cashfree"""
     try:
         # TODO: Add your Cashfree credentials here
-        CLIENT_ID = "your_cashfree_client_id"
-        CLIENT_SECRET = "your_cashfree_client_secret"
+        CLIENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
+        CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
         
         url = f"https://api.cashfree.com/pg/orders/{order_id}/refunds"
         headers = {
@@ -239,12 +242,29 @@ async def check_cancel(order_id: str):
 async def cancel_order(order_id: str, reason: str = "customer_request"):
     """Cancel order and create refund"""
     
-    order = await get_order(order_id)
-    if not order:
+    orders = await get_order(order_id=order_id)
+    if not orders:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    if not can_cancel(order.status):
-        raise HTTPException(status_code=400, detail=f"Cannot cancel in {order.status} status")
+    order = orders[0]  # Assuming parent_order_id is same for all combined orders
+
+    for order in orders:
+    
+        if not can_cancel(order.status):
+            raise HTTPException(status_code=400, detail=f"Cannot cancel in {order.status} status")
+        
+        method = order.pyment_method.lower()
+        if order.payment_method == "cod":
+            order.status = "cancelled"
+            await order.save()
+    if method == "cod":
+        return CancelOrderResponse(
+            success=True,
+            refund_id="",
+            status="cancelled",
+            refund_amount=0.0,
+            cancellation_fee=0.0
+        )
     
     # Calculate refund
     amount = float(order.total)

@@ -371,6 +371,8 @@ class OrderService:
         created_orders = []
         parent_order_id = self._generate_parent_order_id()
 
+        print(f"[ORDER] Creating order with Parent ID: {parent_order_id}")
+
         # Calculate grand total for coupon
         grand_subtotal = Decimal("0")
         for items in vendor_items_map.values():
@@ -429,6 +431,8 @@ class OrderService:
                     metadata=order_metadata,
                     is_combined=True
                 )
+
+                print(f"[ORDER] Created order {order.id} parent id {order.parent_order_id} for vendor {vendor_id} - subtotal: {subtotal}, delivery_fee: {delivery_fee}, total: {total}")
 
                 # Create order items
                 for item_data in items:
@@ -563,6 +567,8 @@ class OrderService:
         """
         created_orders = []
         parent_order_id = self._generate_parent_order_id()
+
+        print(f"[ORDER] Creating order with Parent ID: {parent_order_id}")
 
         grand_subtotal = Decimal("0")
         for items in vendor_items_map.values():
