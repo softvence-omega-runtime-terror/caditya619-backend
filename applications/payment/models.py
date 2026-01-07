@@ -40,3 +40,32 @@ class RefundLog(Model):
 
     class Meta:
         table = "refund_logs"
+
+
+
+class CancellationReason(Model):
+    """Predefined cancellation reasons"""
+    id = fields.IntField(pk=True)  # Auto-incrementing integer
+    reason = fields.CharField(max_length=255, unique=True)
+    order_id = fields.CharField(max_length=255, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "cancellation_reasons"
+
+
+
+class ReportAndIssue(Model):
+    """Reports and issues logged by users"""
+    id = fields.IntField(pk=True)  # Auto-incrementing integer
+    order_id = fields.CharField(max_length=255, index=True)
+    reason = fields.CharField(max_length=100)  # e.g., "refund", "item_missing"
+    details = fields.TextField(null=True)
+    image = fields.CharField(max_length=255, null=True)  # URL or path to image
+    transection_id = fields.CharField(max_length=255, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "reports_and_issues"

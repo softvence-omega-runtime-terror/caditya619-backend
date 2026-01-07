@@ -8,14 +8,20 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
 from tortoise import fields
 from tortoise.models import Model
 from pydantic import BaseModel
 from typing import Optional
 import httpx
 from app.config import settings
-from applications.payment.models import Refund, RefundLog
+from applications.payment.models import Refund, RefundLog, CancellationReason, ReportAndIssue
+from applications.customer.models import Order
+from applications.user.models import User
+from app.token import get_current_user
+from app.utils.file_manager import save_file, delete_file, update_file
+from tortoise.contrib.pydantic import pydantic_model_creator
+from routes.payment.payment import CASHFREE_ENV
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/refunds", tags=["refunds"])
@@ -67,6 +73,9 @@ router = APIRouter(prefix="/refunds", tags=["refunds"])
 # SCHEMAS
 # ============================================================
 
+
+ReportAndIssue_Pydantic = pydantic_model_creator(ReportAndIssue, name="ReportAndIssue")
+
 class CancelCheckResponse(BaseModel):
     can_cancel: bool
     refund_amount: float
@@ -81,6 +90,7 @@ class CancelOrderResponse(BaseModel):
     status: str
     refund_amount: float
     cancellation_fee: float
+    gw_id: Optional[str] = None
 
 
 class RefundStatusResponse(BaseModel):
@@ -137,26 +147,34 @@ async def log_action(refund_id: str, order_id: str, action: str, old_status: str
 
 async def cashfree_refund(order_id: str, amount: float, refund_id: str) -> tuple[bool, str]:
     """Create refund in Cashfree"""
+    print(f"Initiating Cashfree refund for order {order_id} amount {amount}")
     try:
         # TODO: Add your Cashfree credentials here
         CLIENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
         CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
-        
-        url = f"https://api.cashfree.com/pg/orders/{order_id}/refunds"
+        CASHFREE_API_VERSION = "2023-08-01"
+        CASHFREE_ENV = settings.CASHFREE_ENV
+        CASHFREE_BASE = "https://sandbox.cashfree.com/pg" if CASHFREE_ENV == "SANDBOX" else "https://api.cashfree.com/pg"
+
+        url = f"{CASHFREE_BASE}/orders/{order_id}/refunds"
         headers = {
             "x-client-id": CLIENT_ID,
             "x-client-secret": CLIENT_SECRET,
+            "x-api-version": CASHFREE_API_VERSION,
             "Content-Type": "application/json"
         }
         payload = {
             "refund_amount": float(amount),
-            "refund_note": "Customer cancellation"
+            "refund_id": refund_id,
+            "refund_note": "Customer cancellation",
+            "refund_speed": "STANDARD"
         }
         
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(url, json=payload, headers=headers)
             if response.status_code == 200:
                 data = response.json()
+                print(f"[Cashfree] Refund response: {data}")
                 gw_id = data.get("refund", {}).get("refund_id")
                 logger.info(f"[Cashfree] Refund: {refund_id} -> {gw_id}")
                 return True, gw_id
@@ -165,6 +183,45 @@ async def cashfree_refund(order_id: str, amount: float, refund_id: str) -> tuple
                 return False, response.text
     except Exception as e:
         logger.error(f"[Cashfree] Exception: {e}")
+        return False, str(e)
+    
+
+
+async def cashfree_refund_status_check(order_id: str, refund_id: str) -> tuple[bool, str]:
+    """Create refund in Cashfree"""
+    try:
+        # TODO: Add your Cashfree credentials here
+        CLIENT_ID = settings.CASHFREE_CLIENT_PAYMENT_ID
+        CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYMENT_SECRET
+        CASHFREE_API_VERSION = "2023-08-01"
+        CASHFREE_ENV = settings.CASHFREE_ENV
+        CASHFREE_BASE = "https://sandbox.cashfree.com/pg" if CASHFREE_ENV == "SANDBOX" else "https://api.cashfree.com/pg"
+
+        url = f"{CASHFREE_BASE}/orders/{order_id}/refunds/{refund_id}"
+
+        headers = {
+            "x-client-id": CLIENT_ID,
+            "x-client-secret": CLIENT_SECRET,
+            "x-api-version": CASHFREE_API_VERSION,
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            print(f"[Cashfree] Refund status: {data}")
+            logger.info(f"[Cashfree] Refund status {refund_id}: {data}")
+            return True, data
+        else:
+            logger.error(
+                f"[Cashfree] Refund status error {response.status_code}: {response.text}"
+            )
+            return False, response.text
+
+    except Exception as e:
+        logger.error(f"[Cashfree] Exception in refund status check: {e}")
         return False, str(e)
 
 
@@ -242,18 +299,22 @@ async def check_cancel(order_id: str):
 async def cancel_order(order_id: str, reason: str = "customer_request"):
     """Cancel order and create refund"""
     
-    orders = await get_order(order_id=order_id)
+    orders = await Order.filter(parent_order_id=order_id)
     if not orders:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    order = orders[0]  # Assuming parent_order_id is same for all combined orders
+    #order = orders[0]  # Assuming parent_order_id is same for all combined orders
+    total = 0.0
+    status = ""
 
     for order in orders:
     
         if not can_cancel(order.status):
             raise HTTPException(status_code=400, detail=f"Cannot cancel in {order.status} status")
         
-        method = order.pyment_method.lower()
+        method = order.payment_method.lower()
+        total += float(order.total)
+        status = order.status
         if order.payment_method == "cod":
             order.status = "cancelled"
             await order.save()
@@ -267,8 +328,8 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
         )
     
     # Calculate refund
-    amount = float(order.total)
-    fee = get_fee(order.status, amount)
+    amount = float(total)
+    fee = get_fee(status, amount)
     refund_amount = amount - fee
     
     # Create refund
@@ -302,6 +363,7 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
             success, result = await cashfree_refund(order_id, refund_amount, refund_id)
             if success:
                 gw_id = result
+                print(gw_id)
                 status = "processing"
                 await log_action(refund_id, order_id, "processing", "initiated", "processing", "system")
             else:
@@ -326,7 +388,8 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
         refund_id=refund_id,
         status=status,
         refund_amount=refund_amount,
-        cancellation_fee=fee
+        cancellation_fee=fee,
+        gw_id=gw_id
     )
 
 
@@ -393,3 +456,69 @@ async def phonepe_webhook(data: dict):
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return {"ok": False}
+
+
+
+@router.post("/refund/{order_id}/check-status")
+async def check_refund_status(order_id: str):
+    refund = await Refund.get_or_none(order_id=order_id)
+    if not refund:
+        raise HTTPException(status_code=404, detail="Refund not found")
+    if refund.payment_method == "cashfree":
+        status, data = await cashfree_refund_status_check(order_id, refund.id)
+    else:
+        data = {"error": "Unsupported gateway"}
+        return data
+    
+    return {"status": status, "data": data}
+
+
+
+# ============================================================
+#  REPORTS AND ISSUES
+# ============================================================
+
+@router.post("/cancellation-reasons")
+async def add_cancellation_reason(reason: str = Form(...), order_id: Optional[str] = Form(None), user: User = Depends(get_current_user)):
+    """Add a predefined cancellation reason"""
+    existing = await CancellationReason.get_or_none(reason=reason)
+    if existing:
+        raise HTTPException(status_code=400, detail="Reason already exists")
+    
+    cr = await CancellationReason.create(
+        reason=reason,
+        order_id=order_id
+    )
+    return {"id": cr.id, "reason": cr.reason}
+
+
+
+@router.post("/reports-and-issues")
+async def log_report_issue(order_id: str = Form(...), 
+                           reason: str = Form(...), 
+                           details: Optional[str] = Form(None), 
+                           file: Optional[UploadFile] = File(None),
+                           transection_id: Optional[str] = Form(None), 
+                           user: User = Depends(get_current_user)
+                        ):
+
+    if file and file.filename:
+        file_path = await save_file(
+            file, upload_to="reports_and_issues/"
+        )
+    else:
+        file_path = None
+
+    report = await ReportAndIssue.create(
+        order_id=order_id,
+        reason=reason,
+        details=details,
+        image=file_path,
+        transection_id=transection_id
+    )
+
+    return await ReportAndIssue_Pydantic.from_tortoise_orm(report)
+
+
+
+
