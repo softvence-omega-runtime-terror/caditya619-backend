@@ -4421,10 +4421,22 @@ async def rider_accept_order(
 
         # Base order of the offer
         order = await Order.get_or_none(id=order_id).prefetch_related(
-            "user", "items__item", "vendor", "rider"
+            "user", "items__item", "vendor", "rider__user"
         )
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
+        
+        rider_info = {
+                "rider_id": rider_profile.user_id,
+                "rider_name": current_user.name,
+                "rider_phone": current_user.phone,
+                "rider_image": rider_profile.profile_image
+            }
+        
+        order.metadata["rider_info"] = order.metadata.get("rider_info", {}) if order.metadata else {}
+        order.metadata["rider_info"].update(rider_info)
+        await order.save()
+
 
         order_type = "combined"
         if order.metadata and "order_type" in order.metadata:
@@ -4459,7 +4471,7 @@ async def rider_accept_order(
         if order_type == "combined":
             group_key = order.parent_order_id or order.id
             group_orders = await Order.filter(parent_order_id=group_key).prefetch_related(
-                "vendor"
+                "vendor", "user", "rider"
             )
             if not group_orders:
                 group_orders = [order]
@@ -4578,7 +4590,7 @@ async def rider_accept_order(
             await o.save()
 
         if order_type == "urgent" and not pickup_distances:
-            order.rider_id = rider_profile.id
+            order.rider = rider_profile
             order.status = OrderStatus.OUT_FOR_DELIVERY
             await order.save()
 

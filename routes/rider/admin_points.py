@@ -155,7 +155,7 @@ async def approve_rider_document(request:Request, rider_id:str, status:Verificat
         rider_profile.verification_rejection_reason = rejection_reason
         await rider_profile.save()
         try:
-            await send_notification(rider_id,"Your document has been rejected","Reason: "+(rejection_reason or "Not specified"))
+            await send_notification(rider_id,"Your document has been rejected",f"Reason: {rejection_reason or 'Not specified'}")
         except Exception as e:
             print(e)
         return translate({"message":"Document rejected successfully"}, lang)
