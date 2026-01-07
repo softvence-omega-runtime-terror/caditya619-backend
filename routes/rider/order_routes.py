@@ -4570,7 +4570,7 @@ async def rider_accept_order(
 
         for o, pickup_dist in pickup_distances:
             o.rider_id = rider_profile.id
-            #o.status = OrderStatus.OUT_FOR_DELIVERY
+            o.status = OrderStatus.PREPARED
 
             if order_type in ["split", "combined"]:
                 o.metadata = o.metadata or {}
