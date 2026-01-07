@@ -2507,6 +2507,7 @@ URGENT_RADIUS_KM = 10.0
 # PYDANTIC MODELS
 # ============================================================================
 
+OrderOut = pydantic_model_creator(Order, name='OrderOut')
 class OrderRejectRequest(BaseModel):
     """Rejection request with reason"""
     order_id: str
@@ -4420,10 +4421,22 @@ async def rider_accept_order(
 
         # Base order of the offer
         order = await Order.get_or_none(id=order_id).prefetch_related(
-            "user", "items__item", "vendor", "rider"
+            "user", "items__item", "vendor", "rider__user"
         )
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
+        
+        rider_info = {
+                "rider_id": rider_profile.user_id,
+                "rider_name": current_user.name,
+                "rider_phone": current_user.phone,
+                "rider_image": rider_profile.profile_image
+            }
+        
+        order.metadata["rider_info"] = order.metadata.get("rider_info", {}) if order.metadata else {}
+        order.metadata["rider_info"].update(rider_info)
+        await order.save()
+
 
         order_type = "combined"
         if order.metadata and "order_type" in order.metadata:
@@ -4458,7 +4471,7 @@ async def rider_accept_order(
         if order_type == "combined":
             group_key = order.parent_order_id or order.id
             group_orders = await Order.filter(parent_order_id=group_key).prefetch_related(
-                "vendor"
+                "vendor", "user", "rider"
             )
             if not group_orders:
                 group_orders = [order]
@@ -4557,7 +4570,7 @@ async def rider_accept_order(
 
         for o, pickup_dist in pickup_distances:
             o.rider_id = rider_profile.id
-            o.status = OrderStatus.OUT_FOR_DELIVERY
+            #o.status = OrderStatus.OUT_FOR_DELIVERY
 
             if order_type in ["split", "combined"]:
                 o.metadata = o.metadata or {}
@@ -4577,7 +4590,7 @@ async def rider_accept_order(
             await o.save()
 
         if order_type == "urgent" and not pickup_distances:
-            order.rider_id = rider_profile.id
+            order.rider = rider_profile
             order.status = OrderStatus.OUT_FOR_DELIVERY
             await order.save()
 
@@ -4734,6 +4747,62 @@ async def rider_accept_order(
 # ============================================================================
 # ORDER STATUS
 # ============================================================================
+
+@router.post("/rider/reject/{order_id}/")
+async def reject_order(
+    request: Request,
+    order_id: str,
+    reject_data: OrderRejectRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """RIDER rejects an order offer."""
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+    try:
+        rider_profile = await RiderProfile.get_or_none(user=current_user)
+        if not rider_profile:
+            raise HTTPException(status_code=403, detail="Not a rider profile")
+        
+        order = await Order.get_or_none(id=order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Find and update offer
+        offer = await OrderOffer.get_or_none(order__parent_order_id=order.parent_order_id, rider=rider_profile)
+        if not offer:
+            raise HTTPException(status_code=404, detail="Offer not found")
+        
+        if offer.status != "PENDING":
+            raise HTTPException(status_code=400, detail="Can only reject pending offers")
+        
+        offer.status = "REJECTED"
+        offer.reject_reason = reject_data.reason
+        offer.responded_at = datetime.utcnow()
+        await offer.save()
+        
+        # Update WorkDay stats
+        today = date.today()
+        workday, _ = await WorkDay.get_or_create(
+            rider=rider_profile,
+            date=today,
+            defaults={"hours_worked": 0.0, "rejection_count": 0}
+        )
+        workday.rejection_count += 1
+        await workday.save()
+        
+        logger.info(f"Rider {rider_profile.id} rejected order {order_id}: {reject_data.reason}")
+        
+        return translate({
+            "success": True,
+            "message": "Order rejected",
+            "order_id": order_id
+        }, lang)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting order: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @router.get("/orders/{order_id}/status")
 async def get_order_status(
@@ -5143,6 +5212,75 @@ async def _find_nearby_riders(
 
 @router.get("/rider/active-orders/")
 async def get_rider_active_orders(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    """Get all active orders assigned to current rider."""
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    
+    try:
+        rider_profile = await RiderProfile.get_or_none(user=current_user)
+        if not rider_profile:
+            raise HTTPException(status_code=403, detail="Not a rider profile")
+        
+        # Get active orders
+        query = Order.filter(rider=rider_profile, status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.PREPARED, OrderStatus.OUT_FOR_DELIVERY]).prefetch_related("user", "items__item", "vendor")
+        
+        # if status_filter:
+        #     try:
+        #         #status_enum = [OrderStatus[statuss.upper()] for statuss in status_filter]
+        #         query = query.filter(status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.PREPARED, OrderStatus.OUT_FOR_DELIVERY])
+        #     except KeyError:
+        #         raise HTTPException(status_code=400, detail=f"Invalid status: {status_filter}")
+        
+        total = await query.count()
+        orders = await query.order_by("-accepted_at").offset(offset).limit(limit).all()
+        
+        result = []
+        for order in orders:
+            items = []
+            for oi in order.items:
+                items.append({
+                    "item_id": oi.item_id,
+                    "title": oi.title,
+                    "price": oi.price,
+                    "quantity": oi.quantity
+                })
+            
+            result.append({
+                "order_id": order.id,
+                "parent_order_id": order.parent_order_id,
+                "customer_name": order.user.name,
+                "customer_phone": order.user.phone,
+                "items": items,
+                "total": float(order.total),
+                "status": order.status.value if hasattr(order.status, 'value') else order.status,
+                "delivery_type": order.delivery_type.value if hasattr(order.delivery_type, 'value') else order.delivery_type,
+                "accepted_at": order.accepted_at.isoformat() if order.accepted_at else None,
+                "pickup_distance_km": order.pickup_distance_km,
+                "base_rate": float(order.base_rate)
+            })
+        
+        return translate({
+            "success": True,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "orders": result
+        }, lang)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching rider active orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+
+
+@router.get("/rider/orders-by-status/")
+async def get_rider_orders_by_status(
     request: Request,
     current_user: User = Depends(get_current_user),
     status_filter: Optional[str] = Query(None),
@@ -5658,7 +5796,8 @@ async def get_rider_offered_orders(
         for offer in offers:
             order = offer.order
             items = []
-            orders = await Order.filter(parent_order_id=order.parent_order_id).all().prefetch_related("items__item", "user")
+            order_info = []
+            orders = await Order.filter(parent_order_id=order.parent_order_id).all().prefetch_related("items__item", "user", "vendor")
             for order in orders:
                 for oi in order.items:
                     items.append({
@@ -5667,6 +5806,12 @@ async def get_rider_offered_orders(
                         "price": oi.price,
                         "quantity": oi.quantity
                     })
+                order_info.append({
+                    "order_id": order.id,
+                    "vendor_name": order.vendor.name if order.vendor else None,
+                    "items": items
+                })
+
             
             result.append({
                 "offer_id": offer.id,
@@ -5674,7 +5819,7 @@ async def get_rider_offered_orders(
                 "parent_order_id": order.parent_order_id,
                 "customer_name": order.user.name,
                 "customer_phone": order.user.phone,
-                "items": items,
+                "order_info": order_info,
                 "total": float(order.total),
                 "status": order.status.value if hasattr(order.status, 'value') else order.status,
                 "offered_at": offer.created_at.isoformat() if offer.created_at else None
@@ -5693,3 +5838,38 @@ async def get_rider_offered_orders(
     except Exception as e:
         logger.error(f"Error fetching rider offered orders: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+
+
+@router.get("/orders/")
+async def list_orders(
+    request: Request,
+    skip: int = Query(default=0),
+    limit: int = Query(default=10),
+    user: User = Depends(get_current_user),
+):
+    """
+    List orders assigned to the current rider.
+    Supports pagination with skip and limit.
+    """
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    try:
+        rider = await RiderProfile.get_or_none(user=user)
+        if not rider:
+            raise HTTPException(status_code=403, detail="Not a rider")
+
+        orders = await Order.filter(
+            rider=rider
+        ).offset(skip).limit(limit).order_by("-created_at").group_by("parent_order_id").all()
+
+
+
+        return [await OrderOut.from_tortoise_orm(translate(order, lang)) for order in orders]
+
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    

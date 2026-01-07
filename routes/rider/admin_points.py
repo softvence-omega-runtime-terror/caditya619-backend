@@ -5,6 +5,7 @@ from app.token import get_current_user
 from tortoise.contrib.pydantic import pydantic_model_creator
 from .notifications import send_notification
 from app.utils.translator import translate
+from enum import Enum
 
 
 
@@ -22,6 +23,10 @@ RiderFeesAndBonuses_Pydantic = pydantic_model_creator(RiderFeesAndBonuses, name=
 
 
 
+
+class VerificationStatus(str, Enum):
+    approved = "approved"
+    rejected = "rejected"
 
 
 @router.post("/rider-fees-and-bonus-rate", response_model=RiderFeesAndBonuses_Pydantic)
@@ -130,27 +135,48 @@ async def check_rider_document(request:Request, rider_id:str, user:User = Depend
 
 
 @router.put("/rider-document-approve/{rider_id}", response_model=dict)
-async def approve_rider_document(request:Request, rider_id:str, is_verified:bool = Form(), user:User = Depends(get_current_user)):
+async def approve_rider_document(request:Request, rider_id:str, status:VerificationStatus = Form(...),rejection_reason: str | None = Form(None), user:User = Depends(get_current_user)):
     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     if not user.is_superuser:
         raise HTTPException(403, "Not authorized")
     rider_profile = await RiderProfile.filter(user=rider_id).first()
     if not rider_profile:
         raise HTTPException(status_code=404, detail=f"No profile found for {rider_id}")
-    if is_verified == True:
-        rider_profile.is_verified = True
+    if status == VerificationStatus.approved:
+        rider_profile.verification_status = status.value
         await rider_profile.save()
         try:
             await send_notification(rider_id,"Your document has been verified","You are now eligible to earn points.")
         except Exception as e:
             print(e)
         return translate({"message":"Document approved successfully"}, lang)
-    else:
-        rider_profile.is_verified = False
+    elif status == VerificationStatus.rejected:
+        rider_profile.verification_status = status.value
+        rider_profile.verification_rejection_reason = rejection_reason
         await rider_profile.save()
         try:
-            await send_notification(rider_id,"Your document has been rejected","Please upload valid documents.")
+            await send_notification(rider_id,"Your document has been rejected",f"Reason: {rejection_reason or 'Not specified'}")
         except Exception as e:
             print(e)
         return translate({"message":"Document rejected successfully"}, lang)
+    
+
+
+@router.get("/pending-rider-verifications")
+async def get_pending_rider_verifications(request:Request, user:User = Depends(get_current_user)):
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    if not user.is_superuser:
+        raise HTTPException(403, "Not authorized")
+    pending_riders = await RiderProfile.filter(verification_status="Pending Approval").all()
+    result = []
+    for rider in pending_riders:
+        result.append({
+            "rider_id": rider.user_id,
+            "profile_image": rider.profile_image,
+            "driving_license": rider.driving_license_document,
+            "nid": rider.national_id_document,
+            "vehicle_registration": rider.vehicle_registration_document,
+            "vehicle_insurance": rider.vehicle_insurance_document
+        })
+    return translate(result, lang)
 
