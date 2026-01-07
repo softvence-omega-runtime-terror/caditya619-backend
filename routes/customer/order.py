@@ -372,13 +372,15 @@ async def get_all_orders(
         # Rider info
         rider_info = None
         order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        if order_status.lower() == "outfordelivery" and order.rider:
+        if order.rider:    #order_status.lower() == "outfordelivery" and
             rider_info = {
                 "rider_id": order.rider.user_id,
                 "rider_name": order.rider.user.name,
                 "rider_phone": order.rider.user.phone,
                 "rider_image": order.rider.profile_image
             }
+
+        print(f"Rider info for order {order.id}: {rider_info}")
 
         # Vendor info
         vendor_info = None
