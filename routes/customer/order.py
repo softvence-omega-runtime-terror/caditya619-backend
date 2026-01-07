@@ -159,6 +159,8 @@ async def place_order(
             order_type=order_type
         )
 
+        print(f"from main order route orders created: {[order.parent_order_id for order in orders]}")
+
         payment_method = order_data.payment_method.type
         if hasattr(payment_method, 'value'):
             payment_method = payment_method.value
@@ -210,9 +212,11 @@ async def place_order(
                 # Update all orders with payment session info
                 for order in orders:
                     if payment_method.lower() == "phonepe":
+                        print(f"before updating order {order.id} with parent id {order.parent_order_id}")
                         order.payment_session_id = payment_response.get("token")
                         order.cf_order_id = payment_response.get("phonePE_orderId")
-                        order.parent_order_id = payment_response.get("merchantId_or_parent_order_id")
+                        #order.parent_order_id = payment_response.get("merchantId_or_parent_order_id")
+                        print(f"after updating order {order.id} with parent id {order.parent_order_id}")
                     else:
                         order.payment_session_id = payment_response["payment_session_id"]
                         order.cf_order_id = payment_response["cf_order_id"]
@@ -368,13 +372,15 @@ async def get_all_orders(
         # Rider info
         rider_info = None
         order_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        if order_status.lower() == "outfordelivery" and order.rider:
+        if order.rider:    #order_status.lower() == "outfordelivery" and
             rider_info = {
                 "rider_id": order.rider.user_id,
                 "rider_name": order.rider.user.name,
                 "rider_phone": order.rider.user.phone,
                 "rider_image": order.rider.profile_image
             }
+
+        print(f"Rider info for order {order.id}: {rider_info}")
 
         # Vendor info
         vendor_info = None
