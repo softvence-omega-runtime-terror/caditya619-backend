@@ -393,10 +393,11 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
     )
 
 
-@router.get("/refund/{refund_id}", response_model=RefundStatusResponse)
-async def get_refund(refund_id: str):
+@router.get("/refund/{order_id}", response_model=RefundStatusResponse)
+async def get_refund(order_id: str):
     """Get refund status"""
-    refund = await Refund.get_or_none(id=refund_id)
+    # refund = await Refund.get_or_none(id=refund_id)
+    refund = await Refund.get_or_none(order_id=order_id)
     if not refund:
         raise HTTPException(status_code=404, detail="Refund not found")
     
@@ -414,8 +415,10 @@ async def cashfree_webhook(data: dict):
     try:
         gw_id = data.get("refund_id")
         status = data.get("status")  # PROCESSED, FAILED
+        order_id = data.get("order_id")
         
-        refund = await Refund.get_or_none(gateway_refund_id=gw_id)
+        #refund = await Refund.get_or_none(gateway_refund_id=gw_id)
+        refund = await Refund.get_or_none(order_id=order_id)
         if not refund:
             return {"ok": False}
         
