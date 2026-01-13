@@ -350,9 +350,9 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
     await log_action(refund_id, order_id, "initiated", None, "initiated", "customer")
     
     # Update order
-    order.status = "cancelled"
-    order.refund_id = refund_id
-    await order.save()
+    # order.status = "cancelled"
+    # order.refund_id = refund_id
+    # await order.save()
     
     # Process refund
     gw_id = None
@@ -377,6 +377,13 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
                 await log_action(refund_id, order_id, "processing", "initiated", "processing", "system")
             else:
                 await log_action(refund_id, order_id, "failed", "initiated", "failed", "system", error=result)
+
+
+    if status == "processing":
+        for order in orders:
+            order.status = "cancelled"
+            order.refund_id = refund_id
+            await order.save()
     
     # Update refund
     refund.status = status
