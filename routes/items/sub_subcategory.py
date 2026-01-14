@@ -36,12 +36,13 @@ async def serialize_sub_subcategory(sub_sub: SubSubCategory):
 
 
 # ----------------------- CREATE -----------------------
-@router.post("/", response_model=dict, dependencies=[Depends(permission_required("add_subsubcategory"))])
+@router.post("/", response_model=dict)
 async def create_sub_subcategory(
         subcategory_id: int = Form(...),
         name: str = Form(...),
         description: Optional[str] = Form(None),
-        avatar: Optional[UploadFile] = File(None)
+        avatar: Optional[UploadFile] = File(None),
+        user: User = Depends(vendor_required)
 ):
     async with in_transaction() as conn:
         subcategory = await SubCategory.get_or_none(id=subcategory_id, using_db=conn)
@@ -57,11 +58,13 @@ async def create_sub_subcategory(
                 avatar, upload_to="sub_subcategory_avatars", allowed_extensions=['png', 'jpg', 'svg']
             )
 
+        vendor_id = user.id if user.is_vendor else None
         sub_subcategory = await SubSubCategory.create(
             subcategory=subcategory,
             name=name,
             description=description,
             avatar=avatar_path,
+            vendor_id=vendor_id,
             using_db=conn
         )
 
