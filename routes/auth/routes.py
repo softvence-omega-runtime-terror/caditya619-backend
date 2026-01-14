@@ -187,7 +187,7 @@ async def login(
 #     nid: Optional[str] = Form(""),
 #     driving_license: Optional[str] = Form(""),
 #     purpose: str = Form('signup', description="'signup', 'rider_signup', 'vendor_signup'"),
-#     type: str = Form("", description='food/groceries/medicine')
+#     type: str = Form("", description='food/grocery/medicine')
 # ):
 #     # Validate phone
 #     phone = await phone_number(phone)
