@@ -1,19 +1,19 @@
 from tortoise.exceptions import IntegrityError
 from applications.items.models import Category
 #     {"id": 1, "name": "Food", "type": "food", "avatar": "https://i.ibb.co.com/XxHxgcQ3/Group-2.png"},
-#     {"id": 2, "name": "Groceries", "type": "groceries", "avatar": "https://i.ibb.co.com/xKSX27Nf/Group-3.png"},
-#     {"id": 3, "name": "Cleaning", "type": "groceries", "avatar": "https://i.ibb.co.com/HTL653Wt/Group-4.png"},
-#     {"id": 4, "name": "Personal Care", "type": "groceries", "avatar": "https://i.ibb.co.com/nMLGrVk5/Group-5.png"},
-#     {"id": 5, "name": "Pet Supplies", "type": "groceries", "avatar": "https://i.ibb.co.com/WWTmLyhz/Group-6.png"},
+#     {"id": 2, "name": "Grocery", "type": "grocery", "avatar": "https://i.ibb.co.com/xKSX27Nf/Group-3.png"},
+#     {"id": 3, "name": "Cleaning", "type": "grocery", "avatar": "https://i.ibb.co.com/HTL653Wt/Group-4.png"},
+#     {"id": 4, "name": "Personal Care", "type": "grocery", "avatar": "https://i.ibb.co.com/nMLGrVk5/Group-5.png"},
+#     {"id": 5, "name": "Pet Supplies", "type": "grocery", "avatar": "https://i.ibb.co.com/WWTmLyhz/Group-6.png"},
 #     {"id": 6, "name": "Medicine", "type": "medicine", "avatar": "https://i.ibb.co.com/4ZN07fgy/Group-7.png"},
 
 
 CATEGORIES_DATA = [
     {"id": 1, "name": "Food", "type": "food", "avatar": "https://i.ibb.co.com/XxHxgcQ3/Group-2.png"},
-    {"id": 2, "name": "Groceries", "type": "groceries", "avatar": "https://i.ibb.co.com/xKSX27Nf/Group-3.png"},
-    {"id": 3, "name": "Cleaning", "type": "groceries", "avatar": "https://i.ibb.co.com/HTL653Wt/Group-4.png"},
-    {"id": 4, "name": "Personal Care", "type": "groceries", "avatar": "https://i.ibb.co.com/nMLGrVk5/Group-5.png"},
-    {"id": 5, "name": "Pet Supplies", "type": "groceries", "avatar": "https://i.ibb.co.com/WWTmLyhz/Group-6.png"},
+    {"id": 2, "name": "Grocery", "type": "grocery", "avatar": "https://i.ibb.co.com/xKSX27Nf/Group-3.png"},
+    {"id": 3, "name": "Cleaning", "type": "grocery", "avatar": "https://i.ibb.co.com/HTL653Wt/Group-4.png"},
+    {"id": 4, "name": "Personal Care", "type": "grocery", "avatar": "https://i.ibb.co.com/nMLGrVk5/Group-5.png"},
+    {"id": 5, "name": "Pet Supplies", "type": "grocery", "avatar": "https://i.ibb.co.com/WWTmLyhz/Group-6.png"},
     {"id": 6, "name": "Medicine", "type": "medicine", "avatar": "https://i.ibb.co.com/4ZN07fgy/Group-7.png"},
 ]
 

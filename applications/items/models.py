@@ -7,12 +7,12 @@ from tortoise.functions import Avg, Count
 class Category(models.Model):
     TYPE_CHOICES = (
         ("food", "Food"),
-        ("groceries", "Groceries"),
+        ("grocery", "Grocery"),
         ("medicine", "Medicine"),
     )
     id = fields.IntField(pk=True)
     name = fields.CharField(max_length=100, unique=True)
-    type = fields.CharField(max_length=20, choices=TYPE_CHOICES, defaults='groceries')
+    type = fields.CharField(max_length=20, choices=TYPE_CHOICES, defaults='grocery')
     avatar = fields.CharField(max_length=500, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
