@@ -35,9 +35,15 @@ class PayoutTransaction(models.Model):
     invoice = fields.CharField(355, null=True, blank=True)
     
     async def save(self, *args, **kwargs):
+        is_new = self.id is None
         if self.amount_in_paise is None:
             self.amount_in_paise = int(self.amount * 100)
         await super().save(*args, **kwargs)
+        if is_new:
+            from app.utils.generate_pdf import generate_payout_pdf
+            file_url = await generate_payout_pdf(self)
+            self.invoice = file_url
+            await super().save(update_fields=["invoice"])
 
 class VendorAccount(models.Model):
     id = fields.IntField(pk=True)

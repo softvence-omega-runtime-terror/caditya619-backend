@@ -28,6 +28,7 @@ class SubCategory(models.Model):
     category = fields.ForeignKeyField("models.Category", related_name="subcategories", on_delete=fields.CASCADE)
     name = fields.CharField(max_length=100)
     avatar = fields.CharField(max_length=500, null=True)
+    vendor = fields.ForeignKeyField("models.User", related_name="subcategories", on_delete=fields.CASCADE, blank=True, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -43,6 +44,7 @@ class SubSubCategory(models.Model):
     subcategory = fields.ForeignKeyField("models.SubCategory", related_name="sub_subcategories", on_delete=fields.CASCADE)
     name = fields.CharField(max_length=100)
     avatar = fields.CharField(max_length=500, null=True)
+    vendor = fields.ForeignKeyField("models.User", related_name="sub_categories", on_delete=fields.CASCADE, blank=True, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
