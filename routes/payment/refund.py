@@ -123,8 +123,9 @@ async def cashfree_refund(order_id: str, amount: float, refund_id: str) -> tuple
             "x-api-version": CASHFREE_API_VERSION,
             "Content-Type": "application/json"
         }
+        print(f"amount type: {type(amount)}")
         payload = {
-            "refund_amount": float(amount),
+            "refund_amount": round(amount, 2), 
             "refund_id": refund_id,
             "refund_note": "Customer cancellation",
             "refund_speed": "STANDARD"
@@ -132,6 +133,12 @@ async def cashfree_refund(order_id: str, amount: float, refund_id: str) -> tuple
         
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(url, json=payload, headers=headers)
+            # print(response.content)
+            # print(response.headers)
+            # print(response.url)
+            # print(response.request.method)      
+            # print(CLIENT_ID, CLIENT_SECRET, CASHFREE_API_VERSION, CASHFREE_BASE)
+            print(payload)
             if response.status_code == 200:
                 data = response.json()
                 print(f"[Cashfree] Refund response: {data}")
@@ -189,27 +196,39 @@ async def cashfree_refund_status_check(order_id: str, refund_id: str) -> tuple[b
 # PHONEPE
 # ============================================================
 
-async def phonepe_refund(order_id: str, amount: float, refund_id: str) -> tuple[bool, str]:
+async def phonepe_refund(order_id: str, amount: float, session_token: str, refund_id: str) -> tuple[bool, str]:
     """Create refund in PhonePe"""
     try:
         # TODO: Add your PhonePe credentials here
-        MERCHANT_ID = "your_phonepe_merchant_id"
-        MERCHANT_SECRET = "your_phonepe_merchant_secret"
+        MERCHANT_ID = "M23KQHM53S73C_2512240944"
+        MERCHANT_SECRET = "NDk3MzcyNzUtMjYxNi00MjE1LWExYzMtMDdkZTY2OWJkYWI2"
         
-        url = "https://api.phonepe.com/apis/hermes/pg/v1/refunds"
+        #url = "https://api.phonepe.com/apis/hermes/pg/v1/refunds"
+        #url = "https://api-preprod.phonepe.com/apis/pg-sandbox/v1/refunds"
+        url = "https://api-preprod.phonepe.com/apis/pg-sandbox/payments/v2/refund"
         headers = {
-            "X-MERCHANT-ID": MERCHANT_ID,
-            "X-MERCHANT-REQUEST-ID": str(uuid.uuid4()),
-            "Content-Type": "application/json"
+            # "X-MERCHANT-ID": MERCHANT_ID,
+            # "X-MERCHANT-REQUEST-ID": str(uuid.uuid4()),
+            "Content-Type": "application/json",
+            'Authorization': f'O-Bearer {session_token}'
         }
         payload = {
-            "merchantTransactionId": order_id,
-            "refundAmount": int(amount * 100),
-            "refundNote": "Customer cancellation"
+            "merchantRefundId": "M23KQHM53S73C_2512240944",
+            "originalMerchantOrderId": order_id,
+            "amount": int(amount * 100)
         }
         
+        
+        # {
+        #     "merchantTransactionId": order_id,
+        #     "refundAmount": int(amount * 100),
+        #     "refundNote": "Customer cancellation"
+        # }
+        
         async with httpx.AsyncClient(timeout=30) as client:
+            print(f"Payload: {payload}")
             response = await client.post(url, json=payload, headers=headers)
+            print(response.content)
             if response.status_code == 200:
                 data = response.json()
                 gw_id = data.get("data", {}).get("refundId")
@@ -258,6 +277,8 @@ async def check_cancel(order_id: str):
 @router.post("/orders/{order_id}/cancel", response_model=CancelOrderResponse)
 async def cancel_order(order_id: str, reason: str = "customer_request"):
     """Cancel order and create refund"""
+
+    print(f"Cancelling order {order_id}")
     
     orders = await Order.filter(parent_order_id=order_id)
     if not orders:
@@ -275,6 +296,7 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
         method = order.payment_method.lower()
         total += float(order.total)
         status = order.status
+        print(f"order payment status: {order.payment_status}")
         if order.payment_method == "cod":
             order.status = "cancelled"
             await order.save()
@@ -291,6 +313,7 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
     amount = float(total)
     fee = get_fee(status, amount)
     refund_amount = amount - fee
+    print(f"Total amount: {total}, Fee: {fee}")
     
     # Create refund
     refund_id = f"REF_{uuid.uuid4().hex[:12].upper()}"
@@ -317,9 +340,13 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
     # Process refund
     gw_id = None
     status = "initiated"
+    print(f"Processing refund for order {order.parent_order_id}")
+
+    print(f"Method: {order.payment_method}, status: {order.payment_status}")
     
     if order.payment_status == "paid":
         if order.payment_method == "cashfree":
+            print(f"Initiating Cashfree refund for order {order.parent_order_id} amount {refund_amount}")
             success, result = await cashfree_refund(order_id, refund_amount, refund_id)
             if success:
                 gw_id = result
@@ -330,7 +357,7 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
                 await log_action(refund_id, order_id, "failed", "initiated", "failed", "system", error=result)
         
         elif order.payment_method == "phonepe":
-            success, result = await phonepe_refund(order_id, refund_amount, refund_id)
+            success, result = await phonepe_refund(order_id, refund_amount, order.payment_session_id, refund_id)
             if success:
                 gw_id = result
                 status = "processing"
