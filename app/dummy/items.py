@@ -16,18 +16,16 @@ async def create_dummy_items():
         return
 
     for category_name, subcategories in SUBCATEGORIES_DATA.items():
-        try:
-            category = await Category.get(name=category_name)
-        except Category.DoesNotExist:
+        category = await Category.get_or_none(name=category_name)
+        if not category:
             print(f"Category '{category_name}' does not exist, skipping...")
             continue
 
         for subcat_data in subcategories:
             subcategory_name = subcat_data["name"]
-            try:
-                subcategory = await SubCategory.get(name=subcategory_name, category=category)
-            except SubCategory.DoesNotExist:
-                print(f"SubCategory '{subcategory_name}' does not exist, skipping...")
+            subcategory = await SubCategory.get_or_none(name=subcategory_name, category=category)
+            if not category:
+                print(f"Category '{category_name}' does not exist, skipping...")
                 continue
 
             for sub_subcat_data in subcat_data.get("sub_subcategories", []):
