@@ -51,14 +51,16 @@ register_routes(app)
 # if settings.DEBUG else "index.html"
 
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="templates/static"), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     routes = get_module()
-    html_file = "development.html"
+    routes.sort()
+    html_file = "development.html" if settings.ENV == 'development' else "index.html"
     return templates.TemplateResponse(
         html_file,
         {
-            "request": request, 
+            "request": request,
             "routes": routes,
             "image_url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1920&q=80"
         }
