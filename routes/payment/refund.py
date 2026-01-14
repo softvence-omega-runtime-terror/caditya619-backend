@@ -26,47 +26,7 @@ from routes.payment.payment import CASHFREE_ENV
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/refunds", tags=["refunds"])
 
-# ============================================================
-# DATABASE MODELS
-# ============================================================
 
-# class Refund(Model):
-#     """Refund tracking"""
-#     id = fields.CharField(max_length=255, pk=True)
-#     order_id = fields.CharField(max_length=255, index=True)
-#     user_id = fields.IntField(index=True)
-    
-#     refund_amount = fields.DecimalField(max_digits=10, decimal_places=2)
-#     cancellation_fee = fields.DecimalField(max_digits=10, decimal_places=2, default=0)
-#     original_amount = fields.DecimalField(max_digits=10, decimal_places=2)
-    
-#     status = fields.CharField(max_length=50, default="initiated", index=True)
-#     reason = fields.CharField(max_length=100, default="customer_cancellation")
-    
-#     payment_method = fields.CharField(max_length=50, null=True)
-#     gateway_refund_id = fields.CharField(max_length=255, null=True, unique=True)
-    
-#     expected_completion = fields.DatetimeField(null=True)
-#     completed_at = fields.DatetimeField(null=True)
-#     created_at = fields.DatetimeField(auto_now_add=True, index=True)
-
-#     class Meta:
-#         table = "refunds"
-
-
-# class RefundLog(Model):
-#     """Audit trail"""
-#     refund_id = fields.CharField(max_length=255, index=True)
-#     order_id = fields.CharField(max_length=255)
-#     action = fields.CharField(max_length=100)
-#     old_status = fields.CharField(max_length=50, null=True)
-#     new_status = fields.CharField(max_length=50, null=True)
-#     actor_type = fields.CharField(max_length=50)  # customer, gateway, system
-#     error = fields.TextField(null=True)
-#     created_at = fields.DatetimeField(auto_now_add=True, index=True)
-
-#     class Meta:
-#         table = "refund_logs"
 
 
 # ============================================================
@@ -384,6 +344,114 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
             order.status = "cancelled"
             order.refund_id = refund_id
             await order.save()
+    
+    # Update refund
+    refund.status = status
+    refund.gateway_refund_id = gw_id
+    await refund.save()
+    
+    return CancelOrderResponse(
+        success=True,
+        refund_id=refund_id,
+        status=status,
+        refund_amount=refund_amount,
+        cancellation_fee=fee,
+        gw_id=gw_id
+    )
+
+
+
+@router.post("/individual-orders/{order_id}/cancel", response_model=CancelOrderResponse)
+async def cancel_individual_order(order_id: str, reason: str = "customer_request"):
+    """Cancel order and create refund"""
+    
+    order = await Order.filter(id=order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    #order = orders[0]  # Assuming parent_order_id is same for all combined orders
+    total = 0.0
+    status = ""
+
+    
+    
+    if not can_cancel(order.status):
+        raise HTTPException(status_code=400, detail=f"Cannot cancel in {order.status} status")
+    
+    method = order.payment_method.lower()
+    total += float(order.total)
+    status = order.status
+    if order.payment_method == "cod":
+        order.status = "cancelled"
+        order.parent_order_id = None 
+        await order.save()
+
+    if method == "cod":
+        return CancelOrderResponse(
+            success=True,
+            refund_id="",
+            status="cancelled",
+            refund_amount=0.0,
+            cancellation_fee=0.0
+        )
+    
+    # Calculate refund
+    amount = float(total)
+    fee = get_fee(status, amount)
+    refund_amount = amount - fee
+    
+    # Create refund
+    refund_id = f"REF_{uuid.uuid4().hex[:12].upper()}"
+    refund = await Refund.create(
+        id=refund_id,
+        order_id=order_id,
+        user_id=order.user_id,
+        refund_amount=Decimal(str(refund_amount)),
+        cancellation_fee=Decimal(str(fee)),
+        original_amount=Decimal(str(amount)),
+        payment_method=order.payment_method,
+        expected_completion=datetime.utcnow() + timedelta(days=3),
+        reason=reason,
+        status="initiated"
+    )
+    
+    await log_action(refund_id, order_id, "initiated", None, "initiated", "customer")
+    
+    # Update order
+    # order.status = "cancelled"
+    # order.refund_id = refund_id
+    # await order.save()
+    
+    # Process refund
+    gw_id = None
+    status = "initiated"
+    
+    if order.payment_status == "paid":
+        if order.payment_method == "cashfree":
+            success, result = await cashfree_refund(order.parent_order_id, refund_amount, refund_id)
+            if success:
+                gw_id = result
+                print(gw_id)
+                status = "processing"
+                await log_action(refund_id, order_id, "processing", "initiated", "processing", "system")
+            else:
+                await log_action(refund_id, order_id, "failed", "initiated", "failed", "system", error=result)
+        
+        elif order.payment_method == "phonepe":
+            success, result = await phonepe_refund(order.parent_order_id, refund_amount, refund_id)
+            if success:
+                gw_id = result
+                status = "processing"
+                await log_action(refund_id, order_id, "processing", "initiated", "processing", "system")
+            else:
+                await log_action(refund_id, order_id, "failed", "initiated", "failed", "system", error=result)
+
+
+    if status == "processing":
+        order.status = "cancelled"
+        order.parent_order_id = None 
+        order.refund_id = refund_id
+        await order.save()
     
     # Update refund
     refund.status = status
