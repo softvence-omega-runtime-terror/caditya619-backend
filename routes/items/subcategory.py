@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, UploadFile, Form, Depends, File
+from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 from typing import Optional, List
 from applications.items.models import SubCategory, Category
 from app.utils.file_manager import save_file, update_file, delete_file
-from app.auth import permission_required
+from app.auth import permission_required, vendor_required, login_required
+from applications.user.models import User
 
 router = APIRouter(prefix="/subcategories", tags=["SubCategories"])
 
@@ -30,12 +32,13 @@ async def serialize_subcategory(sub: SubCategory):
 
 
 # ----------------------- CREATE -----------------------
-@router.post("/", response_model=dict, dependencies=[Depends(permission_required("add_subcategory"))])
+@router.post("/", response_model=dict)
 async def create_subcategory(
         category_id: int = Form(...),
         name: str = Form(...),
         description: Optional[str] = Form(None),
-        avatar: Optional[UploadFile] = File(None)
+        avatar: Optional[UploadFile] = File(None),
+        user: User = Depends(login_required)
 ):
     async with in_transaction() as conn:
         category = await Category.get_or_none(id=category_id, using_db=conn)
@@ -49,11 +52,13 @@ async def create_subcategory(
         if avatar and avatar.filename:
             avatar_path = await save_file(avatar, upload_to="subcategory_avatars", allowed_extensions=['png', 'jpg', 'svg'])
 
+        vendor_id = user.id if (user is not None and not user.is_superuser) else None
         subcategory = await SubCategory.create(
             category=category,
             name=name,
             description=description,
             avatar=avatar_path,
+            vendor_id=vendor_id,
             using_db=conn
         )
 
@@ -71,6 +76,36 @@ async def list_subcategories(category_id: Optional[int] = None):
     items = [await serialize_subcategory(sub) for sub in await query]
     return {"status": "success", "count": len(items), "data": items}
 
+
+# ----------------------- LIST ALL -----------------------
+@router.get("/available-subcat/", response_model=dict)
+async def list_available_subcategories(
+    category_id: Optional[int] = None,
+    user: User = Depends(vendor_required)
+):
+    vendor = await user.vendor_profile
+    if not vendor:
+        raise HTTPException(400, "Vendor required.")
+
+    query = (
+        SubCategory
+        .filter(
+            Q(vendor_id__isnull=True) | Q(vendor_id=user.id),
+            category__type=vendor.type
+        )
+        .prefetch_related("category")
+    )
+    if category_id:
+        query = query.filter(category_id=category_id)
+    subcategories = await query
+
+    items = [await serialize_subcategory(sub) for sub in subcategories]
+
+    return {
+        "status": "success",
+        "count": len(items),
+        "data": items
+    }
 
 # ----------------------- GET SINGLE -----------------------
 @router.get("/{subcategory_id}", response_model=dict)

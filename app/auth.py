@@ -21,9 +21,11 @@ async def rider_required(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-async def vendor_required(current_user: User = Depends(get_current_user)):
+async def vendor_required(
+    current_user: User = Depends(get_current_user)
+) -> User:
     if not (current_user.is_vendor or current_user.is_superuser):
-        raise HTTPException(status_code=403, detail="vendor access required")
+        raise HTTPException(status_code=403, detail="Vendor access required")
     return current_user
 
 #
