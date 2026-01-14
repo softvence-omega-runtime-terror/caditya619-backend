@@ -62,7 +62,7 @@ SUBCATEGORIES_DATA = {
             ]
         },
     ],
-    "Groceries": [
+    "Grocery": [
         {
             "name": "Rice & Grains",
             "avatar": "https://via.placeholder.com/300x300?text=Rice+%26+Grains",

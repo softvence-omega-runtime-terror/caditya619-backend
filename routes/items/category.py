@@ -11,13 +11,13 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
 Category_Pydantic = pydantic_model_creator(Category, name="Category")
 CategoryIn_Pydantic = pydantic_model_creator(Category, name="CategoryIn", exclude_readonly=True)
 
-VALID_TYPES = ["food", "groceries", "medicine"]
+VALID_TYPES = ["food", "grocery", "medicine"]
 
 # Create Category
 @router.post("/", response_model=Category_Pydantic, dependencies=[Depends(permission_required("add_category"))])
 async def create_category(
         name: str = Form(...),
-        category_type: Optional[str] = Form(..., description='food/groceries/medicine'),
+        category_type: Optional[str] = Form(..., description='food/grocery/medicine'),
         description: Optional[str] = Form(None),
         avatar: Optional[UploadFile] = File(None)
 ):
