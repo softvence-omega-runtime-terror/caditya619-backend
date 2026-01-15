@@ -151,9 +151,7 @@ router = APIRouter(tags=["Withdrawals"])
 # ENDPOINTS
 # ============================================================================
 
-@router.get("/test/")
-async def test():
-    return {"message": "Hello World"}
+
 
 @router.post("/beneficiary/add", status_code=201)
 async def add_beneficiary(
@@ -218,13 +216,6 @@ async def get_beneficiary(user: User = Depends(get_current_user)):
         
         return beneficiary
         
-        # return {
-        #     "bank_account_number": f"****{rider.bank_account_number[-4:]}",
-        #     "bank_ifsc": rider.bank_ifsc,
-        #     "bank_holder_name": rider.bank_holder_name,
-        #     "is_verified": rider.is_bank_verified,
-        #     "created_at": rider.updated_at
-        # }
     except HTTPException:
         raise
     except Exception as e:

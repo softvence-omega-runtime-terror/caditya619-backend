@@ -189,11 +189,11 @@ async def payment_webhook(
                     await redis.publish("order_updates", json.dumps(payload))
                     vendor = await VendorProfile.get_or_none(id=order.vendor_id)
                     if vendor:
-                        await send_notification(
+                        await send_notification(NotificationIn(
                             vendor.user_id,
                             "New Paid Order",
                             f"Order #{order.id} paid"
-                        )
+                        ))
                 except Exception as e:
                     print(f"[WEBHOOK] Notification error: {e}")
 
@@ -295,11 +295,11 @@ async def confirm_payment_from_app(
                     # Vendor notification
                     vendor = await VendorProfile.get_or_none(id=order.vendor_id)
                     if vendor:
-                        await send_notification(
+                        await send_notification(NotificationIn(
                             vendor.user_id,
                             "New Paid Order",
                             f"Order #{order.id} paid successfully"
-                        )
+                        ))
                 except Exception as e:
                     print(f"[CONFIRM] Notification error: {e}")
 
