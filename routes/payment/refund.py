@@ -203,8 +203,7 @@ async def phonepe_refund(order_id: str, amount: float, session_token: str, refun
         MERCHANT_ID = "M23KQHM53S73C_2512240944"
         MERCHANT_SECRET = "NDk3MzcyNzUtMjYxNi00MjE1LWExYzMtMDdkZTY2OWJkYWI2"
         
-        #url = "https://api.phonepe.com/apis/hermes/pg/v1/refunds"
-        #url = "https://api-preprod.phonepe.com/apis/pg-sandbox/v1/refunds"
+       
         url = "https://api-preprod.phonepe.com/apis/pg-sandbox/payments/v2/refund"
         headers = {
             # "X-MERCHANT-ID": MERCHANT_ID,
@@ -217,13 +216,6 @@ async def phonepe_refund(order_id: str, amount: float, session_token: str, refun
             "originalMerchantOrderId": order_id,
             "amount": int(amount * 100)
         }
-        
-        
-        # {
-        #     "merchantTransactionId": order_id,
-        #     "refundAmount": int(amount * 100),
-        #     "refundNote": "Customer cancellation"
-        # }
         
         async with httpx.AsyncClient(timeout=30) as client:
             print(f"Payload: {payload}")
@@ -240,6 +232,47 @@ async def phonepe_refund(order_id: str, amount: float, session_token: str, refun
     except Exception as e:
         logger.error(f"[PhonePe] Exception: {e}")
         return False, str(e)
+    
+
+
+async def phonepe_refund_status_check(order_id: str, session_token: str) -> tuple[bool, str]:
+    """Create refund in PhonePe"""
+
+    try:
+        # TODO: Add your PhonePe credentials here
+        MERCHANT_ID = "M23KQHM53S73C_2512240944"
+        MERCHANT_SECRET = "NDk3MzcyNzUtMjYxNi00MjE1LWExYzMtMDdkZTY2OWJkYWI2"
+        
+       
+        url = f"https://api-preprod.phonepe.com/apis/pg-sandbox/payments/v2/refund/{MERCHANT_ID}/status"
+        headers = {
+            "Content-Type": "application/json",
+            'Authorization': f'O-Bearer {session_token}'
+        }
+        
+        
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.get(url, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+                # Adjust keys based on your actual response schema
+                gw_refund_id = data.get("data", {}).get("refundId")
+                state = data.get("data", {}).get("state")
+                logger.info(f"[PhonePe] Refund status: {MERCHANT_ID} -> {state} ({gw_refund_id})")
+                return True, data
+            else:
+                logger.error(f"[PhonePe] Error: {response.text}")
+                return False, response.text
+        except Exception as e:
+            logger.error(f"[PhonePe] Exception: {e}")
+            return False, str(e)
+    except Exception as e:
+        logger.error(f"[PhonePe] Exception: {e}")
+        return False, str(e)
+    
+
 
 
 # ============================================================
@@ -444,11 +477,6 @@ async def cancel_individual_order(order_id: str, reason: str = "customer_request
     
     await log_action(refund_id, order_id, "initiated", None, "initiated", "customer")
     
-    # Update order
-    # order.status = "cancelled"
-    # order.refund_id = refund_id
-    # await order.save()
-    
     # Process refund
     gw_id = None
     status = "initiated"
@@ -465,7 +493,7 @@ async def cancel_individual_order(order_id: str, reason: str = "customer_request
                 await log_action(refund_id, order_id, "failed", "initiated", "failed", "system", error=result)
         
         elif order.payment_method == "phonepe":
-            success, result = await phonepe_refund(order.parent_order_id, refund_amount, refund_id)
+            success, result = await phonepe_refund(order.parent_order_id, refund_amount, order.payment_session_id, refund_id)
             if success:
                 gw_id = result
                 status = "processing"
@@ -511,62 +539,11 @@ async def get_refund(order_id: str):
     )
 
 
-@router.post("/webhook/cashfree")
-async def cashfree_webhook(data: dict):
-    """Cashfree webhook"""
-    try:
-        gw_id = data.get("refund_id")
-        status = data.get("status")  # PROCESSED, FAILED
-        order_id = data.get("order_id")
-        
-        #refund = await Refund.get_or_none(gateway_refund_id=gw_id)
-        refund = await Refund.get_or_none(order_id=order_id)
-        if not refund:
-            return {"ok": False}
-        
-        old_status = refund.status
-        refund.status = "completed" if status == "PROCESSED" else "failed"
-        if refund.status == "completed":
-            refund.completed_at = datetime.utcnow()
-        
-        await refund.save()
-        await log_action(refund.id, refund.order_id, "webhook", old_status, refund.status, "gateway")
-        
-        return {"ok": True}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"ok": False}
-
-
-@router.post("/webhook/phonepe")
-async def phonepe_webhook(data: dict):
-    """PhonePe webhook"""
-    try:
-        gw_id = data.get("refundId")
-        status = data.get("status")  # PROCESSED, FAILED
-        
-        refund = await Refund.get_or_none(gateway_refund_id=gw_id)
-        if not refund:
-            return {"ok": False}
-        
-        old_status = refund.status
-        refund.status = "completed" if status == "PROCESSED" else "failed"
-        if refund.status == "completed":
-            refund.completed_at = datetime.utcnow()
-        
-        await refund.save()
-        await log_action(refund.id, refund.order_id, "webhook", old_status, refund.status, "gateway")
-        
-        return {"ok": True}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"ok": False}
-
 
 
 @router.post("/refund/{order_id}/check-status")
-async def check_refund_status(order_id: str):
-    refund = await Refund.get_or_none(order_id=order_id)
+async def check_cashfree_refund_status(order_id: str):
+    refund = await Refund.get_or_none(order_id=order_id).first()
     if not refund:
         raise HTTPException(status_code=404, detail="Refund not found")
     if refund.payment_method == "cashfree":
@@ -575,6 +552,25 @@ async def check_refund_status(order_id: str):
         data = {"error": "Unsupported gateway"}
         return data
     
+    return {"status": status, "data": data}
+
+
+
+@router.post("/phonepe-refund/{order_id}/status")
+async def check_phonepe_refund_status(order_id: str):
+    order = await Order.filter(id=order_id).first()
+    if not order:
+        order = await Order.filter(parent_order_id=order_id).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+    if order.payment_method != "phonepe":
+        raise HTTPException(status_code=400, detail="Payment method not supported")
+    if order.payment_status != "paid":
+        raise HTTPException(status_code=400, detail="Order not paid")
+    if order.payment_session_id is None or order.payment_session_id == "":
+        raise HTTPException(status_code=400, detail="Session token missing")
+    status, data = await phonepe_refund_status_check(order_id, order.payment_session_id)
     return {"status": status, "data": data}
 
 

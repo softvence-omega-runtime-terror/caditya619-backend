@@ -2482,7 +2482,7 @@ from app.utils.websocket_manager import manager
 from app.redis import get_redis
 from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
-from .notifications import send_notification
+from .notifications import send_notification, NotificationIn
 from .websocket_endpoints import start_chat, end_chat, subscribe_to_riders_location
 from app.utils.translator import translate
 
@@ -4325,23 +4325,17 @@ async def vendor_confirm_order(
 
         # Notifications
         try:
-            await send_notification(
+            await send_notification(NotificationIn(
                 order.user_id,
                 "Vendor Confirmed",
                 f"Vendor confirmed order #{order.id}",
-            )
+            ))
 
-            await manager.send_to(
-                {
-                    "type": "vendor_confirmed",
-                    "order_id": order.id,
-                    "parent_order_id": order.parent_order_id,
-                    "order_type": order_type,
-                    "timestamp": datetime.utcnow().isoformat(),
-                },
+            await manager.send_notification(
                 "customers",
                 str(order.user_id),
-                "orders",
+                "Order confirm by vandor",
+                "Your order has been confirmed"
             )
         except Exception as e:
             print(f"[CONFIRM] Notification error: {e}")
@@ -4628,46 +4622,31 @@ async def rider_accept_order(
             # Notify vendors for each order
             for o in group_orders:
                 if o.vendor:
-                    await send_notification(
+                    await send_notification(NotificationIn(
                         o.vendor_id,
                         "Rider Assigned",
                         f"Rider {current_user.name} assigned to order #{o.id}",
-                    )
+                    ))
 
-                await manager.send_to(
-                    {
-                        "type": "rider_assigned",
-                        "order_id": o.id,
-                        "rider_id": rider_profile.id,
-                        "rider_name": current_user.name,
-                        "rider_phone": current_user.phone,
-                        "timestamp": now.isoformat(),
-                    },
+                await manager.send_notification(
                     "vendors",
                     str(o.vendor_id),
-                    "orders",
+                    "Rider assigned",
+                    f"{current_user.name} assigned to your order #{o.id}",
                 )
 
             # Notify customer (combined info)
-            await send_notification(
+            await send_notification(NotificationIn(
                 order.user_id,
                 "Rider Assigned",
                 f"Rider {current_user.name} is picking up your order(s)",
-            )
+            ))
 
-            await manager.send_to(
-                {
-                    "type": "rider_assigned",
-                    "group_key": order.parent_order_id or order.id,
-                    "orders": [o.id for o in group_orders],
-                    "rider_id": rider_profile.id,
-                    "rider_name": current_user.name,
-                    "total_payout": float(base_rate + distance_bonus),
-                    "eta_minutes": eta_minutes,
-                },
+            await manager.send_notification(
                 "customers",
                 str(order.user_id),
-                "orders",
+                "Rider Assigned",
+                f"Rider {current_user.name} is picking up your order(s)"
             )
 
             # Rider combined notification
@@ -4684,24 +4663,17 @@ async def rider_accept_order(
                         }
                     )
 
-                await send_notification(
+                await send_notification(NotificationIn(
                     rider_profile.user_id,
                     "Combined Order Accepted",
                     f"You accepted {len(group_orders)} combined orders. Total payout ₹{base_rate + distance_bonus:.2f}.",
-                )
+                ))
 
                 await manager.send_to(
-                    {
-                        "type": "combined_order_accepted",
-                        "group_key": order.parent_order_id or order.id,
-                        "orders": pickup_list,
-                        "total_orders": len(group_orders),
-                        "total_payout": float(base_rate + distance_bonus),
-                        "eta_minutes": eta_minutes,
-                    },
                     "riders",
                     str(rider_profile.user_id),
-                    "orders",
+                    "Combined Order Accepted",
+                    f"You accepted {len(group_orders)} combined orders. Total payout ₹{base_rate + distance_bonus:.2f}."
                 )
 
         except Exception as e:
@@ -5034,11 +5006,11 @@ async def _auto_assign_rider_for_urgent(
             pass
 
         try:
-            await send_notification(
+            await send_notification(NotificationIn(
                 assigned_rider.user_id,
                 "🚨 URGENT ORDER ASSIGNED",
                 f"Urgent order #{order.id} assigned. Pick up immediately!",
-            )
+            ))
         except Exception:
             pass
 
@@ -5102,11 +5074,11 @@ async def _broadcast_rider_offers(
                     pass
 
                 try:
-                    await send_notification(
+                    await send_notification(NotificationIn(
                         rider.user_id,
                         "New Order Offer",
                         f"Order #{order_id} - ₹{order.total}",
-                    )
+                    ))
                 except Exception:
                     pass
             except Exception:
@@ -5506,112 +5478,112 @@ async def get_customer_active_orders(
 # CANCELLATION ENDPOINTS
 # ============================================================================
 
-@router.post("/cancel/{order_id}/")
-async def cancel_order(
-    request: Request,
-    order_id: str,
-    cancel_data: CancelOrderRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Cancel an order (by customer, rider, or vendor).
+# @router.post("/cancel/{order_id}/")
+# async def cancel_order(
+#     request: Request,
+#     order_id: str,
+#     cancel_data: CancelOrderRequest,
+#     current_user: User = Depends(get_current_user)
+# ):
+#     """
+#     Cancel an order (by customer, rider, or vendor).
     
-    Rules:
-    - Customer can cancel PENDING/PROCESSING/CONFIRMED orders
-    - Rider can cancel PROCESSING/CONFIRMED orders
-    - Vendor can cancel PROCESSING/CONFIRMED orders
-    - Cannot cancel SHIPPED/OUT_FOR_DELIVERY/DELIVERED
-    - If paid, mark for refund
-    """
-    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+#     Rules:
+#     - Customer can cancel PENDING/PROCESSING/CONFIRMED orders
+#     - Rider can cancel PROCESSING/CONFIRMED orders
+#     - Vendor can cancel PROCESSING/CONFIRMED orders
+#     - Cannot cancel SHIPPED/OUT_FOR_DELIVERY/DELIVERED
+#     - If paid, mark for refund
+#     """
+#     lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
     
-    try:
-        order = await Order.get_or_none(id=order_id).prefetch_related("user", "rider", "items__item")
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
+#     try:
+#         order = await Order.get_or_none(id=order_id).prefetch_related("user", "rider", "items__item")
+#         if not order:
+#             raise HTTPException(status_code=404, detail="Order not found")
         
-        # Authorization check
-        is_customer = order.user_id == current_user.id
-        is_rider = order.rider and order.rider.user_id == current_user.id
-        is_vendor = current_user.is_vendor
+#         # Authorization check
+#         is_customer = order.user_id == current_user.id
+#         is_rider = order.rider and order.rider.user_id == current_user.id
+#         is_vendor = current_user.is_vendor
         
-        if not (is_customer or is_rider or is_vendor):
-            raise HTTPException(status_code=403, detail="Not authorized to cancel this order")
+#         if not (is_customer or is_rider or is_vendor):
+#             raise HTTPException(status_code=403, detail="Not authorized to cancel this order")
         
-        # Check cancellable status
-        current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
-        cancellable_statuses = ["pending", "processing", "confirmed"]
+#         # Check cancellable status
+#         current_status = order.status.value if hasattr(order.status, 'value') else str(order.status)
+#         cancellable_statuses = ["pending", "processing", "confirmed"]
         
-        if current_status.lower() not in cancellable_statuses:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot cancel order with status: {current_status}"
-            )
+#         if current_status.lower() not in cancellable_statuses:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail=f"Cannot cancel order with status: {current_status}"
+#             )
         
-        # If paid, mark for refund
-        if order.payment_status == "paid":
-            if order.metadata is None:
-                order.metadata = {}
-            order.metadata["refund_requested"] = True
-            order.metadata["refund_requested_at"] = datetime.utcnow().isoformat()
-            order.metadata["refund_reason"] = cancel_data.reason or "User cancelled"
+#         # If paid, mark for refund
+#         if order.payment_status == "paid":
+#             if order.metadata is None:
+#                 order.metadata = {}
+#             order.metadata["refund_requested"] = True
+#             order.metadata["refund_requested_at"] = datetime.utcnow().isoformat()
+#             order.metadata["refund_reason"] = cancel_data.reason or "User cancelled"
         
-        # Update order
-        old_status = current_status
-        order.status = OrderStatus.CANCELLED
-        order.reason = cancel_data.reason or "Cancelled"
-        order.updated_at = datetime.utcnow()
-        await order.save()
+#         # Update order
+#         old_status = current_status
+#         order.status = OrderStatus.CANCELLED
+#         order.reason = cancel_data.reason or "Cancelled"
+#         order.updated_at = datetime.utcnow()
+#         await order.save()
         
-        # Send notifications
-        try:
-            # Notify customer
-            await send_notification(
-                order.user_id,
-                "Order Cancelled",
-                f"Your order #{order_id} has been cancelled. Reason: {order.reason}"
-            )
+#         # Send notifications
+#         try:
+#             # Notify customer
+#             await send_notification(
+#                 order.user_id,
+#                 "Order Cancelled",
+#                 f"Your order #{order_id} has been cancelled. Reason: {order.reason}"
+#             )
             
-            # Notify rider
-            if order.rider:
-                await send_notification(
-                    order.rider.user_id,
-                    "Order Cancelled",
-                    f"Order #{order_id} has been cancelled."
-                )
+#             # Notify rider
+#             if order.rider:
+#                 await send_notification(
+#                     order.rider.user_id,
+#                     "Order Cancelled",
+#                     f"Order #{order_id} has been cancelled."
+#                 )
             
-            # Notify vendors
-            vendor_ids = set()
-            for oi in order.items:
-                vendor_ids.add(oi.item.vendor_id)
+#             # Notify vendors
+#             vendor_ids = set()
+#             for oi in order.items:
+#                 vendor_ids.add(oi.item.vendor_id)
             
-            for vendor_id in vendor_ids:
-                vendor = await VendorProfile.get_or_none(id=vendor_id)
-                if vendor:
-                    await send_notification(
-                        vendor.user_id,
-                        "Order Cancelled",
-                        f"Order #{order_id} has been cancelled."
-                    )
-        except Exception as e:
-            logger.warning(f"Notification error: {str(e)}")
+#             for vendor_id in vendor_ids:
+#                 vendor = await VendorProfile.get_or_none(id=vendor_id)
+#                 if vendor:
+#                     await send_notification(
+#                         vendor.user_id,
+#                         "Order Cancelled",
+#                         f"Order #{order_id} has been cancelled."
+#                     )
+#         except Exception as e:
+#             logger.warning(f"Notification error: {str(e)}")
         
-        return translate({
-            "success": True,
-            "message": "Order cancelled successfully",
-            "data": {
-                "order_id": order_id,
-                "old_status": old_status,
-                "new_status": "cancelled",
-                "refund_requested": order.payment_status == "paid"
-            }
-        }, lang)
+#         return translate({
+#             "success": True,
+#             "message": "Order cancelled successfully",
+#             "data": {
+#                 "order_id": order_id,
+#                 "old_status": old_status,
+#                 "new_status": "cancelled",
+#                 "refund_requested": order.payment_status == "paid"
+#             }
+#         }, lang)
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error cancelling order: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error cancelling order: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 # ============================================================================
 # ORDER STATUS UPDATE ENDPOINTS
@@ -5645,17 +5617,17 @@ async def vendor_mark_shipped(
         
         # Notify rider and customer
         if order.rider:
-            await send_notification(
+            await send_notification(NotificationIn(
                 order.rider.user_id,
                 "Order Ready",
                 f"Order #{order_id} is ready for pickup"
-            )
+            ))
         
-        await send_notification(
+        await send_notification(NotificationIn(
             order.user_id,
             "Order Shipped",
             f"Your order #{order_id} has been handed to the rider"
-        )
+        ))
         
         return translate({
             "success": True,
@@ -5700,11 +5672,11 @@ async def rider_mark_on_way(
         await order.save()
         
         # Notify customer
-        await send_notification(
+        await send_notification(NotificationIn(
             order.user_id,
             "Order On The Way",
             f"Your order #{order_id} is on the way"
-        )
+        ))
         
         return translate({
             "success": True,
@@ -5750,11 +5722,11 @@ async def rider_mark_delivered(
         await order.save()
         
         # Notify customer
-        await send_notification(
+        await send_notification(NotificationIn(
             order.user_id,
             "Order Delivered",
             f"Your order #{order_id} has been delivered successfully"
-        )
+        ))
         
         return translate({
             "success": True,

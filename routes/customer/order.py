@@ -182,7 +182,8 @@ async def place_order(
                 "status": order.status.value if hasattr(order.status, 'value') else order.status,
                 "tracking_number": order.tracking_number,
                 "total": float(order.total),
-                "order_type": order.delivery_type
+                "order_type": order.delivery_type,
+                "parent_order_id": order.parent_order_id
             }
             for order in orders
         ]
@@ -251,12 +252,15 @@ async def place_order(
 
                 try:
                     await redis.publish("order_updates", json.dumps(payload))
-                    await manager.send_to(payload, "customers", str(current_user.id), "notifications")
+                    print(f"[NOTIFICATION] Order placed notification sent to admin")
+                    print(f"customer id : {current_user.id}, order id: {order.id}")
+                
+                    await manager.send_notification(to_type="customers", to_id=str(current_user.id), title="New order created", body="Your order has been created")
 
                     # Notify vendor
                     vendor = await VendorProfile.get_or_none(user_id=order.vendor_id)
                     if vendor:
-                        await manager.send_to(payload, "vendors", str(vendor.user_id), "notifications")
+                        await manager.send_notification("vendors", str(vendor.user_id), "New Order", f"Order #{order.id} received - {len(order.items)} items")
                         await send_notification(
                             vendor.user_id,
                             f"New {order_type.upper()} Order",
