@@ -139,7 +139,7 @@ async def get_all_items(
     limit: int = 20,
     vendor: User = Depends(vendor_required),
 ):
-    query = Item.filter(category__type='groceries', vendor=vendor).prefetch_related("category", "subcategory", "sub_subcategory")
+    query = Item.filter(category__type='grocery', vendor=vendor).prefetch_related("category", "subcategory", "sub_subcategory")
 
     if category:
         query = query.filter(category_id=category)
