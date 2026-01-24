@@ -204,18 +204,58 @@ async def update_user(
 
 
 
-@router.delete("/users/{user_id}", dependencies=[
-        Depends(login_required),
-        Depends(permission_required("delete_user")),
-    ]
-)
-async def delete_user(user_id: int):
-    user = await User.get_or_none(id=user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    await delete_file(user.photo)
-    await user.delete()
-    return {"detail": "User deleted successfully"}
+@router.delete("/users/me/delete", status_code=status.HTTP_200_OK)
+async def delete_user(user: User = Depends(login_required)):
+    try:
+        # Collect all files to delete
+        files_to_delete = []
+
+        # Rider Profile
+        rider_profile = await RiderProfile.get_or_none(user=user)
+        if rider_profile:
+            files_to_delete += [
+                rider_profile.profile_image,
+                rider_profile.national_id_document,
+                rider_profile.driving_license_document,
+                rider_profile.vehicle_registration_document,
+                rider_profile.vehicle_insurance_document,
+            ]
+            await rider_profile.delete()
+
+        # Vendor Profile
+        vendor_profile = await VendorProfile.get_or_none(user=user)
+        if vendor_profile:
+            files_to_delete += [
+                getattr(vendor_profile, "photo", None),
+                getattr(vendor_profile, "nid", None),
+                getattr(vendor_profile, "kyc_document", None),
+            ]
+            await vendor_profile.delete()
+
+        # Customer Profile
+        customer_profile = await CustomerProfile.get_or_none(user=user)
+        if customer_profile:
+            await customer_profile.delete()
+
+        # Delete all files
+        for file_path in files_to_delete:
+            if file_path:
+                try:
+                    await delete_file(file_path)
+                except Exception as e:
+                    print(f"Failed to delete file {file_path}: {e}")
+
+        # Delete the user
+        await user.delete()
+
+        return {"detail": "User and related profiles deleted successfully"}
+
+    except Exception as e:
+        print(f"Failed to delete user {user.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user. Please try again later."
+        )
 
 
 

@@ -38,7 +38,7 @@ async def create_subcategory(
         name: str = Form(...),
         description: Optional[str] = Form(None),
         avatar: Optional[UploadFile] = File(None),
-        user: User = Depends(login_required)
+        user: User = Depends(vendor_required)
 ):
     async with in_transaction() as conn:
         category = await Category.get_or_none(id=category_id, using_db=conn)
@@ -52,7 +52,7 @@ async def create_subcategory(
         if avatar and avatar.filename:
             avatar_path = await save_file(avatar, upload_to="subcategory_avatars", allowed_extensions=['png', 'jpg', 'svg'])
 
-        vendor_id = user.id if (user is not None and not user.is_superuser) else None
+        vendor_id = user.id if user.is_vendor else None
         subcategory = await SubCategory.create(
             category=category,
             name=name,
