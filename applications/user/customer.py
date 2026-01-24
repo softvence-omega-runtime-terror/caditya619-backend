@@ -30,7 +30,7 @@ class CustomerProfile(models.Model):
     
 class CustomerShippingAddress(models.Model):
     """Shipping Address Model"""
-    ADDRESS_TYPES = ["HOME", "Office", "OTHERS"]
+    ADDRESS_TYPES = ["HOME", "OFFICE", "OTHERS"]
     
     id = fields.CharField(max_length=255, pk=True)
     user = fields.ForeignKeyField(

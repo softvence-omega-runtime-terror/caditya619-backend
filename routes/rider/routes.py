@@ -265,6 +265,37 @@ async def update_rider_profile_me(
 
 
 
+@router.delete("/rider-profile/me/")
+async def delete_rider_profile_me(
+    request: Request,
+    rider_profile_id: Optional[int] =  Query(None),
+    user: User = Depends(get_current_user)
+):
+    lang = request.headers.get("Accept-Language", "en").split(",")[0].strip().lower()
+    if user.is_superuser:
+        rider_profile = await RiderProfile.get_or_none(id=rider_profile_id)
+        rider = await User.get_or_none(id=rider_profile.user_id)
+        if not rider_profile:
+            raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
+    elif user.is_rider:
+        rider_profile = await RiderProfile.get_or_none(user=user)
+        rider = user
+        if not rider_profile:
+            raise HTTPException(status_code=404, detail=translate("Rider profile not found", lang))
+    else:
+        raise HTTPException(status_code=403, detail=translate("Not authorized to delete this rider profile", lang))
+    
+    # Optionally, delete related data (vehicles, documents, etc.) here
+
+    rider.is_rider = False
+    await rider.save()
+
+    await rider_profile.delete()
+    
+    return {"message": translate("Rider profile deleted successfully", lang)}
+
+
+
 
 
 @router.get("/profile/completion")
