@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from tortoise.contrib.pydantic import pydantic_model_creator
 from pydantic import BaseModel, Field, EmailStr, validator, condecimal
-from typing import List, Optional
+from typing import List, Optional, ClassVar
 from datetime import datetime
 from applications.customer.models import Order, OrderItem, DeliveryOption, PaymentMethod
 from decimal import Decimal
@@ -143,8 +143,14 @@ class ShippingAddressCreate(ShippingAddressBase):
     """Schema for creating a new shipping address"""
     make_default: Optional[bool] = Field(default=False, description="Set as default for this address type")
 
+class AddressType(str, Enum):
+    HOME = "HOME"
+    OFFICE = "OFFICE"
+    OTHERS = "OTHERS"
+
 class ShippingAddressUpdate(BaseModel):
     """Schema for updating an existing shipping address"""
+    addressType: Optional[AddressType] = None
     full_name: Optional[str] = Field(None, max_length=255)
     address_line1: Optional[str] = Field(None, max_length=500)
     address_line2: Optional[str] = Field(None, max_length=500)
