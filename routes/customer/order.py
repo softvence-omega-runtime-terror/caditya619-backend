@@ -72,12 +72,12 @@ async def handle_phonepe_payment(orders):
     # Calculate amount in paisa (e.g., ₹10 = 1000 paisa)
     total_amount = sum(float(order.total) for order in orders)
     amount_in_paisa = int(round(total_amount * 100))
-    
-    # Use parent_order_id from our database
-    parent_order_id = orders[0].parent_order_id if orders else None
+
+    # Use payment_id from our database
+    payment_id = orders[0].payment_id if orders else None
     
     order_payload = {
-        "merchantOrderId": parent_order_id,
+        "merchantOrderId": payment_id,
         "amount": amount_in_paisa,
         "expireAfter": 1200,
         "paymentFlow": {
@@ -100,7 +100,7 @@ async def handle_phonepe_payment(orders):
                 # resp_data contains: orderId, state, expireAt, token
                 return {
                     "phonePE_orderId": resp_data.get("orderId"),
-                    "merchantId": parent_order_id,
+                    "merchantId": payment_id,
                     "token": resp_data.get("token"),
                     "paymentMode": {"type": "PAY_PAGE"},
                     "orders": [
@@ -114,7 +114,7 @@ async def handle_phonepe_payment(orders):
                         for order in orders
                     ]
                     ,
-                    "parent_order_id": parent_order_id
+                    "payment_id": payment_id
                 }
             else:
                 print(f"PhonePe Order Creation Failed: {order_response.status_code} - {order_response.text}")
@@ -171,8 +171,8 @@ async def place_order(
         # Calculate total amount across all orders
         total_amount = sum(float(order.total) for order in orders)
 
-        # Get parent_order_id from the first order
-        parent_order_id = orders[0].parent_order_id if orders else None
+        # Get payment_id from the first order
+        payment_id = orders[0].payment_id if orders else None
 
         # Build order summaries
         order_summaries = [
@@ -196,7 +196,7 @@ async def place_order(
                 "total_amount": total_amount,
                 "payment_status": "unpaid",
                 "requires_payment": requires_payment,
-                "parent_order_id": parent_order_id,
+                "payment_id": payment_id,
                 "order_type": order_type
             }
         }
@@ -243,7 +243,7 @@ async def place_order(
                 payload = {
                     "type": "order_placed",
                     "order_id": order.id,
-                    "parent_order_id": parent_order_id,
+                    "parent_order_id": order.parent_order_id,
                     "customer_name": current_user.name,
                     "payment_method": "COD",
                     "order_type": order_type,

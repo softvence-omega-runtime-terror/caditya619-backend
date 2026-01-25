@@ -4237,6 +4237,8 @@ async def vendor_confirm_order(
         # Group master: use the first order in group to hold shared metadata
         group_master = related_orders[0]
 
+        print(f"group master id: {group_master.id}, group key: {group_key}, related orders: {[o.id for o in related_orders]}")
+
         # Initialize group metadata
         group_master.metadata = group_master.metadata or {}
         group_master.metadata["vendor_confirmations"] = group_master.metadata.get(
@@ -4252,14 +4254,20 @@ async def vendor_confirm_order(
 
         shared_metadata = group_master.metadata or {}
         vendor_confirmations = shared_metadata.get("vendor_confirmations", {})
+        print(f"Vendor confirmations: {vendor_confirmations}")
 
         # Check if all vendors confirmed: compare vendor ids across group with confirmed ids
         all_confirmed = await _check_all_vendors_confirmed(related_orders, shared_metadata)
 
         # Status & rider flow
-        if order_type == "urgent":
-            order.status = OrderStatus.CONFIRMED
-            await order.save()
+        if order_type == "urgent" and all_confirmed:
+            for related in related_orders:
+                related.metadata = related.metadata or {}
+                related.metadata["all_vendors_confirmed"] = True
+                related.status = OrderStatus.CONFIRMED
+                await related.save()
+            # order.status = OrderStatus.CONFIRMED
+            # await order.save()
 
             vendor_profile = await VendorProfile.get_or_none(user=current_user)
             if vendor_profile:
@@ -4311,7 +4319,7 @@ async def vendor_confirm_order(
 
             response_msg = "All vendors confirmed. Finding available riders..."
 
-        elif order_type == "combined" and not all_confirmed:
+        elif (order_type == "combined" or order_type == "urgent") and not all_confirmed:
             order.status = OrderStatus.PROCESSING
             await order.save()
 
@@ -4324,21 +4332,22 @@ async def vendor_confirm_order(
             response_msg = "Order confirmed successfully"
 
         # Notifications
-        try:
-            await send_notification(NotificationIn(
-                order.user_id,
-                "Vendor Confirmed",
-                f"Vendor confirmed order #{order.id}",
-            ))
+        if order_type != "urgent":
+            try:
+                await send_notification(NotificationIn(
+                    order.user_id,
+                    "Vendor Confirmed",
+                    f"Vendor confirmed order #{order.id}",
+                ))
 
-            await manager.send_notification(
-                "customers",
-                str(order.user_id),
-                "Order confirm by vandor",
-                "Your order has been confirmed"
-            )
-        except Exception as e:
-            print(f"[CONFIRM] Notification error: {e}")
+                await manager.send_notification(
+                    "customers",
+                    str(order.user_id),
+                    "Order confirm by vandor",
+                    "Your order has been confirmed"
+                )
+            except Exception as e:
+                print(f"[CONFIRM] Notification error: {e}")
 
         pending_vendors = (
             len(related_orders) - len(vendor_confirmations)
@@ -4941,6 +4950,9 @@ async def _check_all_vendors_confirmed(related_orders: list[Order], metadata: di
     vendor_confirmations = metadata.get("vendor_confirmations", {})
     vendor_ids = {o.vendor_id for o in related_orders}
     confirmed_vendors = set(int(v) for v in vendor_confirmations.keys())
+    print("================================================================")
+    print(f"Vendors: {vendor_ids}, Confirmed: {confirmed_vendors}")
+    print("================================================================")
     return vendor_ids == confirmed_vendors
 
 
@@ -4965,6 +4977,7 @@ async def _auto_assign_rider_for_urgent(
             return
         
         while riders:
+            assigned_rider = None
             rider_profile = riders.pop(0)
             active_orders = await Order.filter(
                 rider=rider_profile,
@@ -4975,6 +4988,7 @@ async def _auto_assign_rider_for_urgent(
                     OrderStatus.OUT_FOR_DELIVERY,
                 ],
             ).count()
+            print(f"[AUTO_ASSIGN] Checking rider {rider_profile.id}, active orders: {active_orders}")
             if active_orders > 0:
                continue
             else:

@@ -188,6 +188,10 @@ class OrderService:
     @staticmethod
     def _generate_order_id() -> str:
         return f"ORD_{uuid.uuid4().hex[:8].upper()}"
+    
+    @staticmethod
+    def _generate_payment_id() -> str:
+        return f"PAY_{uuid.uuid4().hex[:8].upper()}"
 
     @staticmethod
     def _generate_parent_order_id() -> str:
@@ -312,6 +316,9 @@ class OrderService:
 
         if not vendor_items_map:
             raise ValueError("No valid items in order")
+        
+        payment_id = self._generate_payment_id()
+        print(f"[ORDER] Generated Payment ID: {payment_id}")
 
         # Determine order type based on items
         if order_type == "combined":
@@ -322,19 +329,19 @@ class OrderService:
                 # Mixed case: urgent + non-urgent
                 print(f"[ORDER] Mixed order detected - {len(urgent_vendors)} urgent vendors, {len(non_urgent_vendors)} non-urgent")
                 return await self._create_mixed_orders(
-                    urgent_vendors, non_urgent_vendors, order_data, current_user
+                    urgent_vendors, non_urgent_vendors, order_data, payment_id, current_user
                 )
             elif urgent_vendors:
                 # All items are urgent
                 print(f"[ORDER] All items urgent - creating urgent orders")
-                return await self._create_urgent_orders(
-                    urgent_vendors, order_data, current_user
+                return await self._create_combined_urgent_orders(
+                    urgent_vendors, order_data, payment_id, current_user
                 )
             else:
                 # All items non-urgent - standard combined
                 print(f"[ORDER] Standard combined order for {len(non_urgent_vendors)} vendors")
                 return await self._create_combined_orders(
-                    non_urgent_vendors, order_data, current_user
+                    non_urgent_vendors, order_data, payment_id, current_user
                 )
         
         elif order_type == "split":
@@ -342,17 +349,17 @@ class OrderService:
             created_orders = []
             urgent_vendors, non_urgent_vendors = self._classify_items_by_urgency(vendor_items_map)
             if urgent_vendors:
-                urgent_orders = await self._create_urgent_orders(urgent_vendors, order_data, current_user)
+                urgent_orders = await self._create_urgent_orders(urgent_vendors, order_data, payment_id, current_user)
                 created_orders.extend(urgent_orders)
             if non_urgent_vendors:
-                split_orders = await self._create_split_orders(non_urgent_vendors, order_data, current_user)
+                split_orders = await self._create_split_orders(non_urgent_vendors, order_data, payment_id, current_user)
                 created_orders.extend(split_orders)
             return created_orders
         
         elif order_type == "urgent":
             print(f"[ORDER] Urgent orders for {len(vendor_items_map)} vendors")
             return await self._create_urgent_orders(
-                vendor_items_map, order_data, current_user
+                vendor_items_map, order_data, payment_id, current_user
             )
         
         else:
@@ -362,6 +369,7 @@ class OrderService:
         self,
         vendor_items_map: Dict[int, List[Dict]],
         order_data: OrderCreateSchema,
+        payment_id: str,
         current_user
     ) -> List[Order]:
         """
@@ -409,13 +417,15 @@ class OrderService:
 
                 # Create order
                 order_id = self._generate_order_id()
+                delivery_type = "combined"
                 order = await Order.create(
                     id=order_id,
                     parent_order_id=parent_order_id,
+                    payment_id=payment_id,
                     user_id=current_user.id,
                     vendor_id=vendor_id,
                     shipping_address_id=None,
-                    delivery_type=order_data.delivery_option.type,
+                    delivery_type=delivery_type,
                     payment_method=order_data.payment_method.type,
                     subtotal=subtotal,
                     delivery_fee=delivery_fee,
@@ -426,7 +436,7 @@ class OrderService:
                     payment_status="unpaid",
                     tracking_number=self._generate_tracking_number(),
                     estimated_delivery=self._calculate_estimated_delivery(
-                        order_data.delivery_option.type
+                        delivery_type
                     ),
                     metadata=order_metadata,
                     is_combined=True
@@ -463,6 +473,7 @@ class OrderService:
         self,
         vendor_items_map: Dict[int, List[Dict]],
         order_data: OrderCreateSchema,
+        payment_id: str,
         current_user
     ) -> List[Order]:
         """
@@ -471,6 +482,7 @@ class OrderService:
         """
         created_orders = []
         parent_order_id = self._generate_parent_order_id()
+        delivery_type = "split"
 
         grand_subtotal = Decimal("0")
         for items in vendor_items_map.values():
@@ -503,11 +515,12 @@ class OrderService:
                 order_id = self._generate_order_id()
                 order = await Order.create(
                     id=order_id,
-                    parent_order_id=parent_order_id,
+                    parent_order_id=order_id,
+                    payment_id=payment_id,
                     user_id=current_user.id,
                     vendor_id=vendor_id,
                     shipping_address_id=None,
-                    delivery_type=order_data.delivery_option.type,
+                    delivery_type=delivery_type,
                     payment_method=order_data.payment_method.type,
                     subtotal=subtotal,
                     delivery_fee=delivery_fee,
@@ -518,7 +531,7 @@ class OrderService:
                     payment_status="unpaid",
                     tracking_number=self._generate_tracking_number(),
                     estimated_delivery=self._calculate_estimated_delivery(
-                        order_data.delivery_option.type
+                        delivery_type
                     ),
                     metadata=order_metadata,
                     is_combined=False
@@ -555,10 +568,11 @@ class OrderService:
 
         return created_orders
 
-    async def _create_urgent_orders(
+    async def _create_combined_urgent_orders(
         self,
         vendor_items_map: Dict[int, List[Dict]],
         order_data: OrderCreateSchema,
+        payment_id: str,
         current_user
     ) -> List[Order]:
         """
@@ -601,6 +615,98 @@ class OrderService:
                 order = await Order.create(
                     id=order_id,
                     parent_order_id=parent_order_id,
+                    payment_id=payment_id,
+                    user_id=current_user.id,
+                    vendor_id=vendor_id,
+                    shipping_address_id=None,
+                    delivery_type=delivery_type,
+                    # delivery_type=order_data.delivery_option.type,
+                    payment_method=order_data.payment_method.type,
+                    subtotal=subtotal,
+                    delivery_fee=delivery_fee,
+                    total=total,
+                    coupon_code=order_data.coupon_code,
+                    discount=discount_per_order,
+                    status=order_status_update,
+                    payment_status="unpaid",
+                    tracking_number=self._generate_tracking_number(),
+                    estimated_delivery=self._calculate_estimated_delivery(
+                        order_data.delivery_option.type
+                    ),
+                    metadata=order_metadata,
+                    is_combined=False
+                )
+
+                for item_data in items:
+                    await OrderItem.create(
+                        order_id=order.id,
+                        item_id=item_data['item'].id,
+                        title=item_data['title'],
+                        price=str(item_data["price"]),
+                        quantity=item_data['quantity'],
+                        image_path=item_data['image_path']
+                    )
+
+                await order.fetch_related("user", "items__item")
+                created_orders.append(order)
+                print(f"[ORDER] Created urgent order {order.id} for vendor {vendor_id}")
+
+            except Exception as e:
+                print(f"[ERROR] Failed to create urgent order for vendor {vendor_id}: {e}")
+                for created_order in created_orders:
+                    await created_order.delete()
+                raise
+
+        return created_orders
+
+    async def _create_urgent_orders(
+        self,
+        vendor_items_map: Dict[int, List[Dict]],
+        order_data: OrderCreateSchema,
+        payment_id: str,
+        current_user
+    ) -> List[Order]:
+        """
+        Create urgent orders. One order per urgent item vendor.
+        Rider is automatically assigned after vendor confirmation.
+        """
+        created_orders = []
+        parent_order_id = self._generate_parent_order_id()
+
+        print(f"[ORDER] Creating order with Parent ID: {parent_order_id}")
+
+        grand_subtotal = Decimal("0")
+        for items in vendor_items_map.values():
+            grand_subtotal += sum(item["price"] * item['quantity'] for item in items)
+
+        total_coupon_discount = self._apply_coupon(grand_subtotal, order_data.coupon_code)
+        vendor_count = len(vendor_items_map)
+        discount_per_order = total_coupon_discount / vendor_count if vendor_count > 0 else Decimal("0")
+
+        for vendor_id, items in vendor_items_map.items():
+            try:
+                subtotal = sum(item["price"] * item['quantity'] for item in items)
+                delivery_fee = Decimal(str(order_data.delivery_option.price))
+                total = subtotal + delivery_fee - discount_per_order
+
+                first_item_vendor = items[0]['vendor']
+                vendor_profile = await VendorProfile.get_or_none(user=first_item_vendor)
+                
+                vendor_info = self._build_vendor_info(first_item_vendor, vendor_profile)
+                order_metadata = self._build_order_metadata(order_data, vendor_info, "urgent")
+
+                order_status_update = (
+                    OrderStatus.PENDING 
+                    if order_data.payment_method.type != "cod" 
+                    else OrderStatus.PROCESSING
+                )
+                delivery_type = "urgent"
+
+                order_id = self._generate_order_id()
+                order = await Order.create(
+                    id=order_id,
+                    parent_order_id=order_id,
+                    payment_id=payment_id,
                     user_id=current_user.id,
                     vendor_id=vendor_id,
                     shipping_address_id=None,
@@ -649,17 +755,18 @@ class OrderService:
         urgent_vendors: Dict[int, List[Dict]],
         non_urgent_vendors: Dict[int, List[Dict]],
         order_data: OrderCreateSchema,
+        payment_id: str,
         current_user
     ) -> List[Order]:
         """Create mixed orders: urgent + combined"""
         created_orders = []
 
         print(f"[ORDER] Creating urgent orders for {len(urgent_vendors)} vendors")
-        urgent_orders = await self._create_urgent_orders(urgent_vendors, order_data, current_user)
+        urgent_orders = await self._create_combined_urgent_orders(urgent_vendors, order_data, payment_id, current_user)
         created_orders.extend(urgent_orders)
 
         print(f"[ORDER] Creating combined orders for {len(non_urgent_vendors)} vendors")
-        combined_orders = await self._create_combined_orders(non_urgent_vendors, order_data, current_user)
+        combined_orders = await self._create_combined_orders(non_urgent_vendors, order_data, payment_id, current_user)
         created_orders.extend(combined_orders)
 
         return created_orders
