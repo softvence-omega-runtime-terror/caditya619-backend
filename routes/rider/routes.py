@@ -287,10 +287,11 @@ async def delete_rider_profile_me(
     
     # Optionally, delete related data (vehicles, documents, etc.) here
 
-    rider.is_rider = False
-    await rider.save()
+    # rider.is_rider = False
+    # await rider.save()
 
     await rider_profile.delete()
+    await rider.delete()
     
     return {"message": translate("Rider profile deleted successfully", lang)}
 
