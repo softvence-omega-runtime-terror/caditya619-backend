@@ -2486,6 +2486,7 @@ from .notifications import send_notification, NotificationIn
 from .websocket_endpoints import start_chat, end_chat, subscribe_to_riders_location
 from app.utils.translator import translate
 
+
 # ============================================================================
 # CONFIGURATION & LOGGING
 # ============================================================================
@@ -4222,41 +4223,108 @@ async def vendor_confirm_order(
 
 
         # Determine group key and group orders
+        # group_key = order.parent_order_id or order.id
+        # print(f"Group key for order {order.id}: {group_key}")
+
+        # related_orders = await Order.filter(parent_order_id=group_key).all()
+        # if not related_orders:
+        #     related_orders = [order]
+
+        # group_master = related_orders[0]
+        # print(f"group master id: {group_master.id}, group key: {group_key}, related orders: {[o.id for o in related_orders]}")
+
+        # # get a fresh copy, update, then reassign
+        # metadata = dict(group_master.metadata or {})
+        # vendor_confirmations = dict(metadata.get("vendor_confirmations", {}))
+
+        # vendor_confirmations.update({f"{current_user.id}": {
+        #     "confirmed_at": datetime.utcnow().isoformat(),
+        #     "confirmed": True,
+        # }})
+
+        # # vendor_confirmations[str(current_user.id)] = {
+        # #     "confirmed_at": datetime.utcnow().isoformat(),
+        # #     "confirmed": True,
+        # # }
+
+        # metadata["vendor_confirmations"] = vendor_confirmations
+
+        # # assign back so Tortoise detects change
+        # group_master.updated_at = datetime.utcnow()
+        # group_master.metadata = metadata
+
+        # await group_master.save(update_fields=["metadata"])
+
+
+
+
         group_key = order.parent_order_id or order.id
 
-        # All orders that belong to this combined group (including this order)
-        related_orders = await Order.filter(
-            # if parent_order_id is set, group by that, otherwise single order group
-            parent_order_id=group_key
-        ).all()
-
-        # For non-combined orders, there may be no parent_order_id; ensure at least current order
+        related_orders = await Order.filter(parent_order_id=group_key).all()
         if not related_orders:
             related_orders = [order]
 
-        # Group master: use the first order in group to hold shared metadata
-        group_master = related_orders[0]
-
-        print(f"group master id: {group_master.id}, group key: {group_key}, related orders: {[o.id for o in related_orders]}")
-
-        # Initialize group metadata
-        group_master.metadata = group_master.metadata or {}
-        group_master.metadata["vendor_confirmations"] = group_master.metadata.get(
-            "vendor_confirmations", {}
+        # ✅ deterministic group master (VERY IMPORTANT)
+        group_master = (
+            await Order
+            .filter(parent_order_id=group_key)
+            .order_by("id")   # 👈 stable
+            .first()
         )
 
-        # Store confirmation on group master keyed by vendor id
-        group_master.metadata["vendor_confirmations"][str(current_user.id)] = {
-            "confirmed_at": datetime.utcnow().isoformat(),
-            "confirmed": True,
-        }
-        await group_master.save()
+        if not group_master:
+            raise HTTPException(400, "Combined order group not found")
+
+        print(
+            f"group master id: {group_master.id}, "
+            f"group key: {group_key}, "
+            f"related orders: {[o.id for o in related_orders]}"
+        )
+
+        # -----------------------------------
+        # ATOMIC CONFIRMATION UPDATE
+        # -----------------------------------
+        async with in_transaction() as conn:
+            # 🔥 re-fetch inside transaction
+            group_master = await Order.get(id=group_master.id).using_db(conn)
+
+            new_metadata = dict(group_master.metadata or {})
+            vendor_confirmations = dict(new_metadata.get("vendor_confirmations", {}))
+
+            # 🔥 MERGE (not overwrite)
+            vendor_confirmations[str(current_user.id)] = {
+                "confirmed": True,
+                "confirmed_at": datetime.utcnow().isoformat(),
+            }
+
+            # new_metadata["vendor_confirmations"] = vendor_confirmations
+            new_metadata.update({"vendor_confirmations": vendor_confirmations})
+
+
+            group_master.metadata = new_metadata
+            group_master.updated_at = datetime.utcnow()
+
+            await group_master.save(
+                using_db=conn,
+                update_fields=["metadata", "updated_at"]
+            )
+
+
+
+
+
+
+
+
+        print("Group master saved with metadata:", group_master.metadata)
+
+        # fixed_order = await Order.get_or_none(id=group_master.id)
+        # print("Refetched group master:", fixed_order.metadata)
 
         shared_metadata = group_master.metadata or {}
         vendor_confirmations = shared_metadata.get("vendor_confirmations", {})
         print(f"Vendor confirmations: {vendor_confirmations}")
 
-        # Check if all vendors confirmed: compare vendor ids across group with confirmed ids
         all_confirmed = await _check_all_vendors_confirmed(related_orders, shared_metadata)
 
         # Status & rider flow
