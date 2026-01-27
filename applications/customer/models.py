@@ -144,3 +144,21 @@ class OrderItem(models.Model):
 
 
 
+
+
+class VendorOrderConfirmation(models.Model):
+    id = fields.UUIDField(pk=True)
+    group_key = fields.CharField(max_length=36, index=True)           # parent_order_id or order.id
+    order = fields.ForeignKeyField("models.Order", related_name="confirmations")
+    vendor = fields.ForeignKeyField("models.User", related_name="order_confirmations")
+    confirmed = fields.BooleanField(default=True)
+    confirmed_at = fields.DatetimeField(auto_now_add=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "vendor_order_confirmations"
+        unique_together = (("group_key", "vendor"),)   # one confirmation per vendor per group
+        indexes = [
+            ("group_key", "confirmed"),                    # fast check how many confirmed
+        ]

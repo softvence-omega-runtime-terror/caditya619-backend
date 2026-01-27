@@ -20,7 +20,8 @@ async def create_payment_session_for_orders(orders: List[Order]):
     """
     
     total_amount = sum(float(order.total) for order in orders)
-    order_id = f"ORDER_{uuid.uuid4().hex[:12].upper()}"
+    #order_id = f"ORDER_{uuid.uuid4().hex[:12].upper()}"
+    order_id = orders[0].payment_id or f"PAY_{uuid.uuid4().hex[:12].upper()}"
     
     customer_info = orders[0].metadata.get("shipping_address", {})
     user = orders[0].user if hasattr(orders[0], 'user') else None
