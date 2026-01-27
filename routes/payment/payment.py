@@ -251,18 +251,18 @@ async def confirm_payment_from_app(
     Marks orders as paid & processing only if payment is confirmed.
     """
 
-    parent_order_id = request.parent_order_id
+    payment_id = request.parent_order_id
 
     try:
         # 1️⃣ Verify payment with Cashfree
-        verification_result = await verify_payment_status(parent_order_id)
+        verification_result = await verify_payment_status(payment_id)
         if not verification_result.get("success"):
             raise HTTPException(status_code=400, detail="Payment verification failed")
 
         cashfree_status = verification_result.get("order_status")
 
-        # 2️⃣ Fetch orders for this parent_order_id
-        orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user")
+        # 2️⃣ Fetch orders for this payment_id
+        orders = await Order.filter(payment_id=payment_id).prefetch_related("user")
         if not orders:
             raise HTTPException(status_code=404, detail="Orders not found")
 
@@ -280,7 +280,7 @@ async def confirm_payment_from_app(
                 payload = {
                     "type": "order_placed",
                     "order_id": order.id,
-                    "parent_order_id": parent_order_id,
+                    "payment_id": payment_id,
                     "customer_name": order.user.name if order.user else "Customer",
                     "payment_method": "Cashfree",
                     "payment_status": "paid",
@@ -306,7 +306,7 @@ async def confirm_payment_from_app(
             return {
                 "success": True,
                 "message": "Orders marked paid",
-                "parent_order_id": parent_order_id,
+                "payment_id": payment_id,
                 "orders_count": len(orders),
                 "cashfree_status": cashfree_status,
                 "cashfree_response": verification_result
@@ -316,7 +316,7 @@ async def confirm_payment_from_app(
         return {
             "success": False,
             "message": f"Payment not completed. Status: {cashfree_status}",
-            "parent_order_id": parent_order_id,
+            "payment_id": payment_id,
             "orders_count": len(orders),
             "cashfree_status": cashfree_status,
             "cashfree_response": verification_result
@@ -716,10 +716,10 @@ async def get_phonepe_status(
             # If payment is COMPLETED, process the orders
             if resp_data.get("state") == "COMPLETED":
                 print("✅ PhonePe payment completed. Processing orders...")
-                parent_order_id = req_data.merchantOrderId
+                payment_id = req_data.merchantOrderId
 
-                print(f"Fetching orders with parent_order_id: {parent_order_id}")
-                orders = await Order.filter(parent_order_id=parent_order_id).prefetch_related("user").all()
+                print(f"Fetching orders with payment_id: {payment_id}")
+                orders = await Order.filter(payment_id=payment_id).prefetch_related("user").all()
                 print("orders",orders)
                 print(f"Orders fetched for PhonePe status update: {len(orders)}")
                 
@@ -753,7 +753,7 @@ async def get_phonepe_status(
                                 customer_payload = {
                                     "type": "payment_success",
                                     "order_id": order.id,
-                                    "parent_order_id": parent_order_id,
+                                    "payment_id": payment_id,
                                     "payment_method": "PhonePe",
                                     "timestamp": datetime.utcnow().isoformat()
                                 }
@@ -783,7 +783,7 @@ async def get_phonepe_status(
                                     vendor_payload = {
                                         "type": "new_paid_order",
                                         "order_id": order.id,
-                                        "parent_order_id": parent_order_id,
+                                        "payment_id": payment_id,
                                         "payment_method": "PhonePe",
                                         "timestamp": datetime.utcnow().isoformat()
                                     }
@@ -791,7 +791,7 @@ async def get_phonepe_status(
                             except Exception as e:
                                 print(f"Vendor notification error: {e}")
                                 
-                    print(f"✅ orders with parent_order_id {parent_order_id} marked as paid via PhonePe")
+                    print(f"✅ orders with payment_id {payment_id} marked as paid via PhonePe")
             
             return resp_data
             
