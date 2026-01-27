@@ -938,7 +938,9 @@ async def _broadcast_rider_offers(
     is_urgent: bool = False,
     redis=None,
 ):
+    print(f"[BROADCAST] Broadcasting order {order_id} offers to riders")
     try:
+        print(f"[BROADCAST] Finding order {order_id}")
         orders = None
         order = await Order.get_or_none(id=order_id)
         if not order:
