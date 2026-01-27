@@ -380,7 +380,7 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
     if order.payment_status == "paid":
         if order.payment_method == "cashfree":
             print(f"Initiating Cashfree refund for order {order.parent_order_id} amount {refund_amount}")
-            success, result = await cashfree_refund(order_id, refund_amount, refund_id)
+            success, result = await cashfree_refund(order.payment_id, refund_amount, refund_id)
             if success:
                 gw_id = result
                 print(gw_id)
@@ -390,7 +390,7 @@ async def cancel_order(order_id: str, reason: str = "customer_request"):
                 await log_action(refund_id, order_id, "failed", "initiated", "failed", "system", error=result)
         
         elif order.payment_method == "phonepe":
-            success, result = await phonepe_refund(order_id, refund_amount, order.payment_session_id, refund_id)
+            success, result = await phonepe_refund(order.payment_id, refund_amount, order.payment_session_id, refund_id)
             if success:
                 gw_id = result
                 status = "processing"
@@ -483,7 +483,7 @@ async def cancel_individual_order(order_id: str, reason: str = "customer_request
     
     if order.payment_status == "paid":
         if order.payment_method == "cashfree":
-            success, result = await cashfree_refund(order.parent_order_id, refund_amount, refund_id)
+            success, result = await cashfree_refund(order.payment_id, refund_amount, refund_id)
             if success:
                 gw_id = result
                 print(gw_id)
@@ -493,7 +493,7 @@ async def cancel_individual_order(order_id: str, reason: str = "customer_request
                 await log_action(refund_id, order_id, "failed", "initiated", "failed", "system", error=result)
         
         elif order.payment_method == "phonepe":
-            success, result = await phonepe_refund(order.parent_order_id, refund_amount, order.payment_session_id, refund_id)
+            success, result = await phonepe_refund(order.payment_id, refund_amount, order.payment_session_id, refund_id)
             if success:
                 gw_id = result
                 status = "processing"
