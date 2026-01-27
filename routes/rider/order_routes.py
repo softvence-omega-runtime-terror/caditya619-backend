@@ -234,9 +234,9 @@ async def vendor_confirm_order(
         if order_type != "urgent":
             try:
                 await send_notification(NotificationIn(
-                    order.user_id,
-                    "Vendor Confirmed",
-                    f"Vendor confirmed order #{order.id}",
+                    user_id=order.user_id,
+                    title="Vendor Confirmed",
+                    body=f"Vendor confirmed order #{order.id}",
                 ))
 
                 await manager.send_notification(
@@ -918,9 +918,9 @@ async def _auto_assign_rider_for_urgent(
 
         try:
             await send_notification(NotificationIn(
-                assigned_rider.user_id,
-                "🚨 URGENT ORDER ASSIGNED",
-                f"Urgent order #{order.id} assigned. Pick up immediately!",
+                user_id=assigned_rider.user_id,
+                title="🚨 URGENT ORDER ASSIGNED",
+                body=f"Urgent order #{order.id} assigned. Pick up immediately!",
             ))
         except Exception:
             pass
@@ -988,9 +988,9 @@ async def _broadcast_rider_offers(
 
                 try:
                     await send_notification(NotificationIn(
-                        rider.user_id,
-                        "New Order Offer",
-                        f"Order #{order_id} - ₹{order.total}",
+                        user_id=rider.user_id,
+                        title="New Order Offer",
+                        body=f"Order #{order_id} - ₹{order.total}",
                     ))
                 except Exception:
                     pass
