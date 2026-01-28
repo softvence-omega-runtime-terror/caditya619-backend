@@ -1534,15 +1534,15 @@ async def vendor_mark_shipped(
         # Notify rider and customer
         if order.rider:
             await send_notification(NotificationIn(
-                order.rider.user_id,
-                "Order Ready",
-                f"Order #{order_id} is ready for pickup"
+                user_id=order.rider.user_id,
+                title="Order Ready",
+                body=f"Order #{order_id} is ready for pickup"
             ))
         
         await send_notification(NotificationIn(
-            order.user_id,
-            "Order Shipped",
-            f"Your order #{order_id} has been handed to the rider"
+            user_id=order.user_id,
+            title="Order Shipped",
+            body=f"Your order #{order_id} has been handed to the rider"
         ))
         
         return translate({
@@ -1589,9 +1589,9 @@ async def rider_mark_on_way(
         
         # Notify customer
         await send_notification(NotificationIn(
-            order.user_id,
-            "Order On The Way",
-            f"Your order #{order_id} is on the way"
+            user_id=order.user_id,
+            title="Order On The Way",
+            body=f"Your order #{order_id} is on the way"
         ))
         
         return translate({
@@ -1632,10 +1632,23 @@ async def rider_mark_delivered(
                 status_code=400,
                 detail=f"Can only mark OUT_FOR_DELIVERY orders as delivered"
             )
+        orders = await Order.filter(parent_order_id=order.parent_order_id).all()
+        deliverable_orders = [ord for ord in orders if ord.status == OrderStatus.OUT_FOR_DELIVERY]
+
+        if len(deliverable_orders) != len(orders):
+            raise HTTPException(
+                status_code=400,
+                detail=f"All orders under parent order ID {order.parent_order_id} must be OUT_FOR_DELIVERY to mark as delivered"
+            )
+
+        for ord in orders:
+            ord.status = OrderStatus.DELIVERED
+            ord.completed_at = datetime.utcnow()
+            await ord.save()
         
-        order.status = OrderStatus.DELIVERED
-        order.completed_at = datetime.utcnow()
-        await order.save()
+        # order.status = OrderStatus.DELIVERED
+        # order.completed_at = datetime.utcnow()
+        # await order.save()
         
         # Notify customer
         await send_notification(NotificationIn(

@@ -11,7 +11,7 @@ from app.token import get_current_user
 from app.config import settings
 from applications.user.rider import RiderReview, RiderProfile, Complaint
 from routes.payment.payment import CASHFREE_API_VERSION, CASHFREE_BASE, CASHFREE_CLIENT_PAYMENT_ID, CASHFREE_CLIENT_PAYMENT_SECRET
-from routes.rider.notifications import send_notification
+from routes.rider.notifications import send_notification, NotificationIn
 from app.redis import get_redis
 import json
 from applications.user.vendor import VendorProfile
@@ -261,12 +261,11 @@ async def place_order(
                     vendor = await VendorProfile.get_or_none(user_id=order.vendor_id)
                     if vendor:
                         await manager.send_notification("vendors", str(vendor.user_id), "New Order", f"Order #{order.id} received - {len(order.items)} items")
-                        await send_notification(
-                            vendor.user_id,
-                            f"New {order_type.upper()} Order",
-                            f"Order #{order.id} received - {len(order.items)} items"
-                        )
-
+                        await send_notification(NotificationIn(
+                            user_id=vendor.user_id,
+                            title=f"New {order_type.upper()} Order",
+                            body=f"Order #{order.id} received - {len(order.items)} items"
+                        ))
                     print(f"[ORDER] {order_type.upper()} order {order.id} notified to vendor")
 
                 except Exception as e:
@@ -336,6 +335,8 @@ async def get_all_orders(
     # Get total count
     total_count = await query.count()
 
+    query = query.group_by("parent_order_id")
+
     # Apply pagination
     orders = await query.offset(offset).limit(limit).prefetch_related(
         'user',
@@ -343,6 +344,7 @@ async def get_all_orders(
         'rider__user',
         'vendor__vendor_profile'
     )
+    print(f"orders fetched: {[order for order in orders]}")
 
     # Build response
     results = []
