@@ -71,7 +71,7 @@ async def test(user: User = Depends(get_current_user)):
 @router.get("/get_notifications/")
 async def get_notifications(user: User = Depends(get_current_user)):
     notifications = await PushNotification.filter(user_id=user.id)
-    return [n.to_dict() for n in notifications]
+    return [n for n in notifications]
 
 
 @router.get("/get-notification/{ntf_id}/")
