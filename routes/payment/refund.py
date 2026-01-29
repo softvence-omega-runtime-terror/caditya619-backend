@@ -133,12 +133,7 @@ async def cashfree_refund(order_id: str, amount: float, refund_id: str) -> tuple
         
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(url, json=payload, headers=headers)
-            # print(response.content)
-            # print(response.headers)
-            # print(response.url)
-            # print(response.request.method)      
-            # print(CLIENT_ID, CLIENT_SECRET, CASHFREE_API_VERSION, CASHFREE_BASE)
-            print(payload)
+
             if response.status_code == 200:
                 data = response.json()
                 print(f"[Cashfree] Refund response: {data}")
