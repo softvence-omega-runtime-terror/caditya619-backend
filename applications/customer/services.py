@@ -390,9 +390,13 @@ class OrderService:
         vendor_count = len(vendor_items_map)
         discount_per_order = total_coupon_discount / vendor_count if vendor_count > 0 else Decimal("0")
 
+        more_vendors = False
+
         for vendor_id, items in vendor_items_map.items():
             try:
                 # Calculate totals
+                if more_vendors:
+                    delivery_fee = Decimal("10.0")
                 subtotal = sum(item["price"] * item['quantity'] for item in items)
                 delivery_fee = Decimal(str(order_data.delivery_option.price))
                 total = subtotal + delivery_fee - discount_per_order
@@ -457,6 +461,7 @@ class OrderService:
 
                 await order.fetch_related("user", "items__item")
                 created_orders.append(order)
+                more_vendors = True
                 print(f"[ORDER] Created combined order {order.id} for vendor {vendor_id}")
 
             except Exception as e:
@@ -592,8 +597,12 @@ class OrderService:
         vendor_count = len(vendor_items_map)
         discount_per_order = total_coupon_discount / vendor_count if vendor_count > 0 else Decimal("0")
 
+        more_vendors = False
+
         for vendor_id, items in vendor_items_map.items():
             try:
+                if more_vendors:
+                    delivery_fee = Decimal("10.0")
                 subtotal = sum(item["price"] * item['quantity'] for item in items)
                 delivery_fee = Decimal(str(order_data.delivery_option.price))
                 total = subtotal + delivery_fee - discount_per_order
@@ -649,6 +658,7 @@ class OrderService:
 
                 await order.fetch_related("user", "items__item")
                 created_orders.append(order)
+                more_vendors = True
                 print(f"[ORDER] Created urgent order {order.id} for vendor {vendor_id}")
 
             except Exception as e:
