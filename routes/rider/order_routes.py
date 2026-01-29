@@ -946,7 +946,7 @@ async def _broadcast_rider_offers(
         if not order:
             print(f"[BROADCAST] Order {order_id} not found")
             order = await Order.filter(parent_order_id=order_id).first()
-            orders = await Order.filter(parent_order_id=order_id).all()
+            orders = await Order.filter(parent_order_id=order_id).all().prefetch_related("user", "items__item", "vendor")
             if not order:
                 print(f"[BROADCAST] No order found for broadcast id {order_id}")
                 return
@@ -976,12 +976,48 @@ async def _broadcast_rider_offers(
                 )
                 print(f"[BROADCAST] Offered order {order_id} to rider {rider.id}")
                 try:
+                    total = 0.0
+                    result = []
+                    if orders:
+                        for o in orders:
+                            total += float(o.total)
+                            items = []
+                            for oi in o.items:
+                                items.append({
+                                    "item_id": oi.item_id,
+                                    "title": oi.title,
+                                    "price": oi.price,
+                                    "quantity": oi.quantity
+                                })
+                            payload = {
+                                "order_id": o.id,
+                                "vandor_name": o.vendor.name if o.vendor else "Store",
+                                "items": items
+                            }
+                            result.append(payload)
+                        # paren_order_id = order.parent_order_id
+                    else:
+                        total = float(order.total)
+                        result = [{
+                            "order_id": order.id,
+                            "vandor_name": order.vendor.name if order.vendor else "Store",
+                            "items": order.items if order.items else []
+                        }]
+
+                    # cust_info = {
+                    #     "customer_name": order.user.name,
+                    #     "customer_phone": order.user.phone,
+                    #     "customer_id": order.user_id
+                    # }
+
+                    # print(f"cust_info: {cust_info}")
+                    
                     print(f"rider user id {rider.user_id}")
                     await manager.send_notification(
                         "riders",
                         rider.user_id,
                         "New Order Offer",
-                        f"you have a new order offer🗣📢. Orders #{', '.join(str(o.id) for o in orders) if orders else order.id}",
+                        f"result: {result}, Total Amount: ₹{total}, parent_order_id: {order.parent_order_id if order.parent_order_id else order.id}",
                     )
                 except Exception:
                     pass
@@ -1775,3 +1811,10 @@ async def list_orders(
         logger.error(f"Error listing orders: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
     
+
+
+
+
+
+
+
