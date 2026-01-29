@@ -1,5 +1,4 @@
 # VSCode settings
-.vscode/
 media/
 .env
 .idea
@@ -27,6 +26,7 @@ migrations/models/
 # Build and packaging
 *.pyc
 *.pyo
+temp_auto_push.bat
 *.pyd
 *.sqlite3
 *.db
@@ -55,3 +55,4 @@ Thumbs.db
 # Optional: if you use Aerich
 aerich.ini
 aerich/
+.gitignore
