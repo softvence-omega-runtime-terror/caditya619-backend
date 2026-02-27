@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PetPooja Restaurant Selector</title>
+    <style>
+        :root {
+            --bg: #f5f4ef;
+            --surface: #ffffff;
+            --ink: #1f2a37;
+            --muted: #5b6470;
+            --line: #d8dce3;
+            --brand: #0f766e;
+            --brand-dark: #115e59;
+            --danger: #b91c1c;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Trebuchet MS", "Lucida Sans Unicode", "Lucida Grande", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 15% 10%, #d9f1ec 0, transparent 45%),
+                radial-gradient(circle at 85% 0%, #fde6c9 0, transparent 35%),
+                var(--bg);
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .card {
+            width: min(760px, 100%);
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+            padding: 24px;
+        }
+
+        .title {
+            margin: 0;
+            font-size: 30px;
+            line-height: 1.1;
+        }
+
+        .subtitle {
+            margin: 10px 0 22px;
+            color: var(--muted);
+        }
+
+        .btn {
+            border: 0;
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: var(--brand);
+            color: #ffffff;
+        }
+
+        .btn-primary:hover {
+            background: var(--brand-dark);
+        }
+
+        .btn-ghost {
+            background: #e9edf3;
+            color: #18222f;
+        }
+
+        .result {
+            margin-top: 22px;
+            border-top: 1px solid var(--line);
+            padding-top: 18px;
+        }
+
+        .metrics {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .metric {
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--muted);
+            background: #fafbfd;
+        }
+
+        .item-list {
+            margin: 0;
+            padding-left: 18px;
+        }
+
+        .item-list li {
+            margin: 6px 0;
+            color: #273444;
+        }
+
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.48);
+        }
+
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(520px, calc(100vw - 24px));
+            border-radius: 14px;
+            background: #ffffff;
+            border: 1px solid var(--line);
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+            padding: 18px;
+        }
+
+        .modal h2 {
+            margin: 0 0 8px;
+            font-size: 22px;
+        }
+
+        .modal p {
+            margin: 0 0 12px;
+            color: var(--muted);
+        }
+
+        .field {
+            display: grid;
+            gap: 7px;
+            margin: 12px 0;
+        }
+
+        .field label {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .field input {
+            width: 100%;
+            border: 1px solid #c6ccd7;
+            border-radius: 9px;
+            padding: 10px 12px;
+            font-size: 15px;
+        }
+
+        .error {
+            color: var(--danger);
+            min-height: 20px;
+            margin: 8px 0 0;
+            font-size: 13px;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        @media (max-width: 640px) {
+            .title {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+<main class="card">
+    <h1 class="title">PetPooja Restaurant Selector</h1>
+    <p class="subtitle">
+        Select a mapped <code>restID</code> and preview restaurant/menu data using PetPooja fetch-menu API.
+    </p>
+    <button id="open-modal" class="btn btn-primary" type="button">Select Restaurant</button>
+
+    <section id="result" class="result" hidden>
+        <h3 id="restaurant-name"></h3>
+        <p id="restaurant-id" class="subtitle"></p>
+        <div id="metrics" class="metrics"></div>
+        <strong>Sample items:</strong>
+        <ul id="sample-items" class="item-list"></ul>
+    </section>
+</main>
+
+<div id="overlay" class="overlay" hidden></div>
+<section id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
+    <h2 id="modal-title">Select Restaurant</h2>
+    <p>Fetches from: <code>https://qle1yy2ydc.execute-api.ap-southeast-1.amazonaws.com/V1/mapped_restaurant_menus</code></p>
+
+    <form id="restaurant-form">
+        <div class="field">
+            <label for="rest-id-input">Restaurant Mapping ID (restID)</label>
+            <input id="rest-id-input" name="rest-id-input" placeholder="Enter restID" required />
+        </div>
+        <div id="error" class="error"></div>
+        <div class="modal-actions">
+            <button id="close-modal" class="btn btn-ghost" type="button">Cancel</button>
+            <button id="submit-btn" class="btn btn-primary" type="submit">Fetch Menu</button>
+        </div>
+    </form>
+</section>
+
+<script>
+    (() => {
+        const overlay = document.getElementById("overlay");
+        const modal = document.getElementById("modal");
+        const form = document.getElementById("restaurant-form");
+        const openBtn = document.getElementById("open-modal");
+        const closeBtn = document.getElementById("close-modal");
+        const input = document.getElementById("rest-id-input");
+        const submitBtn = document.getElementById("submit-btn");
+        const error = document.getElementById("error");
+        const result = document.getElementById("result");
+        const restaurantName = document.getElementById("restaurant-name");
+        const restaurantId = document.getElementById("restaurant-id");
+        const metrics = document.getElementById("metrics");
+        const sampleItems = document.getElementById("sample-items");
+
+        const basePath = window.location.pathname.replace(/\/modal\/?$/, "");
+
+        function openModal() {
+            overlay.hidden = false;
+            modal.hidden = false;
+            error.textContent = "";
+            input.focus();
+        }
+
+        function closeModal() {
+            overlay.hidden = true;
+            modal.hidden = true;
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Fetch Menu";
+        }
+
+        function renderMetrics(modalData) {
+            metrics.innerHTML = "";
+            const chips = [
+                `Items: ${modalData.item_count ?? 0}`,
+                `Categories: ${modalData.category_count ?? 0}`,
+                `Sample shown: ${(modalData.sample_items || []).length}`,
+            ];
+            chips.forEach((text) => {
+                const div = document.createElement("div");
+                div.className = "metric";
+                div.textContent = text;
+                metrics.appendChild(div);
+            });
+        }
+
+        function renderSampleItems(items) {
+            sampleItems.innerHTML = "";
+            if (!items || items.length === 0) {
+                const li = document.createElement("li");
+                li.textContent = "No item preview available.";
+                sampleItems.appendChild(li);
+                return;
+            }
+            items.forEach((item) => {
+                const li = document.createElement("li");
+                const name = item.name || "Unnamed item";
+                const id = item.item_id ? ` (#${item.item_id})` : "";
+                const price = item.price !== undefined && item.price !== null ? ` - ${item.price}` : "";
+                li.textContent = `${name}${id}${price}`;
+                sampleItems.appendChild(li);
+            });
+        }
+
+        async function selectRestaurant(restID) {
+            const response = await fetch(`${basePath}/select`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ restID }),
+            });
+
+            const payload = await response.json();
+            if (!response.ok) {
+                const message =
+                    payload?.detail?.message ||
+                    payload?.detail ||
+                    payload?.message ||
+                    "Unable to fetch menu for this restID.";
+                throw new Error(typeof message === "string" ? message : "Unable to fetch menu.");
+            }
+            return payload;
+        }
+
+        openBtn.addEventListener("click", openModal);
+        closeBtn.addEventListener("click", closeModal);
+        overlay.addEventListener("click", closeModal);
+        window.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !modal.hidden) {
+                closeModal();
+            }
+        });
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            error.textContent = "";
+
+            const restID = input.value.trim();
+            if (!restID) {
+                error.textContent = "restID is required.";
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Loading...";
+
+            try {
+                const data = await selectRestaurant(restID);
+                const selectedRestaurant = data.restaurant || {};
+                const modalData = data.modal || {};
+
+                restaurantName.textContent = selectedRestaurant.name || "Restaurant";
+                restaurantId.textContent = `restID: ${selectedRestaurant.restID || restID}`;
+                renderMetrics(modalData);
+                renderSampleItems(modalData.sample_items || []);
+
+                result.hidden = false;
+                closeModal();
+            } catch (err) {
+                error.textContent = err.message || "Failed to fetch menu.";
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Fetch Menu";
+            }
+        });
+    })();
+</script>
+</body>
+</html>
