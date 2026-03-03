@@ -8,15 +8,12 @@ from tortoise.exceptions import ValidationError
 def default_delivery_fee_settings() -> Dict[str, Any]:
     return {
         "base_delivery_fee": {
-            "food": 0.0,
-            "grocery": 0.0,
-            "medicine": 0.0,
+            "split": 0.0,
+            "combined": 0.0,
+            "urgent": 0.0,
         },
-        "distance_fee_slabs": [
-            {"min_km": 0, "max_km": 3, "fee": 0.0},
-            {"min_km": 3, "max_km": 5, "fee": 0.0},
-            {"min_km": 5, "max_km": 8, "fee": 0.0},
-        ],
+        "area_range": 0.0,
+        "per-pickup-price": 0.0,
         "surge_pricing": {
             "time_slot_rules": [],
             "festival_rules": [],
@@ -104,36 +101,6 @@ def default_order_payment_rules() -> Dict[str, Any]:
     }
 
 
-def default_vendor_commission_settings() -> Dict[str, Any]:
-    return {
-        "restaurant_commission": {
-            "global_percent": 0.0,
-            "vendor_specific": [],
-            "slab_rules": [],
-        },
-        "pharmacy_commission_percent": 0.0,
-        "grocery_margin_percent": 0.0,
-        "vendor_payout_cycle": "weekly",
-        "commission_exceptions": [],
-    }
-
-
-def default_cancellation_refund_policies() -> Dict[str, Any]:
-    return {
-        "cancellation_fees": {
-            "before_prep": {"mode": "fixed", "value": 0.0},
-            "after_prep": {"mode": "percent", "value": 0.0},
-            "after_dispatch": {"mode": "percent", "value": 0.0},
-        },
-        "refund_rules": {
-            "auto_refund_upto": 0.0,
-            "manual_approval_above": 0.0,
-        },
-        "late_delivery_compensation": {"mode": "fixed", "value": 0.0},
-        "vendor_penalties": [],
-    }
-
-
 def default_customer_experience_settings() -> Dict[str, Any]:
     return {
         "support_contact": {
@@ -151,7 +118,15 @@ def default_customer_experience_settings() -> Dict[str, Any]:
             "grocery": {"start": "00:00", "end": "23:59"},
             "medicine": {"start": "00:00", "end": "23:59"},
         },
-        "app_banners_and_notifications": [],
+    }
+
+
+def default_refund_settings() -> Dict[str, Any]:
+    return {
+        "enabled": True,
+        "refund_window_days": 7,
+        "max_refund_amount": 0.0,
+        "support_email": "",
     }
 
 
@@ -174,6 +149,7 @@ def default_misc_settings() -> Dict[str, Any]:
             "grocery": True,
             "medicine": True,
         },
+        "service_available": True,
         "service_zones": [],
         "blackout_dates": [],
         "festival_holiday_surge_bonus": [],
@@ -185,11 +161,82 @@ def default_site_configuration_payload() -> Dict[str, Any]:
         "delivery_fee_settings": default_delivery_fee_settings(),
         "offers_discount_settings": default_offers_discount_settings(),
         "order_payment_rules": default_order_payment_rules(),
-        "vendor_commission_settings": default_vendor_commission_settings(),
-        "cancellation_refund_policies": default_cancellation_refund_policies(),
         "customer_experience_settings": default_customer_experience_settings(),
+        "refund_settings": default_refund_settings(),
         "misc_settings": default_misc_settings(),
     }
+
+
+def complete_site_configuration_template_payload() -> Dict[str, Any]:
+    payload = default_site_configuration_payload()
+
+    delivery = payload["delivery_fee_settings"]
+    delivery["surge_pricing"]["time_slot_rules"] = [
+        {
+            "name": "Lunch Rush",
+            "enabled": False,
+            "start": "12:00",
+            "end": "14:00",
+            "multiplier": 1.0,
+        }
+    ]
+    delivery["surge_pricing"]["festival_rules"] = [
+        {
+            "name": "Festival Surge",
+            "enabled": False,
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-02",
+            "multiplier": 1.0,
+        }
+    ]
+    delivery["surge_pricing"]["weather_rules"] = [
+        {
+            "condition": "rain",
+            "enabled": False,
+            "multiplier": 1.0,
+        }
+    ]
+
+    offers = payload["offers_discount_settings"]
+    offers["combo_offers"] = [
+        {
+            "name": "Combo Offer",
+            "enabled": False,
+            "mode": "percent",
+            "value": 0.0,
+            "max_cap": 0.0,
+            "min_order_value": 0.0,
+            "categories": ["food", "grocery"],
+        }
+    ]
+
+    misc = payload["misc_settings"]
+    misc["service_zones"] = [
+        {
+            "zone_name": "",
+            "enabled": False,
+            "minimum_order_value": 0.0,
+            "delivery_fee": 0.0,
+        }
+    ]
+    misc["blackout_dates"] = [
+        {
+            "date": "2026-01-01",
+            "reason": "",
+            "enabled": False,
+        }
+    ]
+    misc["festival_holiday_surge_bonus"] = [
+        {
+            "name": "Holiday Bonus",
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-02",
+            "bonus_percent": 0.0,
+            "enabled": False,
+        }
+    ]
+
+    return payload
 
 
 class SiteConfiguration(models.Model):
@@ -197,9 +244,8 @@ class SiteConfiguration(models.Model):
     delivery_fee_settings = fields.JSONField(default=default_delivery_fee_settings)
     offers_discount_settings = fields.JSONField(default=default_offers_discount_settings)
     order_payment_rules = fields.JSONField(default=default_order_payment_rules)
-    vendor_commission_settings = fields.JSONField(default=default_vendor_commission_settings)
-    cancellation_refund_policies = fields.JSONField(default=default_cancellation_refund_policies)
     customer_experience_settings = fields.JSONField(default=default_customer_experience_settings)
+    refund_settings = fields.JSONField(default=default_refund_settings)
     misc_settings = fields.JSONField(default=default_misc_settings)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
@@ -213,34 +259,3 @@ class SiteConfiguration(models.Model):
             if existing:
                 raise ValidationError("Only one SiteConfiguration object is allowed.")
         await super().save(*args, **kwargs)
-
-
-class PromoCodeSetting(models.Model):
-    DISCOUNT_TYPES = (
-        ("percent", "Percent"),
-        ("flat", "Flat"),
-    )
-
-    id = fields.IntField(pk=True)
-    code = fields.CharField(max_length=64, unique=True, index=True)
-    title = fields.CharField(max_length=200, null=True)
-    description = fields.TextField(null=True)
-    discount_type = fields.CharField(max_length=20, choices=DISCOUNT_TYPES, default="percent")
-    discount_value = fields.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
-    max_cap = fields.DecimalField(max_digits=10, decimal_places=2, null=True)
-    usage_limit = fields.IntField(null=True)
-    per_user_limit = fields.IntField(default=1)
-    used_count = fields.IntField(default=0)
-    min_order_value = fields.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
-    applicable_categories = fields.JSONField(default=list)
-    is_cross_category = fields.BooleanField(default=False)
-    starts_at = fields.DatetimeField(null=True)
-    expires_at = fields.DatetimeField(null=True)
-    is_active = fields.BooleanField(default=True)
-    metadata = fields.JSONField(default=dict)
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
-
-    class Meta:
-        table = "site_promo_code_settings"
-
