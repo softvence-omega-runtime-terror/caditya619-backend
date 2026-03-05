@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,22 +17,19 @@ router = APIRouter(prefix="/configuration")
 SERVICE_AVAILABLE_KEY = "service_available"
 
 
-SECTION_NAMES = {
+SECTION_ORDER = (
     "delivery_fee_settings",
-    "offers_discount_settings",
     "order_payment_rules",
     "customer_experience_settings",
-    "refund_settings",
     "misc_settings",
-}
+)
+SECTION_NAMES = set(SECTION_ORDER)
 
 
 class SiteConfigurationUpdateSchema(BaseModel):
     delivery_fee_settings: Optional[Dict[str, Any]] = None
-    offers_discount_settings: Optional[Dict[str, Any]] = None
     order_payment_rules: Optional[Dict[str, Any]] = None
     customer_experience_settings: Optional[Dict[str, Any]] = None
-    refund_settings: Optional[Dict[str, Any]] = None
     misc_settings: Optional[Dict[str, Any]] = None
 
 
@@ -50,17 +48,17 @@ async def _superuser_guard(current_user: User = Depends(get_current_user)) -> Us
 
 
 def _serialize_site_configuration(config: SiteConfiguration) -> Dict[str, Any]:
-    misc_settings = _normalize_misc_settings(config.misc_settings)
     return {
-        "id": config.id,
-        "delivery_fee_settings": config.delivery_fee_settings,
-        "offers_discount_settings": config.offers_discount_settings,
-        "order_payment_rules": config.order_payment_rules,
-        "customer_experience_settings": config.customer_experience_settings,
-        "refund_settings": config.refund_settings,
-        "misc_settings": misc_settings,
-        "created_at": config.created_at.isoformat() if config.created_at else None,
-        "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+        "delivery_fee_settings": _sanitize_section(
+            "delivery_fee_settings", config.delivery_fee_settings
+        ),
+        "order_payment_rules": _sanitize_section(
+            "order_payment_rules", config.order_payment_rules
+        ),
+        "customer_experience_settings": _sanitize_section(
+            "customer_experience_settings", config.customer_experience_settings
+        ),
+        "misc_settings": _sanitize_section("misc_settings", config.misc_settings),
     }
 
 
@@ -72,12 +70,16 @@ async def _get_or_create_site_configuration() -> SiteConfiguration:
     defaults = default_site_configuration_payload()
     config = await SiteConfiguration.create(
         id=1,
-        delivery_fee_settings=defaults["delivery_fee_settings"],
-        offers_discount_settings=defaults["offers_discount_settings"],
-        order_payment_rules=defaults["order_payment_rules"],
-        customer_experience_settings=defaults["customer_experience_settings"],
-        refund_settings=defaults["refund_settings"],
-        misc_settings=_normalize_misc_settings(defaults["misc_settings"]),
+        delivery_fee_settings=_sanitize_section(
+            "delivery_fee_settings", defaults["delivery_fee_settings"]
+        ),
+        order_payment_rules=_sanitize_section(
+            "order_payment_rules", defaults["order_payment_rules"]
+        ),
+        customer_experience_settings=_sanitize_section(
+            "customer_experience_settings", defaults["customer_experience_settings"]
+        ),
+        misc_settings=_sanitize_section("misc_settings", defaults["misc_settings"]),
     )
     return config
 
@@ -117,6 +119,32 @@ def _normalize_misc_settings(value: Any) -> Dict[str, Any]:
     return misc
 
 
+def _filter_by_template(template: Any, value: Any) -> Any:
+    if isinstance(template, dict):
+        source = value if isinstance(value, dict) else {}
+        return {
+            key: _filter_by_template(nested_template, source.get(key))
+            for key, nested_template in template.items()
+        }
+
+    if isinstance(template, list):
+        return value if isinstance(value, list) else deepcopy(template)
+
+    return template if value is None else value
+
+
+def _sanitize_section(section_name: str, value: Any) -> Dict[str, Any]:
+    template = default_site_configuration_payload()[section_name]
+    source = _normalize_misc_settings(value) if section_name == "misc_settings" else value
+    sanitized = _filter_by_template(template, source)
+    if section_name == "misc_settings":
+        sanitized[SERVICE_AVAILABLE_KEY] = _to_bool(
+            sanitized.get(SERVICE_AVAILABLE_KEY),
+            default=True,
+        )
+    return sanitized
+
+
 @router.get("/template", tags=["Site Configuration"])
 async def get_configuration_template(_: User = Depends(_superuser_guard)):
     return {
@@ -137,38 +165,17 @@ async def get_site_configuration(_: User = Depends(_superuser_guard)):
 @router.get("/public", tags=["Public Configuration"])
 async def get_public_site_configuration():
     config = await _get_or_create_site_configuration()
-    customer = config.customer_experience_settings or {}
-    order_rules = config.order_payment_rules or {}
-    delivery = config.delivery_fee_settings or {}
-    offers = config.offers_discount_settings or {}
-    misc = _normalize_misc_settings(config.misc_settings)
-
     return {
         "success": True,
-        "data": {
-            "support_contact": customer.get("support_contact", {}),
-            "grievance_officer": customer.get("grievance_officer", {}),
-            "delivery_time_windows": customer.get("delivery_time_windows", {}),
-            "allowed_payment_methods": order_rules.get("allowed_payment_methods", {}),
-            "minimum_order_value": order_rules.get("minimum_order_value", {}),
-            "free_delivery_threshold": delivery.get("free_delivery_threshold", {}),
-            "service_available": misc[SERVICE_AVAILABLE_KEY],
-            "active_promotional_context": {
-                "first_order_discount": offers.get("first_order_discount", {}),
-                "weekday_weekend_event_offers": offers.get("weekday_weekend_event_offers", {}),
-            },
-            "categories_enabled": misc.get("categories_enabled", {}),
-            "service_zones": misc.get("service_zones", []),
-            "blackout_dates": misc.get("blackout_dates", []),
-        },
+        "data": _serialize_site_configuration(config),
     }
 
 
 
-@router.post("/service-availability/toggle", tags=["Site Configuration"])
+@router.patch("/service-availability/toggle", tags=["Site Configuration"])
 async def toggle_service_availability(_: User = Depends(_superuser_guard)):
     config = await _get_or_create_site_configuration()
-    updated_misc = _normalize_misc_settings(config.misc_settings)
+    updated_misc = _sanitize_section("misc_settings", config.misc_settings)
     current_value = updated_misc[SERVICE_AVAILABLE_KEY]
     next_value = not current_value
     updated_misc[SERVICE_AVAILABLE_KEY] = next_value
@@ -178,8 +185,7 @@ async def toggle_service_availability(_: User = Depends(_superuser_guard)):
 
     return {
         "success": True,
-        "message": "Service availability toggled successfully",
-        "service_available": updated_misc[SERVICE_AVAILABLE_KEY],
+        "data": _serialize_site_configuration(config),
     }
 
 
@@ -205,17 +211,14 @@ async def update_configuration_section(
     else:
         updated_value = payload.data
 
-    if section_name == "misc_settings":
-        updated_value = _normalize_misc_settings(updated_value)
+    updated_value = _sanitize_section(section_name, updated_value)
 
     setattr(config, section_name, updated_value)
     await config.save(update_fields=[section_name])
 
     return {
         "success": True,
-        "message": f"Section '{section_name}' updated successfully",
-        "section": section_name,
-        "data": updated_value,
+        "data": _serialize_site_configuration(config),
     }
 
 
@@ -223,12 +226,11 @@ async def update_configuration_section(
 async def reset_site_configuration(_: User = Depends(_superuser_guard)):
     defaults = default_site_configuration_payload()
     config = await _get_or_create_site_configuration()
-    for key, value in defaults.items():
-        setattr(config, key, value)
+    for section_name in SECTION_ORDER:
+        setattr(config, section_name, _sanitize_section(section_name, defaults[section_name]))
     await config.save()
 
     return {
         "success": True,
-        "message": "Site configuration reset to defaults",
         "data": _serialize_site_configuration(config),
     }
