@@ -125,8 +125,8 @@ class VendorEarning(models.Model):
         return completed_q | order_q
 
     async def _vendor_user_id(self) -> int:
-        vendor_profile = await self.vendor
-        return vendor_profile.user_id
+        await self.fetch_related("vendor")
+        return self.vendor.user_id
 
     async def _sum_delivered_orders(self, extra_filter: Optional[Q] = None) -> Decimal:
         vendor_user_id = await self._vendor_user_id()
