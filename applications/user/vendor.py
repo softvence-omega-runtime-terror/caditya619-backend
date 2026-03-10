@@ -28,6 +28,7 @@ class VendorProfile(models.Model):
     nid = fields.CharField(max_length=60, null=True, blank=True)
     kyc_document = fields.CharField(max_length=500, null=True, blank=True)
     kyc_status = fields.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default=None, blank=True, null=True)
+    commission = fields.FloatField(default=0)
 
     open_time = fields.CharField(null=True, max_length=60)
     close_time = fields.CharField(null=True, max_length=60)

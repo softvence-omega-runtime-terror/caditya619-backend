@@ -10,13 +10,22 @@ class Settings(BaseSettings):
     MEDIA_DIR: str = "media/"
     MEDIA_ROOT: str = "media/"
     ENV: str = "development"
-    DATABASE_URL: str = "sqlite://db.sqlite3"
+
+    DB_HOST: str = "localhost"
+    DB_NAME: str = "db.sqlite3"
+    DB_USER: str = ""
+    DB_PASSWORD: str = ""
+    DB_ROOT_PASSWORD: str = ""
+    DB_PORT: int = 5432
+    DB_ENGINE: str = "postgres"
+
+    DATABASE_URL: Optional[str] = None
+
     TWOFACTOR_API_KEY: str = "f1972b11-9a1c-11f0-b922-0200cd936042"
     SECRET_KEY: Optional[str] = None
-    BASE_URL: str = "http://localhost:8000/"
+    BASE_URL: str = "http://localhost:8000"
     RADIS_URL: str = "redis://localhost:6379/0"
     FRONTEND_URL: str = ""
-    BACKEND_URL: str = ""
     CASHFREE_CLIENT_PAYMENT_ID: str = ""
     CASHFREE_CLIENT_PAYMENT_SECRET: str = ""
     CASHFREE_CLIENT_PAYOUT_ID: str = ""
@@ -28,6 +37,30 @@ class Settings(BaseSettings):
     EXOTEL_API_KEY: str = '94b292e4033d9fe63cc3b09baf99c4903a222d1ad2a529bd'
     EXOTEL_API_TOKEN: str = '56039c82a6c0a8f8573429ef4a172cafbf765bcc7530ff1e'
     EXOTEL_CALLER_ID: str = '08047187992'
+    PETPOOJA_FETCH_MENU_URL: str = "https://qle1yy2ydc.execute-api.ap-southeast-1.amazonaws.com/V1/mapped_restaurant_menus"
+    PETPOOJA_SAVE_ORDER_URL: str = "https://47pfzh5sf2.execute-api.ap-southeast-1.amazonaws.com/V1/save_order"
+    PETPOOJA_UPDATE_ORDER_STATUS_URL: str = "https://qle1yy2ydc.execute-api.ap-southeast-1.amazonaws.com/V1/update_order_status"
+    PETPOOJA_RIDER_STATUS_UPDATE_URL: str = "https://qle1yy2ydc.execute-api.ap-southeast-1.amazonaws.com/V1/rider_status_update"
+    PETPOOJA_GET_STORE_STATUS_URL: str = "https://qle1yy2ydc.execute-api.ap-southeast-1.amazonaws.com/V1/get_store_status"
+    PETPOOJA_UPDATE_STORE_STATUS_URL: str = "https://qle1yy2ydc.execute-api.ap-southeast-1.amazonaws.com/V1/update_store_status"
+    PETPOOJA_APP_KEY: str = ""
+    PETPOOJA_APP_SECRET: str = ""
+    PETPOOJA_ACCESS_TOKEN: str = ""
+    PETPOOJA_TIMEOUT_SECONDS: int = 30
+    PETPOOJA_VERIFY_CALLBACK_CREDENTIALS: bool = False
+
+    def model_post_init(self, __context):
+        if self.DB_ENGINE == "sqlite":
+            self.DATABASE_URL = f"sqlite:///{self.DB_NAME}"
+        else:
+            self.DATABASE_URL = (
+                f"{self.DB_ENGINE}://{self.DB_USER}:{self.DB_PASSWORD}"
+                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+            )
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
 
     class Config:
         env_file = ".env"
