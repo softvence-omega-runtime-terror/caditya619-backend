@@ -12,10 +12,11 @@ from app.auth import vendor_required
 from app.utils.generate_pdf import generate_payout_pdf
 from app.utils.cashfree_payout import call_cashfree_transfer
 from applications.earning.vendor_earning import (
-    Beneficiary,
-    VendorAccount,   
+    Beneficiary as BeneficiaryModel,
+    VendorEarning,
     PayoutTransaction,
-    PayoutStatus,     
+    PayoutStatus,
+    get_or_create_vendor_earning,
 )
 
 
@@ -67,9 +68,8 @@ async def vendor_account(
     if not vendor_profile:
         return {"error": "Vendor profile not found"}
 
-    vendor_account = await VendorAccount.filter(vendor_id=vendor_profile.id).first()
-    if not vendor_account:
-        vendor_account = await VendorAccount.create(vendor=vendor_profile)
+    vendor_earning = await get_or_create_vendor_earning(vendor_profile)
+    await vendor_earning.refresh_balances()
         
     now = datetime.now()
     if period == "this_month":
@@ -88,7 +88,7 @@ async def vendor_account(
 
     start_date = datetime(2000, 1, 1)
     end_date = datetime.now()
-    summery = await vendor_account.earnings_calculation(start_date, end_date)
+    summery = await vendor_earning.earnings_calculation(start_date, end_date)
     total_pending = summery["total_earnings"] - summery["total_withdrawn"]
 
     return {
@@ -100,10 +100,11 @@ async def vendor_account(
         "total_withdraw": summery["total_withdrawn"],
         "total_pending": total_pending,
         
-        "pending_balance": await vendor_account.pending_balance_calculation(),
-        "commission_earned": vendor_account.commission_earned,
-        "platform_cost": vendor_account.platform_cost,
-        "updated_at": vendor_account.updated_at
+        "available_for_withdraw": vendor_earning.available_for_withdraw,
+        "pending_balance": await vendor_earning.pending_balance_calculation(),
+        "commission_earned": vendor_earning.commission_earned,
+        "platform_cost": vendor_earning.platform_cost,
+        "updated_at": vendor_earning.updated_at
     }
     
 
@@ -127,7 +128,7 @@ def generate_signature():
 # -----------------------------------------------------
 #   ADD BENEFICIARY
 # -----------------------------------------------------
-class Beneficiary(BaseModel):
+class BeneficiaryPayload(BaseModel):
     beneficiary_name: str
     bank_account_number: str
     bank_ifsc: str
@@ -136,7 +137,7 @@ class Beneficiary(BaseModel):
 
 
 @router.post("/add_beneficiary")
-async def add_beneficiary(payload: Beneficiary, vendor: User = Depends(vendor_required)):
+async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(vendor_required)):
     signature, timestamp = generate_signature()
 
     url = f"{BASE_URL}/beneficiary"
@@ -168,10 +169,10 @@ async def add_beneficiary(payload: Beneficiary, vendor: User = Depends(vendor_re
     res = requests.post(url, json=body, headers=headers)
 
     if res.status_code in [200, 201]:
-        await Beneficiary.create(
+        await BeneficiaryModel.create(
             vendor_id=vendor.id,
             beneficiary_id=unique_beneficiary_id,
-            name=payload.name,
+            name=payload.beneficiary_name,
             bank_account_number=payload.bank_account_number,
             bank_ifsc=payload.bank_ifsc,
             email=payload.email,
@@ -189,8 +190,8 @@ async def transfer_amount(amount:int= None, vendor: User = Depends(vendor_requir
     await vendor.fetch_related("vendor_profile")
     vendor_profile = vendor.vendor_profile
     
-    beneficiary = await Beneficiary.filter(vendor_id=vendor_profile.id).first()
-    if not vendor_account:
+    beneficiary = await BeneficiaryModel.filter(vendor_id=vendor_profile.id).first()
+    if not beneficiary:
         raise HTTPException(status_code=404, detail="Beneficiary account not found")
 
     url = f"{BASE_URL}/transfers"
