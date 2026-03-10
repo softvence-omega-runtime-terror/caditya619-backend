@@ -70,8 +70,6 @@ jobs:
             set -e
             cd /home/${{ secrets.VPS_USERNAME}}/caditya
 
-            export $(grep -v '^#' .env | xargs)
-
             export IMAGE_NAMESPACE=${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME || 'moynul2k3' }}
             export IMAGE_TAG=latest
             docker compose pull
