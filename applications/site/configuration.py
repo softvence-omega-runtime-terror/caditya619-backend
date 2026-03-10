@@ -43,6 +43,8 @@ def default_order_payment_rules() -> Dict[str, Any]:
             "grocery": {"mode": "fixed", "value": 0},
             "medicine": {"mode": "fixed", "value": 0},
         },
+        "cancelation_fee": {"mode": "fixed", "value": 0},
+        "refund_fee": {"mode": "fixed", "value": 0},
     }
 
 
