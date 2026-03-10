@@ -61,18 +61,35 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
         with:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USERNAME}}
           password: ${{ secrets.VPS_PASSWORD }}
+          envs: DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -e
             cd /home/${{ secrets.VPS_USERNAME}}/caditya
 
+            if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+              echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+            fi
+
+            if docker compose version >/dev/null 2>&1; then
+              COMPOSE_BIN="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_BIN="docker-compose"
+            else
+              echo "Docker Compose is not installed on the VPS." >&2
+              exit 1
+            fi
+
             export IMAGE_NAMESPACE=${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME || 'moynul2k3' }}
             export IMAGE_TAG=latest
-            docker compose pull
-            docker compose down --remove-orphans
-            docker compose up -d 
+            $COMPOSE_BIN -f compose.yml pull
+            $COMPOSE_BIN -f compose.yml down --remove-orphans
+            $COMPOSE_BIN -f compose.yml up -d
             docker system prune -f
