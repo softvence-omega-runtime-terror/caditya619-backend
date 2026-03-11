@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Dict, Optional, Tuple
+from tortoise.validators import MinValueValidator, MaxValueValidator
 
 from tortoise import Tortoise, fields, models
 from tortoise.expressions import Q
@@ -36,6 +37,13 @@ class PayoutStatus(str, Enum):
     FAILED = "failed"
 
 
+class AutoPayoutStatus(str, Enum):
+    MANUAL = "manual"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
 class Beneficiary(models.Model):
     id = fields.IntField(pk=True)
     vendor = fields.ForeignKeyField("models.VendorProfile", related_name="beneficiaries")
@@ -45,6 +53,8 @@ class Beneficiary(models.Model):
     bank_ifsc = fields.CharField(64)
     email = fields.CharField(255, null=True)
     phone = fields.CharField(64, null=True)
+    auto_payout_amount = fields.DecimalField(max_digits=16, decimal_places=2, default=500, validators=[MinValueValidator(500), MaxValueValidator(5000)])
+    auto_payout_status = fields.CharEnumField(AutoPayoutStatus, default=AutoPayoutStatus.MANUAL)
     is_active = fields.BooleanField(default=True)
 
 

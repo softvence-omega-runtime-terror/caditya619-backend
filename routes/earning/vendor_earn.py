@@ -2,13 +2,15 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 import requests
 import time
 import base64
-from pydantic import BaseModel
+from decimal import Decimal
+from pydantic import BaseModel, Field
 from typing import Optional
 from applications.user.models import User
 from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.auth import vendor_required
 from applications.earning.vendor_earning import (
+    AutoPayoutStatus,
     Beneficiary as BeneficiaryModel,
     get_or_create_vendor_account,
 )
@@ -150,6 +152,8 @@ class BeneficiaryPayload(BaseModel):
     bank_ifsc: str
     email: str
     phone: str
+    auto_payout_amount: Decimal = Field(default=Decimal("500"), ge=Decimal("500"), le=Decimal("5000"))
+    auto_payout_status: AutoPayoutStatus = AutoPayoutStatus.MANUAL
 
 
 @router.post("/add_beneficiary")
@@ -189,15 +193,43 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
     res = requests.post(url, json=body, headers=headers)
 
     if res.status_code in [200, 201]:
-        await BeneficiaryModel.create(
-            vendor_id=vendor_profile.id,
-            beneficiary_id=unique_beneficiary_id,
-            name=payload.beneficiary_name,
-            bank_account_number=payload.bank_account_number,
-            bank_ifsc=payload.bank_ifsc,
-            email=payload.email,
-            phone=payload.phone,
-        )
+        beneficiary = await BeneficiaryModel.filter(vendor_id=vendor_profile.id).first()
+
+        if beneficiary:
+            beneficiary.beneficiary_id = unique_beneficiary_id
+            beneficiary.name = payload.beneficiary_name
+            beneficiary.bank_account_number = payload.bank_account_number
+            beneficiary.bank_ifsc = payload.bank_ifsc
+            beneficiary.email = payload.email
+            beneficiary.phone = payload.phone
+            beneficiary.auto_payout_amount = payload.auto_payout_amount
+            beneficiary.auto_payout_status = payload.auto_payout_status
+            beneficiary.is_active = True
+            await beneficiary.save(
+                update_fields=[
+                    "beneficiary_id",
+                    "name",
+                    "bank_account_number",
+                    "bank_ifsc",
+                    "email",
+                    "phone",
+                    "auto_payout_amount",
+                    "auto_payout_status",
+                    "is_active",
+                ]
+            )
+        else:
+            await BeneficiaryModel.create(
+                vendor_id=vendor_profile.id,
+                beneficiary_id=unique_beneficiary_id,
+                name=payload.beneficiary_name,
+                bank_account_number=payload.bank_account_number,
+                bank_ifsc=payload.bank_ifsc,
+                email=payload.email,
+                phone=payload.phone,
+                auto_payout_amount=payload.auto_payout_amount,
+                auto_payout_status=payload.auto_payout_status,
+            )
     else:
         raise HTTPException(status_code=res.status_code, detail=res.json())
 
