@@ -8,11 +8,9 @@ from applications.user.models import User
 from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.auth import vendor_required
-from applications.customer.models import Order
 from applications.earning.vendor_earning import (
     Beneficiary as BeneficiaryModel,
     get_or_create_vendor_account,
-    sync_vendor_account_for_order,
 )
 
 
@@ -90,6 +88,30 @@ async def vendor_account(
         "available_for_withdraw": vendor_account.available_for_withdraw,
         "pending_balance": await vendor_account.pending_balance_calculation(),
         "updated_at": vendor_account.updated_at
+    }
+
+
+@router.post("/vendor_account/sync_now")
+async def vendor_account_sync_now(vendor: User = Depends(vendor_required)):
+    await vendor.fetch_related("vendor_profile")
+    vendor_profile = vendor.vendor_profile
+    if not vendor_profile:
+        raise HTTPException(status_code=404, detail="Vendor profile not found")
+
+    vendor_account = await get_or_create_vendor_account(vendor_profile)
+    now = datetime.now(timezone.utc)
+    summary = await vendor_account.refresh_balances(reference_time=now)
+
+    return {
+        "success": True,
+        "vendor_id": vendor_profile.id,
+        "total_earnings": summary["total_earnings"],
+        "matured_earnings": summary["matured_earnings"],
+        "release_window_earnings": summary["release_window_earnings"],
+        "total_withdrawn": summary["total_withdrawn"],
+        "available_for_withdraw": summary["available_for_withdraw"],
+        "synced_at": vendor_account.last_withdrawable_sync_at,
+        "updated_at": vendor_account.updated_at,
     }
 
 

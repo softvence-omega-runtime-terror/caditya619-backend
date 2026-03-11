@@ -101,9 +101,9 @@ Response:
 - `pending_balance`
 - `updated_at`
 
-### `POST /earning/vendor/vendor_account/orders/{order_id}/sync`
+### `POST /earning/vendor/vendor_account/sync_now`
 Purpose:
-- Recalculate and persist vendor balances from source-of-truth data for the order's vendor.
+- Force immediate recalculation and persistence of vendor balances for the logged-in vendor.
 
 ### `POST /earning/vendor/add_beneficiary`
 Purpose:
