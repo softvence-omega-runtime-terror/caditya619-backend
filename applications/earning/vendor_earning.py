@@ -333,7 +333,6 @@ async def get_or_create_vendor_account(vendor_profile) -> VendorAccount:
             await VendorAccount.exists()
         except OperationalError as exc:
             err = str(exc).lower()
-            # MySQL: (1146, "Table 'db.vendoraccount' doesn't exist")
             if "1146" in err and "vendoraccount" in err and "doesn't exist" in err:
                 await Tortoise.generate_schemas(safe=True)
             else:
@@ -346,31 +345,3 @@ async def get_or_create_vendor_account(vendor_profile) -> VendorAccount:
     return vendor_account
 
 
-async def sync_vendor_account_for_order(order_id: str):
-    order = await Order.get_or_none(id=order_id)
-    if not order:
-        return {"error": "Order not found"}
-    if not order.vendor_id:
-        return {"error": "Vendor is not assigned to this order"}
-
-    await order.fetch_related("vendor__vendor_profile")
-    vendor_user = getattr(order, "vendor", None)
-    vendor_profile = getattr(vendor_user, "vendor_profile", None)
-    if not vendor_profile:
-        return {"error": "Vendor profile not found"}
-
-    vendor_account = await get_or_create_vendor_account(vendor_profile)
-    summary = await vendor_account.refresh_balances()
-
-    return {
-        "success": True,
-        "order_id": order.id,
-        "vendor_user_id": order.vendor_id,
-        "vendor_profile_id": vendor_profile.id,
-        "total_earnings": vendor_account.total_earnings,
-        "matured_earnings": summary["matured_earnings"],
-        "total_withdrawn": summary["total_withdrawn"],
-        "available_for_withdraw": vendor_account.available_for_withdraw,
-        "release_window_earnings": summary["release_window_earnings"],
-        "synced_at": vendor_account.last_withdrawable_sync_at,
-    }
