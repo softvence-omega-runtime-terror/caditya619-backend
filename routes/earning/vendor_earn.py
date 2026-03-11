@@ -93,21 +93,6 @@ async def vendor_account(
     }
 
 
-@router.post("/vendor_account/orders/{order_id}/credit", deprecated=True)
-async def credit_order_to_vendor_account(
-    order_id: str,
-    vendor: User = Depends(vendor_required),
-):
-    order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found for this vendor")
-
-    result = await sync_vendor_account_for_order(order_id)
-    if "error" in result:
-        status_code = 404 if "not found" in result["error"].lower() else 400
-        raise HTTPException(status_code=status_code, detail=result["error"])
-    return result
-
 
 @router.post("/vendor_account/orders/{order_id}/sync")
 async def sync_order_vendor_account(
@@ -125,20 +110,6 @@ async def sync_order_vendor_account(
     return result
 
 
-@router.post("/vendor_account/orders/{order_id}/refund", deprecated=True)
-async def refund_order_from_vendor_account(
-    order_id: str,
-    vendor: User = Depends(vendor_required),
-):
-    order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found for this vendor")
-
-    result = await sync_vendor_account_for_order(order_id)
-    if "error" in result:
-        status_code = 404 if "not found" in result["error"].lower() else 400
-        raise HTTPException(status_code=status_code, detail=result["error"])
-    return result
 
 
 def generate_signature():

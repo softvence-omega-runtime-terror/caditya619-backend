@@ -105,14 +105,6 @@ Response:
 Purpose:
 - Recalculate and persist vendor balances from source-of-truth data for the order's vendor.
 
-### `POST /earning/vendor/vendor_account/orders/{order_id}/credit` (deprecated)
-Purpose:
-- Backward-compatible alias for `/sync`.
-
-### `POST /earning/vendor/vendor_account/orders/{order_id}/refund` (deprecated)
-Purpose:
-- Backward-compatible alias for `/sync`.
-
 ### `POST /earning/vendor/add_beneficiary`
 Purpose:
 - Add payout beneficiary bank details.

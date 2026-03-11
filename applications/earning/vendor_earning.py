@@ -374,13 +374,3 @@ async def sync_vendor_account_for_order(order_id: str):
         "release_window_earnings": summary["release_window_earnings"],
         "synced_at": vendor_account.last_withdrawable_sync_at,
     }
-
-
-async def add_money_to_vendor_account(order_id: str):
-    # Backward-compatible alias for historical call sites.
-    return await sync_vendor_account_for_order(order_id)
-
-
-async def refund_money_to_vendor_account(order_id: str):
-    # Backward-compatible alias for historical call sites.
-    return await sync_vendor_account_for_order(order_id)
