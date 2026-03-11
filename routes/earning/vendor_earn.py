@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 import requests
 import time
 import base64
+import re
+from uuid import uuid4
 from decimal import Decimal
 from pydantic import BaseModel, Field
 from typing import Optional
-from tortoise.exceptions import NoValuesFetched
 from applications.user.models import User
 from datetime import datetime, timedelta, timezone
 from app.config import settings
@@ -26,6 +27,43 @@ CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYOUT_SECRET
 PUBLIC_KEY = settings.CASHFREE_PUBLIC_KEY
 
 BASE_URL = "https://sandbox.cashfree.com/payout"
+
+
+def _is_cashfree_beneficiary_id(value: Optional[str]) -> bool:
+    return bool(value) and str(value).isalnum()
+
+
+def _sanitize_transfer_remarks(value: Optional[str]) -> str:
+    # Keep only alphanumeric + spaces, then normalize spacing.
+    cleaned = re.sub(r"[^A-Za-z0-9 ]+", " ", (value or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return "PAYOUT"
+    return cleaned[:70]
+
+
+def _generate_unique_cashfree_id(prefix: str) -> str:
+    # Alphanumeric and collision-resistant for rapid retries/concurrency.
+    return f"{prefix}{int(time.time() * 1000)}{uuid4().hex[:8].upper()}"
+
+
+def _cashfree_headers() -> dict:
+    signature, timestamp = generate_signature()
+    return {
+        "x-api-version": "2024-01-01",
+        "x-client-id": CLIENT_ID,
+        "x-client-secret": CLIENT_SECRET,
+        "x-cf-signature": signature,
+        "x-cf-timestamp": timestamp,
+        "Content-Type": "application/json",
+    }
+
+
+def _safe_json(response: requests.Response):
+    try:
+        return response.json()
+    except ValueError:
+        return {"message": response.text}
 
 # class WithdrawRequest(BaseModel):
 #     vendor: VendorProfile = Depends(vendor_required)
@@ -161,23 +199,13 @@ class BeneficiaryPayload(BaseModel):
 
 @router.post("/add_beneficiary")
 async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(vendor_required)):
-    signature, timestamp = generate_signature()
     await vendor.fetch_related("vendor_profile")
     vendor_profile = vendor.vendor_profile
     if not vendor_profile:
         raise HTTPException(status_code=404, detail="Vendor profile not found")
 
     url = f"{BASE_URL}/beneficiary"
-    unique_beneficiary_id = f"QU{vendor.id}{int(time.time())}"
-
-    headers = {
-        "x-api-version": "2024-01-01",
-        "x-client-id": CLIENT_ID,
-        "x-client-secret": CLIENT_SECRET,
-        "x-cf-signature": signature,
-        "x-cf-timestamp": timestamp,
-        "Content-Type": "application/json",
-    }
+    unique_beneficiary_id = _generate_unique_cashfree_id(f"QB{vendor.id}")
 
     body = {
         "beneficiary_id": unique_beneficiary_id,
@@ -197,7 +225,7 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
         requests.post,
         url,
         json=body,
-        headers=headers,
+        headers=_cashfree_headers(),
         timeout=25,
     )
 
@@ -240,7 +268,7 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
                 auto_payout_status=payload.auto_payout_status,
             )
     else:
-        raise HTTPException(status_code=res.status_code, detail=res.json())
+        raise HTTPException(status_code=res.status_code, detail=_safe_json(res))
 
     return res.json()
 
@@ -275,39 +303,45 @@ async def get_beneficiary(vendor: User = Depends(vendor_required)):
 async def withdraw_amount(
     amount: Optional[int] = Query(None, ge=1),
     vendor: User = Depends(vendor_required),
-    transfer_id: Optional[str] = None,
+    transfer_id: Optional[str] = Query(default=None, include_in_schema=False),
 ):
     if amount is None:
         raise HTTPException(status_code=400, detail="amount is required")
 
-    signature, timestamp = generate_signature()
-    try:
-        vendor_profile = vendor.vendor_profile
-    except NoValuesFetched:
-        vendor_profile = None
-
-    if vendor_profile is None:
-        await vendor.fetch_related("vendor_profile")
-        vendor_profile = vendor.vendor_profile
+    await vendor.fetch_related("vendor_profile")
+    vendor_profile = vendor.vendor_profile
     
     if not vendor_profile:
         raise HTTPException(status_code=404, detail="Vendor profile not found")
 
-    beneficiary = await BeneficiaryModel.filter(vendor_id=vendor_profile.id).first()
+    beneficiaries = (
+        await BeneficiaryModel.filter(vendor_id=vendor_profile.id, is_active=True)
+        .order_by("-id")
+        .all()
+    )
+    beneficiary = next(
+        (
+            b
+            for b in beneficiaries
+            if _is_cashfree_beneficiary_id(b.beneficiary_id) and b.email and b.phone
+        ),
+        None,
+    )
     if not beneficiary:
-        raise HTTPException(status_code=404, detail="Beneficiary account not found")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No valid beneficiary found. Add/update beneficiary with an alphanumeric "
+                "beneficiary_id and valid email/phone."
+            ),
+        )
 
     url = f"{BASE_URL}/transfers"
-    unique_transfer_id = transfer_id or f"QU{vendor.id}{int(time.time())}"
-
-    headers = {
-        "x-api-version": "2024-01-01",
-        "x-client-id": CLIENT_ID,
-        "x-client-secret": CLIENT_SECRET,
-        "x-cf-signature": signature,
-        "x-cf-timestamp": timestamp,
-        "Content-Type": "application/json",
-    }
+    unique_transfer_id = (
+        str(transfer_id)
+        if transfer_id and str(transfer_id).isalnum()
+        else _generate_unique_cashfree_id(f"QT{vendor.id}")
+    )
 
     body = {
         "transfer_id": unique_transfer_id,
@@ -319,20 +353,59 @@ async def withdraw_amount(
         },
         "transfer_mode": "banktransfer",
         "currency": "INR",
-        "transfer_remarks": beneficiary.name
+        "transfer_remarks": _sanitize_transfer_remarks(beneficiary.name)
     }
     res = await asyncio.to_thread(
         requests.post,
         url,
         json=body,
-        headers=headers,
+        headers=_cashfree_headers(),
         timeout=25,
     )
 
-    if res.status_code not in [200, 201]:
-        raise HTTPException(status_code=res.status_code, detail=res.json())
+    if res.status_code in [200, 201]:
+        response_payload = _safe_json(res)
+        response_payload["selected_beneficiary"] = {
+            "id": beneficiary.id,
+            "vendor_id": vendor_profile.id,
+            "beneficiary_id": beneficiary.beneficiary_id,
+            "beneficiary_name": beneficiary.name,
+            "bank_ifsc": beneficiary.bank_ifsc,
+            "bank_account_last4": beneficiary.bank_account_number[-4:] if beneficiary.bank_account_number else None,
+            "email": beneficiary.email,
+            "phone": beneficiary.phone,
+            "is_active": beneficiary.is_active,
+        }
+        return response_payload
 
-    return res.json()
+    error_payload = _safe_json(res)
+    error_code = str(error_payload.get("code", "")).lower()
+
+    if error_code == "beneficiary_not_found":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "Beneficiary is not synced with Cashfree. Re-add beneficiary via "
+                    "/earning/vendor/add_beneficiary, then retry withdraw."
+                ),
+                "code": error_code,
+                "cashfree": error_payload,
+                "selected_beneficiary": {
+                    "id": beneficiary.id,
+                    "vendor_id": vendor_profile.id,
+                    "beneficiary_id": beneficiary.beneficiary_id,
+                    "beneficiary_name": beneficiary.name,
+                    "bank_ifsc": beneficiary.bank_ifsc,
+                    "bank_account_last4": beneficiary.bank_account_number[-4:] if beneficiary.bank_account_number else None,
+                    "email": beneficiary.email,
+                    "phone": beneficiary.phone,
+                    "is_active": beneficiary.is_active,
+                },
+            },
+        )
+
+    raise HTTPException(status_code=res.status_code, detail=error_payload)
 
 
 @router.get("/payout_transactions")

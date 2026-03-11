@@ -17,6 +17,7 @@ from app.dummy.categories import create_test_categories
 from app.dummy.sub_categories import create_test_subcategories
 from app.dummy.items import create_dummy_items
 from app.dummy.orders import create_dummy_orders_for_all_vendors
+from app.dummy.beneficiaries import create_dummy_beneficiaries_for_all_vendors
 
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
@@ -33,6 +34,7 @@ async def lifespan(routerAPI: FastAPI):
         await create_test_categories()
         await create_test_subcategories()
         await create_dummy_items()
+        await create_dummy_beneficiaries_for_all_vendors()
         await create_dummy_orders_for_all_vendors(per_vendor=20)
         
     
