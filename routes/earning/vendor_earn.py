@@ -3,20 +3,18 @@ import requests
 import time
 import base64
 from pydantic import BaseModel
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import padding
+from typing import Optional
 from applications.user.models import User
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.auth import vendor_required
-from app.utils.generate_pdf import generate_payout_pdf
-from app.utils.cashfree_payout import call_cashfree_transfer
+from applications.customer.models import Order
 from applications.earning.vendor_earning import (
     Beneficiary as BeneficiaryModel,
-    VendorEarning,
     PayoutTransaction,
-    PayoutStatus,
-    get_or_create_vendor_earning,
+    get_or_create_vendor_account,
+    add_money_to_vendor_account,
+    refund_money_to_vendor_account,
 )
 
 
@@ -40,24 +38,11 @@ class DummyTransaction:
         self.status = "SUCCESS"
         self.created_at = datetime.now()
 
-@router.get("/generate-pdf")
-async def generate_pdf(vendor: User = Depends(vendor_required)):
-    await vendor.fetch_related("vendor_profile")
-    vendor_profile = vendor.vendor_profile
-    transaction = await PayoutTransaction.filter(vendor_id=vendor_profile.id).first()
-    if not transaction:
-        return {"error": "Transaction not found"}
-    file_url = await generate_payout_pdf(transaction)
-
-    return {
-        "message": "PDF generated successfully",
-        "invoice_url": file_url,
-    }
 
 @router.get("/vendor_account")
 async def vendor_account(
     vendor: User = Depends(vendor_required),
-    period: str = Query(
+    period: Optional[str] = Query(
         None,
         description="Predefined period to filter earnings: 'this_month', 'this_week', 'this_year'"
     )
@@ -68,10 +53,16 @@ async def vendor_account(
     if not vendor_profile:
         return {"error": "Vendor profile not found"}
 
-    vendor_earning = await get_or_create_vendor_earning(vendor_profile)
-    await vendor_earning.refresh_balances()
-        
-    now = datetime.now()
+    vendor_account = await get_or_create_vendor_account(vendor_profile)
+    now = datetime.now(timezone.utc)
+    last_sync = vendor_account.last_withdrawable_sync_at
+    if last_sync is not None and last_sync.tzinfo is None:
+        last_sync = last_sync.replace(tzinfo=timezone.utc)
+
+    # Apply withdrawal balance release in 7-day batches.
+    if last_sync is None or last_sync <= now - timedelta(days=7):
+        await vendor_account.refresh_balances(reference_time=now)
+
     if period == "this_month":
         start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         end_date = now
@@ -83,32 +74,64 @@ async def vendor_account(
         start_date = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         end_date = now
     else:
-        start_date = datetime(2000, 1, 1)
+        start_date = datetime(2000, 1, 1, tzinfo=timezone.utc)
         end_date = now
 
-    start_date = datetime(2000, 1, 1)
-    end_date = datetime.now()
-    summery = await vendor_earning.earnings_calculation(start_date, end_date)
-    total_pending = summery["total_earnings"] - summery["total_withdrawn"]
+    summary = await vendor_account.earnings_calculation(start_date, end_date)
+    total_pending = summary["total_earnings"] - summary["total_withdrawn"]
 
     return {
         "vendor_id": vendor_profile.id,
         # Earning Page
-        "total_earnings": summery["total_earnings"],
-        "average_earnings": summery["average_earnings"],
-        "total_orders": summery["total_orders"],
-        "total_withdraw": summery["total_withdrawn"],
+        "total_earnings": summary["total_earnings"],
+        "average_earnings": summary["average_earnings"],
+        "total_orders": summary["total_orders"],
+        "total_withdraw": summary["total_withdrawn"],
         "total_pending": total_pending,
         
-        "available_for_withdraw": vendor_earning.available_for_withdraw,
-        "pending_balance": await vendor_earning.pending_balance_calculation(),
-        "commission_earned": vendor_earning.commission_earned,
-        "platform_cost": vendor_earning.platform_cost,
-        "updated_at": vendor_earning.updated_at
+        "available_for_withdraw": vendor_account.available_for_withdraw,
+        "pending_balance": await vendor_account.pending_balance_calculation(),
+        "updated_at": vendor_account.updated_at
     }
-    
+
+
+@router.post("/vendor_account/orders/{order_id}/credit")
+async def credit_order_to_vendor_account(
+    order_id: str,
+    vendor: User = Depends(vendor_required),
+):
+    order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found for this vendor")
+
+    result = await add_money_to_vendor_account(order_id)
+    if "error" in result:
+        status_code = 404 if "not found" in result["error"].lower() else 400
+        raise HTTPException(status_code=status_code, detail=result["error"])
+    return result
+
+
+@router.post("/vendor_account/orders/{order_id}/refund")
+async def refund_order_from_vendor_account(
+    order_id: str,
+    vendor: User = Depends(vendor_required),
+):
+    order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found for this vendor")
+
+    result = await refund_money_to_vendor_account(order_id)
+    if "error" in result:
+        status_code = 404 if "not found" in result["error"].lower() else 400
+        raise HTTPException(status_code=status_code, detail=result["error"])
+    return result
+
 
 def generate_signature():
+    # Keep crypto import lazy so this module can load even if payout dependencies are missing.
+    from cryptography.hazmat.primitives import serialization, hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+
     timestamp = int(time.time())
     sign_string = f"{CLIENT_ID}.{timestamp}".encode()
 
@@ -139,6 +162,10 @@ class BeneficiaryPayload(BaseModel):
 @router.post("/add_beneficiary")
 async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(vendor_required)):
     signature, timestamp = generate_signature()
+    await vendor.fetch_related("vendor_profile")
+    vendor_profile = vendor.vendor_profile
+    if not vendor_profile:
+        raise HTTPException(status_code=404, detail="Vendor profile not found")
 
     url = f"{BASE_URL}/beneficiary"
     unique_beneficiary_id = f"QU{vendor.id}{int(time.time())}"
@@ -170,7 +197,7 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
 
     if res.status_code in [200, 201]:
         await BeneficiaryModel.create(
-            vendor_id=vendor.id,
+            vendor_id=vendor_profile.id,
             beneficiary_id=unique_beneficiary_id,
             name=payload.beneficiary_name,
             bank_account_number=payload.bank_account_number,
@@ -185,7 +212,13 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
 
 
 @router.post("/transfer")
-async def transfer_amount(amount:int= None, vendor: User = Depends(vendor_required)):
+async def transfer_amount(
+    amount: Optional[int] = Query(None, ge=1),
+    vendor: User = Depends(vendor_required),
+):
+    if amount is None:
+        raise HTTPException(status_code=400, detail="amount is required")
+
     signature, timestamp = generate_signature()
     await vendor.fetch_related("vendor_profile")
     vendor_profile = vendor.vendor_profile
@@ -224,7 +257,6 @@ async def transfer_amount(amount:int= None, vendor: User = Depends(vendor_requir
         raise HTTPException(status_code=res.status_code, detail=res.json())
 
     return res.json()
-
 
 
 
