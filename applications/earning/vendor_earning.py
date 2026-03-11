@@ -346,13 +346,16 @@ async def get_or_create_vendor_account(vendor_profile) -> VendorAccount:
     return vendor_account
 
 
-async def add_money_to_vendor_account(order_id: str):
+async def sync_vendor_account_for_order(order_id: str):
     order = await Order.get_or_none(id=order_id)
     if not order:
         return {"error": "Order not found"}
+    if not order.vendor_id:
+        return {"error": "Vendor is not assigned to this order"}
 
     await order.fetch_related("vendor__vendor_profile")
-    vendor_profile = getattr(order.vendor, "vendor_profile", None)
+    vendor_user = getattr(order, "vendor", None)
+    vendor_profile = getattr(vendor_user, "vendor_profile", None)
     if not vendor_profile:
         return {"error": "Vendor profile not found"}
 
@@ -361,28 +364,23 @@ async def add_money_to_vendor_account(order_id: str):
 
     return {
         "success": True,
+        "order_id": order.id,
+        "vendor_user_id": order.vendor_id,
+        "vendor_profile_id": vendor_profile.id,
         "total_earnings": vendor_account.total_earnings,
+        "matured_earnings": summary["matured_earnings"],
+        "total_withdrawn": summary["total_withdrawn"],
         "available_for_withdraw": vendor_account.available_for_withdraw,
         "release_window_earnings": summary["release_window_earnings"],
+        "synced_at": vendor_account.last_withdrawable_sync_at,
     }
+
+
+async def add_money_to_vendor_account(order_id: str):
+    # Backward-compatible alias for historical call sites.
+    return await sync_vendor_account_for_order(order_id)
 
 
 async def refund_money_to_vendor_account(order_id: str):
-    order = await Order.get_or_none(id=order_id)
-    if not order:
-        return {"error": "Order not found"}
-
-    await order.fetch_related("vendor__vendor_profile")
-    vendor_profile = getattr(order.vendor, "vendor_profile", None)
-    if not vendor_profile:
-        return {"error": "Vendor profile not found"}
-
-    vendor_account = await get_or_create_vendor_account(vendor_profile)
-    summary = await vendor_account.refresh_balances()
-
-    return {
-        "success": True,
-        "total_earnings": vendor_account.total_earnings,
-        "available_for_withdraw": vendor_account.available_for_withdraw,
-        "release_window_earnings": summary["release_window_earnings"],
-    }
+    # Backward-compatible alias for historical call sites.
+    return await sync_vendor_account_for_order(order_id)

@@ -7,6 +7,7 @@ Code references:
 - Model and calculation logic: `applications/earning/vendor_earning.py`
 - API routes: `routes/earning/vendor_earn.py`
 - Background sync task: `tasks/vendor_earning_tasks.py`
+- Sync endpoint details: `docs/vendor-account-sync.md`
 
 
 ## Data Model
@@ -100,13 +101,17 @@ Response:
 - `pending_balance`
 - `updated_at`
 
-### `POST /earning/vendor/vendor_account/orders/{order_id}/credit`
+### `POST /earning/vendor/vendor_account/orders/{order_id}/sync`
 Purpose:
-- Recalculate vendor account after a credit-worthy order event.
+- Recalculate and persist vendor balances from source-of-truth data for the order's vendor.
 
-### `POST /earning/vendor/vendor_account/orders/{order_id}/refund`
+### `POST /earning/vendor/vendor_account/orders/{order_id}/credit` (deprecated)
 Purpose:
-- Recalculate vendor account after a refund-worthy order event.
+- Backward-compatible alias for `/sync`.
+
+### `POST /earning/vendor/vendor_account/orders/{order_id}/refund` (deprecated)
+Purpose:
+- Backward-compatible alias for `/sync`.
 
 ### `POST /earning/vendor/add_beneficiary`
 Purpose:
@@ -145,4 +150,3 @@ Interpretation:
 - Field name is intentionally `total_withdrow` in DB/model for compatibility.
 - `available_for_withdraw` is stored and updated on refresh cycles; it is not recomputed on every DB read.
 - Payout totals only include `PayoutTransaction` rows with status `success`.
-

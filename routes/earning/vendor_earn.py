@@ -11,10 +11,8 @@ from app.auth import vendor_required
 from applications.customer.models import Order
 from applications.earning.vendor_earning import (
     Beneficiary as BeneficiaryModel,
-    PayoutTransaction,
     get_or_create_vendor_account,
-    add_money_to_vendor_account,
-    refund_money_to_vendor_account,
+    sync_vendor_account_for_order,
 )
 
 
@@ -95,7 +93,7 @@ async def vendor_account(
     }
 
 
-@router.post("/vendor_account/orders/{order_id}/credit")
+@router.post("/vendor_account/orders/{order_id}/credit", deprecated=True)
 async def credit_order_to_vendor_account(
     order_id: str,
     vendor: User = Depends(vendor_required),
@@ -104,14 +102,30 @@ async def credit_order_to_vendor_account(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found for this vendor")
 
-    result = await add_money_to_vendor_account(order_id)
+    result = await sync_vendor_account_for_order(order_id)
     if "error" in result:
         status_code = 404 if "not found" in result["error"].lower() else 400
         raise HTTPException(status_code=status_code, detail=result["error"])
     return result
 
 
-@router.post("/vendor_account/orders/{order_id}/refund")
+@router.post("/vendor_account/orders/{order_id}/sync")
+async def sync_order_vendor_account(
+    order_id: str,
+    vendor: User = Depends(vendor_required),
+):
+    order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found for this vendor")
+
+    result = await sync_vendor_account_for_order(order_id)
+    if "error" in result:
+        status_code = 404 if "not found" in result["error"].lower() else 400
+        raise HTTPException(status_code=status_code, detail=result["error"])
+    return result
+
+
+@router.post("/vendor_account/orders/{order_id}/refund", deprecated=True)
 async def refund_order_from_vendor_account(
     order_id: str,
     vendor: User = Depends(vendor_required),
@@ -120,7 +134,7 @@ async def refund_order_from_vendor_account(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found for this vendor")
 
-    result = await refund_money_to_vendor_account(order_id)
+    result = await sync_vendor_account_for_order(order_id)
     if "error" in result:
         status_code = 404 if "not found" in result["error"].lower() else 400
         raise HTTPException(status_code=status_code, detail=result["error"])
@@ -257,6 +271,3 @@ async def transfer_amount(
         raise HTTPException(status_code=res.status_code, detail=res.json())
 
     return res.json()
-
-
-
