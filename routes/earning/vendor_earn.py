@@ -204,8 +204,8 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
     return res.json()
 
 
-@router.post("/transfer")
-async def transfer_amount(
+@router.post("/withdraw")
+async def withdraw_amount(
     amount: Optional[int] = Query(None, ge=1),
     vendor: User = Depends(vendor_required),
 ):
@@ -250,3 +250,4 @@ async def transfer_amount(
         raise HTTPException(status_code=res.status_code, detail=res.json())
 
     return res.json()
+

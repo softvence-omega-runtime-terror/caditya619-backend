@@ -109,9 +109,13 @@ Purpose:
 Purpose:
 - Add payout beneficiary bank details.
 
-### `POST /earning/vendor/transfer`
+### `POST /earning/vendor/withdraw`
 Purpose:
-- Request transfer to beneficiary account.
+- Request withdrawal transfer to beneficiary account.
+
+### `POST /earning/vendor/transfer` (deprecated)
+Purpose:
+- Backward-compatible alias for `/withdraw`.
 
 
 ## Example Interpretation
