@@ -70,6 +70,20 @@ Current decorator in code:
 
 If you want true weekly release behavior, switch back to weekly schedule in task decorator.
 
+### 3) Scheduled auto payout task
+Task iterates active beneficiaries and triggers payout when all conditions match:
+- `auto_payout_status` is `weekly`, `monthly`, or `yearly` (not `manual`)
+- Vendor has enough `available_for_withdraw` to cover `auto_payout_amount`
+- No successful auto payout exists for the same beneficiary in the current period
+
+Current decorator in code:
+- `@every(hour=1, minute=15)` (daily run)
+
+Period windows:
+- `weekly`: current week (Monday 00:00 UTC onward)
+- `monthly`: current month (1st day 00:00 UTC onward)
+- `yearly`: current year (Jan 1st 00:00 UTC onward)
+
 
 ## Auto-Recovery for Missing Table
 If MySQL raises:
