@@ -41,7 +41,8 @@ async def create_dummy_beneficiaries_for_all_vendors():
 
     for vendor in vendors:
         for idx, case in enumerate(BENEFICIARY_TEST_CASES, start=1):
-            beneficiary_id = f"DUMMY-V{vendor.id}-{idx:03d}"
+            beneficiary_id = f"DUMMYV{vendor.id}{idx:03d}"
+            legacy_beneficiary_id = f"DUMMY-V{vendor.id}-{idx:03d}"
             expected_tag = case["expected"][:120]
             defaults = {
                 "name": f"Dummy {idx:02d} - {expected_tag}",
@@ -52,17 +53,25 @@ async def create_dummy_beneficiaries_for_all_vendors():
                 "is_active": idx == 1,
             }
 
-            beneficiary, created = await Beneficiary.get_or_create(
+            beneficiary = await Beneficiary.filter(
                 vendor_id=vendor.id,
-                beneficiary_id=beneficiary_id,
-                defaults=defaults,
-            )
+                beneficiary_id__in=[beneficiary_id, legacy_beneficiary_id],
+            ).first()
 
-            if created:
+            if beneficiary is None:
+                await Beneficiary.create(
+                    vendor_id=vendor.id,
+                    beneficiary_id=beneficiary_id,
+                    **defaults,
+                )
                 created_count += 1
                 continue
 
             changed_fields = []
+            if beneficiary.beneficiary_id != beneficiary_id:
+                beneficiary.beneficiary_id = beneficiary_id
+                changed_fields.append("beneficiary_id")
+
             for field_name, value in defaults.items():
                 if getattr(beneficiary, field_name) != value:
                     setattr(beneficiary, field_name, value)

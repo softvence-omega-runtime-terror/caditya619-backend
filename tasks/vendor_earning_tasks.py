@@ -56,6 +56,10 @@ def _build_transfer_id(beneficiary: Beneficiary, status: AutoPayoutStatus) -> st
     )
 
 
+def _is_cashfree_beneficiary_id(value) -> bool:
+    return bool(value) and str(value).isalnum()
+
+
 # @every(seconds=10)
 @every(day_of_week="mon", hour=1, minute=1)
 def sync_vendor_withdrawable_balances_weekly():
@@ -161,10 +165,14 @@ def run_vendor_auto_payouts():
                 skipped_count += 1
                 continue
 
-            if not beneficiary.beneficiary_id or not beneficiary.email or not beneficiary.phone:
+            if (
+                not _is_cashfree_beneficiary_id(beneficiary.beneficiary_id)
+                or not beneficiary.email
+                or not beneficiary.phone
+            ):
                 skipped_count += 1
                 logger.warning(
-                    "Skipping auto payout. Missing beneficiary contact details for beneficiary=%s vendor=%s",
+                    "Skipping auto payout. Invalid beneficiary details for beneficiary=%s vendor=%s",
                     beneficiary.id,
                     beneficiary.vendor_id,
                 )
@@ -310,11 +318,6 @@ def run_vendor_auto_payouts():
             async with process_semaphore:
                 vendor_profile = profiles_by_vendor_id[vendor_id]
                 vendor_user = vendor_profile.user
-                try:
-                    vendor_user.vendor_profile = vendor_profile
-                except Exception:
-                    # Relation assignment is a best-effort cache optimization.
-                    pass
                 vendor_account = vendor_accounts_by_id[vendor_id]
                 available_balance = available_balance_by_vendor_id[vendor_id]
 

@@ -56,3 +56,4 @@ Thumbs.db
 aerich.ini
 aerich/
 .gitignore
+temp_interactive_push.bat
