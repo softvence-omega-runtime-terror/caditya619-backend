@@ -109,9 +109,19 @@ Purpose:
 Purpose:
 - Add payout beneficiary bank details.
 
+### `GET /earning/vendor/beneficiary`
+Purpose:
+- Get the logged-in vendor beneficiary details (bank + auto payout settings).
+
 ### `POST /earning/vendor/withdraw`
 Purpose:
 - Request withdrawal transfer to beneficiary account.
+
+### `GET /earning/vendor/payout_transactions`
+Purpose:
+- List payout transactions with role-based scope:
+  - Admin (`is_superuser` or `is_staff`) gets all vendors' transactions.
+  - Vendor gets only their own transactions.
 
 ### `POST /earning/vendor/transfer` (deprecated)
 Purpose:

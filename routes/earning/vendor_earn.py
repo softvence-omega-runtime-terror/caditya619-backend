@@ -8,10 +8,11 @@ from typing import Optional
 from applications.user.models import User
 from datetime import datetime, timedelta, timezone
 from app.config import settings
-from app.auth import vendor_required
+from app.auth import login_required, vendor_required
 from applications.earning.vendor_earning import (
     AutoPayoutStatus,
     Beneficiary as BeneficiaryModel,
+    PayoutTransaction as PayoutTransactionModel,
     get_or_create_vendor_account,
 )
 
@@ -236,6 +237,32 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
     return res.json()
 
 
+@router.get("/beneficiary")
+async def get_beneficiary(vendor: User = Depends(vendor_required)):
+    await vendor.fetch_related("vendor_profile")
+    vendor_profile = vendor.vendor_profile
+    if not vendor_profile:
+        raise HTTPException(status_code=404, detail="Vendor profile not found")
+
+    beneficiary = await BeneficiaryModel.filter(vendor_id=vendor_profile.id).first()
+    if not beneficiary:
+        raise HTTPException(status_code=404, detail="Beneficiary account not found")
+
+    return {
+        "id": beneficiary.id,
+        "vendor_id": vendor_profile.id,
+        "beneficiary_id": beneficiary.beneficiary_id,
+        "beneficiary_name": beneficiary.name,
+        "bank_account_number": beneficiary.bank_account_number,
+        "bank_ifsc": beneficiary.bank_ifsc,
+        "email": beneficiary.email,
+        "phone": beneficiary.phone,
+        "auto_payout_amount": beneficiary.auto_payout_amount,
+        "auto_payout_status": beneficiary.auto_payout_status,
+        "is_active": beneficiary.is_active,
+    }
+
+
 @router.post("/withdraw")
 async def withdraw_amount(
     amount: Optional[int] = Query(None, ge=1),
@@ -282,4 +309,43 @@ async def withdraw_amount(
         raise HTTPException(status_code=res.status_code, detail=res.json())
 
     return res.json()
+
+
+@router.get("/payout_transactions")
+async def payout_transactions(current_user: User = Depends(login_required)):
+    fields = [
+        "id",
+        "vendor_id",
+        "beneficiary_id",
+        "transfer_id",
+        "amount",
+        "amount_in_paise",
+        "status",
+        "invoice",
+        "created_at",
+        "updated_at",
+    ]
+
+    if current_user.is_superuser or (current_user.is_staff and current_user.has_permission("view_payouttransaction")):
+        transactions = (
+            await PayoutTransactionModel.all()
+            .order_by("-created_at")
+            .values(*fields)
+        )
+        return {"scope": "admin", "count": len(transactions), "transactions": transactions}
+
+    if current_user.is_vendor:
+        await current_user.fetch_related("vendor_profile")
+        vendor_profile = current_user.vendor_profile
+        if not vendor_profile:
+            raise HTTPException(status_code=404, detail="Vendor profile not found")
+
+        transactions = (
+            await PayoutTransactionModel.filter(vendor_id=vendor_profile.id)
+            .order_by("-created_at")
+            .values(*fields)
+        )
+        return {"scope": "vendor", "count": len(transactions), "transactions": transactions}
+
+    raise HTTPException(status_code=403, detail="Admin or vendor access required")
 
