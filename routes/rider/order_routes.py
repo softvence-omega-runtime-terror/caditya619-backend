@@ -16,7 +16,6 @@ from applications.customer.models import Order, OrderStatus, OrderItem, Delivery
 from applications.items.models import Item
 from applications.user.vendor import VendorProfile
 from applications.user.customer import CustomerProfile
-from applications.earning.vendor_earning import add_money_to_vendor_account
 from tortoise.contrib.pydantic import pydantic_model_creator
 from app.token import get_current_user
 from app.utils.geo import haversine, bbox_for_radius, estimate_eta

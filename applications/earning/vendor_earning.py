@@ -1,16 +1,21 @@
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
+from tortoise.validators import MinValueValidator, MaxValueValidator
 
-from tortoise import fields, models
+from tortoise import Tortoise, fields, models
 from tortoise.expressions import Q
+from tortoise.exceptions import OperationalError
 from tortoise.functions import Avg, Count, Sum
 
 from applications.customer.models import Order, OrderStatus
 
 
 ZERO_DECIMAL = Decimal("0.00")
+HUNDRED_DECIMAL = Decimal("100")
+MONEY_QUANTIZER = Decimal("0.01")
+_VENDOR_ACCOUNT_SCHEMA_CHECKED = False
 
 
 def _to_decimal(value) -> Decimal:
@@ -21,11 +26,22 @@ def _to_decimal(value) -> Decimal:
     return Decimal(str(value))
 
 
+def _to_money(value) -> Decimal:
+    return _to_decimal(value).quantize(MONEY_QUANTIZER, rounding=ROUND_HALF_UP)
+
+
 class PayoutStatus(str, Enum):
     QUEUED = "queued"
     PROCESSING = "processing"
     SUCCESS = "success"
     FAILED = "failed"
+
+
+class AutoPayoutStatus(str, Enum):
+    MANUAL = "manual"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
 
 
 class Beneficiary(models.Model):
@@ -37,6 +53,8 @@ class Beneficiary(models.Model):
     bank_ifsc = fields.CharField(64)
     email = fields.CharField(255, null=True)
     phone = fields.CharField(64, null=True)
+    auto_payout_amount = fields.DecimalField(max_digits=16, decimal_places=2, default=500, validators=[MinValueValidator(500), MaxValueValidator(5000)])
+    auto_payout_status = fields.CharEnumField(AutoPayoutStatus, default=AutoPayoutStatus.MANUAL)
     is_active = fields.BooleanField(default=True)
 
 
@@ -56,9 +74,12 @@ class PayoutTransaction(models.Model):
     async def save(self, *args, **kwargs):
         is_new = self.id is None
         if self.amount_in_paise is None:
-            self.amount_in_paise = int(self.amount * 100)
+            self.amount_in_paise = int(_to_money(self.amount) * 100)
         await super().save(*args, **kwargs)
-        if is_new:
+        status_value = (
+            self.status.value if isinstance(self.status, PayoutStatus) else str(self.status).lower()
+        )
+        if is_new and status_value == PayoutStatus.SUCCESS.value:
             from app.utils.generate_pdf import generate_payout_pdf
 
             file_url = await generate_payout_pdf(self)
@@ -66,38 +87,33 @@ class PayoutTransaction(models.Model):
             await super().save(update_fields=["invoice"])
 
 
-class VendorEarning(models.Model):
+class VendorAccount(models.Model):
     id = fields.IntField(pk=True)
     vendor = fields.OneToOneField("models.VendorProfile", related_name="account")
     total_earnings = fields.DecimalField(max_digits=16, decimal_places=2, default=0)
     total_withdrow = fields.DecimalField(max_digits=16, decimal_places=2, default=0)
-    commission_earned = fields.DecimalField(max_digits=16, decimal_places=2, default=0)
-    platform_cost = fields.DecimalField(max_digits=16, decimal_places=2, default=0)
     available_for_withdraw = fields.DecimalField(max_digits=16, decimal_places=2, default=0)
     last_withdrawable_sync_at = fields.DatetimeField(null=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
-        # Keep table name unchanged to preserve existing data and compatibility.
         table = "vendoraccount"
 
     @property
     def pending_balance(self) -> Decimal:
-        return (
-            _to_decimal(self.total_earnings)
-            - _to_decimal(self.total_withdrow)
-            - _to_decimal(self.commission_earned)
-            - _to_decimal(self.platform_cost)
-        )
+        # total_earnings already excludes commission
+        return _to_money(_to_decimal(self.total_earnings) - _to_decimal(self.total_withdrow))
 
     @property
     def withdrawable_balance(self) -> Decimal:
-        return max(ZERO_DECIMAL, _to_decimal(self.available_for_withdraw))
+        return max(ZERO_DECIMAL, _to_money(self.available_for_withdraw))
 
     @staticmethod
     def _normalize_reference_time(reference_time: Optional[datetime]) -> datetime:
         if reference_time is None:
             return datetime.now(timezone.utc)
+        if reference_time.tzinfo is None:
+            return reference_time.replace(tzinfo=timezone.utc)
         return reference_time
 
     @staticmethod
@@ -128,6 +144,16 @@ class VendorEarning(models.Model):
         await self.fetch_related("vendor")
         return self.vendor.user_id
 
+    async def _commission_percent(self) -> Decimal:
+        await self.fetch_related("vendor")
+        raw_value = getattr(self.vendor, "commission", ZERO_DECIMAL)
+        percent = _to_decimal(raw_value)
+        if percent < ZERO_DECIMAL:
+            return ZERO_DECIMAL
+        if percent > HUNDRED_DECIMAL:
+            return HUNDRED_DECIMAL
+        return percent
+
     async def _sum_delivered_orders(self, extra_filter: Optional[Q] = None) -> Decimal:
         vendor_user_id = await self._vendor_user_id()
 
@@ -135,14 +161,25 @@ class VendorEarning(models.Model):
         if extra_filter is not None:
             base_filter &= extra_filter
 
-        result = await Order.filter(base_filter).annotate(total_earnings=Sum("total")).values("total_earnings")
+        result = await Order.filter(base_filter).annotate(gross_total=Sum("total")).values("gross_total")
         if not result:
             return ZERO_DECIMAL
-        return _to_decimal(result[0].get("total_earnings"))
+        return _to_money(result[0].get("gross_total"))
+
+    async def _net_from_delivered_orders(
+        self, extra_filter: Optional[Q] = None
+    ) -> Tuple[Decimal, Decimal, Decimal]:
+        gross_total = await self._sum_delivered_orders(extra_filter)
+        commission_percent = await self._commission_percent()
+        commission_amount = _to_money((gross_total * commission_percent) / HUNDRED_DECIMAL)
+        net_total = _to_money(gross_total - commission_amount)
+        if net_total < ZERO_DECIMAL:
+            net_total = ZERO_DECIMAL
+        return gross_total, commission_amount, net_total
 
     async def calculate_total_delivered_earnings(self) -> Decimal:
-        # All delivered orders are counted in total earnings.
-        return await self._sum_delivered_orders()
+        _, _, net_total = await self._net_from_delivered_orders()
+        return net_total
 
     async def calculate_total_withdrawn(self) -> Decimal:
         result = (
@@ -154,13 +191,13 @@ class VendorEarning(models.Model):
         )
         if not result:
             return ZERO_DECIMAL
-        return _to_decimal(result[0].get("total_withdrawn"))
+        return _to_money(result[0].get("total_withdrawn"))
 
     async def calculate_release_window_earnings(
         self, reference_time: Optional[datetime] = None
     ) -> Decimal:
         """
-        Earnings eligible in this release batch:
+        Eligible release batch:
         delivered between 14 days ago (inclusive) and 7 days ago (exclusive).
         """
         reference = self._normalize_reference_time(reference_time)
@@ -171,20 +208,23 @@ class VendorEarning(models.Model):
             end_date=window_end,
             include_end=False,
         )
-        return await self._sum_delivered_orders(window_filter)
+        _, _, net_total = await self._net_from_delivered_orders(window_filter)
+        return net_total
 
     async def calculate_matured_earnings(self, reference_time: Optional[datetime] = None) -> Decimal:
-        # Skip last 7 days due to possible returns.
+        # Last 7 days are intentionally held for potential refunds.
         reference = self._normalize_reference_time(reference_time)
         maturity_cutoff = reference - timedelta(days=7)
         maturity_filter = self._delivered_date_filter(end_date=maturity_cutoff, include_end=False)
-        return await self._sum_delivered_orders(maturity_filter)
+        _, _, net_total = await self._net_from_delivered_orders(maturity_filter)
+        return net_total
 
-    async def pending_balance_calculation(self):
+    async def pending_balance_calculation(self) -> Decimal:
         return self.pending_balance
 
-    async def earnings_calculation(self, start_date, end_date):
+    async def earnings_calculation(self, start_date, end_date) -> Dict[str, Decimal]:
         vendor_user_id = await self._vendor_user_id()
+        commission_percent = await self._commission_percent()
 
         order_filter = (
             Q(vendor_id=vendor_user_id)
@@ -199,11 +239,11 @@ class VendorEarning(models.Model):
         result = (
             await Order.filter(order_filter)
             .annotate(
-                total_earnings=Sum("total"),
-                avg_earnings=Avg("total"),
+                gross_total=Sum("total"),
+                gross_avg=Avg("total"),
                 total_orders=Count("id"),
             )
-            .values("total_earnings", "avg_earnings", "total_orders")
+            .values("gross_total", "gross_avg", "total_orders")
         )
 
         withdrawal_result = (
@@ -226,104 +266,115 @@ class VendorEarning(models.Model):
             }
 
         data = result[0]
+        gross_total = _to_money(data.get("gross_total"))
+        gross_avg = _to_money(data.get("gross_avg"))
+
+        commission_total = _to_money((gross_total * commission_percent) / HUNDRED_DECIMAL)
+        commission_avg = _to_money((gross_avg * commission_percent) / HUNDRED_DECIMAL)
+
+        net_total = _to_money(gross_total - commission_total)
+        net_avg = _to_money(gross_avg - commission_avg)
+
+        if net_total < ZERO_DECIMAL:
+            net_total = ZERO_DECIMAL
+        if net_avg < ZERO_DECIMAL:
+            net_avg = ZERO_DECIMAL
+
         withdraw = withdrawal_result[0] if withdrawal_result else {"total_withdrawn": ZERO_DECIMAL}
 
         return {
-            "total_earnings": _to_decimal(data.get("total_earnings")),
-            "average_earnings": _to_decimal(data.get("avg_earnings")),
+            "total_earnings": net_total,
+            "average_earnings": net_avg,
             "total_orders": int(data.get("total_orders") or 0),
-            "total_withdrawn": _to_decimal(withdraw.get("total_withdrawn")),
+            "total_withdrawn": _to_money(withdraw.get("total_withdrawn")),
         }
 
-    async def refresh_balances(self, reference_time: Optional[datetime] = None) -> Dict[str, Decimal]:
+    async def refresh_balances(
+        self,
+        reference_time: Optional[datetime] = None,
+        force_save: bool = False,
+        sync_touch_interval_seconds: int = 3600,
+    ) -> Dict[str, Decimal]:
         """
         Recalculate and persist:
-        - total_earnings from all delivered orders
-        - total_withdrow from successful payouts
-        - available_for_withdraw from matured delivered orders (older than 7 days) minus withdrawn
+        1) total_earnings = all delivered totals - commission
+        2) total_withdrow = all successful withdrawals
+        3) available_for_withdraw = matured(total_earnings older than 7 days) - total_withdrow
+        4) 7-day hold: last 7 days are excluded; release window is 14d -> 7d
         """
         reference = self._normalize_reference_time(reference_time)
-        total_earnings = await self.calculate_total_delivered_earnings()
-        matured_earnings = await self.calculate_matured_earnings(reference)
-        total_withdrawn = await self.calculate_total_withdrawn()
-        release_window_earnings = await self.calculate_release_window_earnings(reference)
 
-        available_for_withdraw = matured_earnings - total_withdrawn
+        _, total_commission, total_net_earnings = await self._net_from_delivered_orders()
+        _, _, matured_net_earnings = await self._net_from_delivered_orders(
+            self._delivered_date_filter(end_date=reference - timedelta(days=7), include_end=False)
+        )
+        _, _, release_window_earnings = await self._net_from_delivered_orders(
+            self._delivered_date_filter(
+                start_date=reference - timedelta(days=14),
+                end_date=reference - timedelta(days=7),
+                include_end=False,
+            )
+        )
+        total_withdrawn = await self.calculate_total_withdrawn()
+
+        available_for_withdraw = _to_money(matured_net_earnings - total_withdrawn)
         if available_for_withdraw < ZERO_DECIMAL:
             available_for_withdraw = ZERO_DECIMAL
 
-        self.total_earnings = total_earnings
-        self.total_withdrow = total_withdrawn
-        self.available_for_withdraw = available_for_withdraw
-        self.last_withdrawable_sync_at = reference
-        await self.save(
-            update_fields=[
-                "total_earnings",
-                "total_withdrow",
-                "available_for_withdraw",
-                "last_withdrawable_sync_at",
-            ]
+        interval_seconds = max(0, int(sync_touch_interval_seconds))
+        previous_last_sync = self.last_withdrawable_sync_at
+        if previous_last_sync is not None and previous_last_sync.tzinfo is None:
+            previous_last_sync = previous_last_sync.replace(tzinfo=timezone.utc)
+
+        should_touch_sync_time = (
+            force_save
+            or previous_last_sync is None
+            or previous_last_sync <= reference - timedelta(seconds=interval_seconds)
         )
 
+        changed_fields = []
+        if force_save or _to_money(self.total_earnings) != total_net_earnings:
+            self.total_earnings = total_net_earnings
+            changed_fields.append("total_earnings")
+        if force_save or _to_money(self.total_withdrow) != total_withdrawn:
+            self.total_withdrow = total_withdrawn
+            changed_fields.append("total_withdrow")
+        if force_save or _to_money(self.available_for_withdraw) != available_for_withdraw:
+            self.available_for_withdraw = available_for_withdraw
+            changed_fields.append("available_for_withdraw")
+        if force_save or should_touch_sync_time:
+            self.last_withdrawable_sync_at = reference
+            changed_fields.append("last_withdrawable_sync_at")
+
+        if changed_fields:
+            await self.save(update_fields=changed_fields)
+
         return {
-            "total_earnings": total_earnings,
-            "matured_earnings": matured_earnings,
+            "total_earnings": total_net_earnings,
+            "matured_earnings": matured_net_earnings,
             "release_window_earnings": release_window_earnings,
             "total_withdrawn": total_withdrawn,
             "available_for_withdraw": available_for_withdraw,
         }
 
 
-async def get_or_create_vendor_earning(vendor_profile) -> VendorEarning:
-    vendor_earning = await VendorEarning.get_or_none(vendor_id=vendor_profile.id)
-    if not vendor_earning:
-        vendor_earning = await VendorEarning.create(vendor=vendor_profile)
-    return vendor_earning
+async def get_or_create_vendor_account(vendor_profile) -> VendorAccount:
+    global _VENDOR_ACCOUNT_SCHEMA_CHECKED
+
+    if not _VENDOR_ACCOUNT_SCHEMA_CHECKED:
+        try:
+            await VendorAccount.exists()
+        except OperationalError as exc:
+            err = str(exc).lower()
+            if "1146" in err and "vendoraccount" in err and "doesn't exist" in err:
+                await Tortoise.generate_schemas(safe=True)
+            else:
+                raise
+        _VENDOR_ACCOUNT_SCHEMA_CHECKED = True
+
+    vendor_account = await VendorAccount.get_or_none(vendor_id=vendor_profile.id)
+    if not vendor_account:
+        vendor_account = await VendorAccount.create(vendor=vendor_profile)
+    return vendor_account
 
 
-async def add_money_to_vendor_earning(order_id: str):
-    order = await Order.get_or_none(id=order_id)
-    if not order:
-        return {"error": "Order not found"}
-
-    await order.fetch_related("vendor__vendor_profile")
-    vendor_profile = getattr(order.vendor, "vendor_profile", None)
-    if not vendor_profile:
-        return {"error": "Vendor profile not found"}
-
-    vendor_earning = await get_or_create_vendor_earning(vendor_profile)
-    summary = await vendor_earning.refresh_balances()
-
-    return {
-        "success": True,
-        "total_earnings": vendor_earning.total_earnings,
-        "available_for_withdraw": vendor_earning.available_for_withdraw,
-        "release_window_earnings": summary["release_window_earnings"],
-    }
-
-
-async def refund_money_to_vendor_earning(order_id: str):
-    order = await Order.get_or_none(id=order_id)
-    if not order:
-        return {"error": "Order not found"}
-
-    await order.fetch_related("vendor__vendor_profile")
-    vendor_profile = getattr(order.vendor, "vendor_profile", None)
-    if not vendor_profile:
-        return {"error": "Vendor profile not found"}
-
-    vendor_earning = await get_or_create_vendor_earning(vendor_profile)
-    summary = await vendor_earning.refresh_balances()
-
-    return {
-        "success": True,
-        "total_earnings": vendor_earning.total_earnings,
-        "available_for_withdraw": vendor_earning.available_for_withdraw,
-        "release_window_earnings": summary["release_window_earnings"],
-    }
-
-
-# Backward-compatible aliases for old names used in routes/imports.
-VendorAccount = VendorEarning
-add_money_to_vendor_account = add_money_to_vendor_earning
-refund_money_to_vendor_account = refund_money_to_vendor_earning

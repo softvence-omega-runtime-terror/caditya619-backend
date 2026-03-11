@@ -2,6 +2,7 @@ import importlib
 import inspect
 import pkgutil
 import threading
+import asyncio
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -10,6 +11,23 @@ from apscheduler.triggers.interval import IntervalTrigger
 import tasks
 
 scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+_main_event_loop = None
+
+
+def set_main_event_loop(loop):
+    global _main_event_loop
+    _main_event_loop = loop
+
+
+def run_async_task(coro, timeout=None):
+    """
+    Run coroutine on the application's main event loop.
+    This avoids DB pool loop-mismatch when scheduler jobs run in worker threads.
+    """
+    if _main_event_loop is not None and _main_event_loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(coro, _main_event_loop)
+        return future.result(timeout=timeout)
+    return asyncio.run(coro)
 
 
 def is_task(func, module_name: str) -> bool:
@@ -59,4 +77,9 @@ def start_scheduler():
 
 
 def start():
+    try:
+        set_main_event_loop(asyncio.get_running_loop())
+    except RuntimeError:
+        # Start may be called outside an async context in some environments.
+        pass
     threading.Thread(target=start_scheduler, daemon=True).start()
