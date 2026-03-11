@@ -76,7 +76,10 @@ class PayoutTransaction(models.Model):
         if self.amount_in_paise is None:
             self.amount_in_paise = int(_to_money(self.amount) * 100)
         await super().save(*args, **kwargs)
-        if is_new:
+        status_value = (
+            self.status.value if isinstance(self.status, PayoutStatus) else str(self.status).lower()
+        )
+        if is_new and status_value == PayoutStatus.SUCCESS.value:
             from app.utils.generate_pdf import generate_payout_pdf
 
             file_url = await generate_payout_pdf(self)
@@ -286,7 +289,12 @@ class VendorAccount(models.Model):
             "total_withdrawn": _to_money(withdraw.get("total_withdrawn")),
         }
 
-    async def refresh_balances(self, reference_time: Optional[datetime] = None) -> Dict[str, Decimal]:
+    async def refresh_balances(
+        self,
+        reference_time: Optional[datetime] = None,
+        force_save: bool = False,
+        sync_touch_interval_seconds: int = 3600,
+    ) -> Dict[str, Decimal]:
         """
         Recalculate and persist:
         1) total_earnings = all delivered totals - commission
@@ -313,18 +321,33 @@ class VendorAccount(models.Model):
         if available_for_withdraw < ZERO_DECIMAL:
             available_for_withdraw = ZERO_DECIMAL
 
-        self.total_earnings = total_net_earnings
-        self.total_withdrow = total_withdrawn
-        self.available_for_withdraw = available_for_withdraw
-        self.last_withdrawable_sync_at = reference
-        await self.save(
-            update_fields=[
-                "total_earnings",
-                "total_withdrow",
-                "available_for_withdraw",
-                "last_withdrawable_sync_at",
-            ]
+        interval_seconds = max(0, int(sync_touch_interval_seconds))
+        previous_last_sync = self.last_withdrawable_sync_at
+        if previous_last_sync is not None and previous_last_sync.tzinfo is None:
+            previous_last_sync = previous_last_sync.replace(tzinfo=timezone.utc)
+
+        should_touch_sync_time = (
+            force_save
+            or previous_last_sync is None
+            or previous_last_sync <= reference - timedelta(seconds=interval_seconds)
         )
+
+        changed_fields = []
+        if force_save or _to_money(self.total_earnings) != total_net_earnings:
+            self.total_earnings = total_net_earnings
+            changed_fields.append("total_earnings")
+        if force_save or _to_money(self.total_withdrow) != total_withdrawn:
+            self.total_withdrow = total_withdrawn
+            changed_fields.append("total_withdrow")
+        if force_save or _to_money(self.available_for_withdraw) != available_for_withdraw:
+            self.available_for_withdraw = available_for_withdraw
+            changed_fields.append("available_for_withdraw")
+        if force_save or should_touch_sync_time:
+            self.last_withdrawable_sync_at = reference
+            changed_fields.append("last_withdrawable_sync_at")
+
+        if changed_fields:
+            await self.save(update_fields=changed_fields)
 
         return {
             "total_earnings": total_net_earnings,

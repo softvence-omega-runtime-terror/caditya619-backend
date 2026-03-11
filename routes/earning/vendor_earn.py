@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, Query, HTTPException
 import requests
 import time
@@ -5,6 +6,7 @@ import base64
 from decimal import Decimal
 from pydantic import BaseModel, Field
 from typing import Optional
+from tortoise.exceptions import NoValuesFetched
 from applications.user.models import User
 from datetime import datetime, timedelta, timezone
 from app.config import settings
@@ -191,7 +193,13 @@ async def add_beneficiary(payload: BeneficiaryPayload, vendor: User = Depends(ve
         },
     }
 
-    res = requests.post(url, json=body, headers=headers)
+    res = await asyncio.to_thread(
+        requests.post,
+        url,
+        json=body,
+        headers=headers,
+        timeout=25,
+    )
 
     if res.status_code in [200, 201]:
         beneficiary = await BeneficiaryModel.filter(vendor_id=vendor_profile.id).first()
@@ -267,20 +275,30 @@ async def get_beneficiary(vendor: User = Depends(vendor_required)):
 async def withdraw_amount(
     amount: Optional[int] = Query(None, ge=1),
     vendor: User = Depends(vendor_required),
+    transfer_id: Optional[str] = None,
 ):
     if amount is None:
         raise HTTPException(status_code=400, detail="amount is required")
 
     signature, timestamp = generate_signature()
-    await vendor.fetch_related("vendor_profile")
-    vendor_profile = vendor.vendor_profile
+    try:
+        vendor_profile = vendor.vendor_profile
+    except NoValuesFetched:
+        vendor_profile = None
+
+    if vendor_profile is None:
+        await vendor.fetch_related("vendor_profile")
+        vendor_profile = vendor.vendor_profile
     
+    if not vendor_profile:
+        raise HTTPException(status_code=404, detail="Vendor profile not found")
+
     beneficiary = await BeneficiaryModel.filter(vendor_id=vendor_profile.id).first()
     if not beneficiary:
         raise HTTPException(status_code=404, detail="Beneficiary account not found")
 
     url = f"{BASE_URL}/transfers"
-    unique_transfer_id = f"QU{vendor.id}{int(time.time())}"
+    unique_transfer_id = transfer_id or f"QU{vendor.id}{int(time.time())}"
 
     headers = {
         "x-api-version": "2024-01-01",
@@ -303,7 +321,13 @@ async def withdraw_amount(
         "currency": "INR",
         "transfer_remarks": beneficiary.name
     }
-    res = requests.post(url, json=body, headers=headers)
+    res = await asyncio.to_thread(
+        requests.post,
+        url,
+        json=body,
+        headers=headers,
+        timeout=25,
+    )
 
     if res.status_code not in [200, 201]:
         raise HTTPException(status_code=res.status_code, detail=res.json())
@@ -326,7 +350,9 @@ async def payout_transactions(current_user: User = Depends(login_required)):
         "updated_at",
     ]
 
-    if current_user.is_superuser or (current_user.is_staff and current_user.has_permission("view_payouttransaction")):
+    if current_user.is_superuser or (
+        current_user.is_staff and await current_user.has_permission("view_payouttransaction")
+    ):
         transactions = (
             await PayoutTransactionModel.all()
             .order_by("-created_at")
