@@ -1,0 +1,406 @@
+{% set data = invoice if invoice is defined else {} %}
+{% set brand = data.get('brand') or {
+  'name': 'blink',
+  'accent': 'it',
+  'logo_url': 'https://i.ibb.co/Gf6qzkx8/Layer-1.png'
+} %}
+{% set header = data.get('header') or {'title': 'Tax Invoice'} %}
+{% set seller = data.get('seller') or {
+  'heading': 'Sold By',
+  'name': 'Blink Commerce Private Limited',
+  'address_lines': [
+    'Plot No. 1786/51-A 1786/51-B & 1431/51-B, PP Compound Ranchi,',
+    'Ranchi, Jharkhand, 834001'
+  ],
+  'details': [
+    {'label': 'GSTIN', 'value': '20AAFCG9846E1ZP'},
+    {'label': 'FSSAI License Number', 'value': '10018064001545'},
+    {'label': 'CIN', 'value': 'U74140HR2015FTC055568'},
+    {'label': 'PAN', 'value': 'AAFCG9846E'}
+  ],
+  'qr_image_url': 'https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=invoice',
+  'invoice_number': 'JHEI260008740711'
+} %}
+{% set customer = data.get('customer') or {
+  'heading': 'Invoice To',
+  'name': 'Sonal',
+  'address_lines': [
+    'Sonal, Flat number 4b, prabhu dayal complex,',
+    'near jeevan jyoti hospital, Ward Number 20,',
+    'Deputy Para, Ahirtoli, Jharkhand, 834001'
+  ],
+  'pincode': '834001'
+} %}
+{% set order = data.get('order') or {
+  'order_id': 'ORD74813901936',
+  'invoice_date': '11-01-2026',
+  'place_of_supply': 'Jharkhand'
+} %}
+{% set line_items = data.get('line_items') or [
+  {
+    'sr_no': '1',
+    'hsn_code': '996813',
+    'description': 'Delivery charge',
+    'mrp': '30.0',
+    'discount': '0',
+    'qty': '1',
+    'taxable_value': '25.42',
+    'cgst_rate': '9',
+    'cgst_amount': '2.29',
+    'sgst_rate': '9',
+    'sgst_amount': '2.29',
+    'total': '30.0'
+  },
+  {
+    'sr_no': '2',
+    'hsn_code': '998549',
+    'description': 'Handling charge',
+    'mrp': '7.0',
+    'discount': '0',
+    'qty': '1',
+    'taxable_value': '5.93',
+    'cgst_rate': '9',
+    'cgst_amount': '0.53',
+    'sgst_rate': '9',
+    'sgst_amount': '0.53',
+    'total': '7.0'
+  },
+  {
+    'sr_no': '3',
+    'hsn_code': '996819',
+    'description': 'Small cart charge',
+    'mrp': '20.0',
+    'discount': '0',
+    'qty': '1',
+    'taxable_value': '16.95',
+    'cgst_rate': '9',
+    'cgst_amount': '1.53',
+    'sgst_rate': '9',
+    'sgst_amount': '1.53',
+    'total': '20.0'
+  }
+] %}
+{% set total_row = data.get('total_row') or {
+  'label': 'Total',
+  'qty': '3',
+  'taxable_value': '48.3',
+  'cgst_amount': '4.35',
+  'sgst_amount': '4.35',
+  'total': '57.0'
+} %}
+{% set amount = data.get('amount') or {'in_words': 'Fifty-Seven Rupees And Zero Paisa Only'} %}
+{% set signature = data.get('signature') or {
+  'company_label': 'For Blink Commerce Private Limited',
+  'image_url': 'https://upload.wikimedia.org/wikipedia/commons/3/3f/Signature_placeholder.png',
+  'text_label': 'Authorised Signatory'
+} %}
+{% set meta = data.get('meta') or {
+  'delivery_confirmation_otp': '',
+  'reverse_charge': 'No'
+} %}
+{% set terms = data.get('terms') or [
+  'If you have any issues or queries in respect of your order, please contact support.',
+  'Visit FSSAI website for license verification.',
+  'Do not share CVV, account number or UPI PIN.',
+  'MRP may vary based on discounts and GST revisions.'
+] %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ header.get('title', 'Tax Invoice') }}</title>
+
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: #fff;
+  }
+
+  .invoice {
+    width: 100%;
+    max-width: 190mm;
+    margin: 0 auto;
+    border: 2px solid #000;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px;
+    border-bottom: 1px solid #000;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+  }
+
+  .logo img {
+    display: block;
+    height: 26px;
+    width: auto;
+    max-width: 110px;
+    object-fit: contain;
+  }
+
+  .logo span {
+    color: green;
+  }
+
+  .title {
+    font-size: 20px;
+    font-weight: bold;
+  }
+
+  .section {
+    display: flex;
+    border-bottom: 1px solid #000;
+  }
+
+  .left, .right {
+    width: 50%;
+    padding: 10px;
+    font-size: 10px;
+  }
+
+  .left {
+    border-right: 1px solid #000;
+  }
+
+  .bold {
+    font-weight: bold;
+  }
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    margin: 2px 0;
+  }
+
+  .qr {
+    text-align: center;
+  }
+
+  .qr img {
+    width: 64px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 9px;
+  }
+
+  th, td {
+    border: 1px solid #000;
+    padding: 3px 2px;
+    text-align: center;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  th {
+    font-weight: bold;
+  }
+
+  .text-left {
+    text-align: left;
+  }
+
+  .total-row td {
+    font-weight: bold;
+  }
+
+  .amount {
+    border-top: 1px solid #000;
+    padding: 6px;
+    font-size: 10px;
+  }
+
+  .signature {
+    border-top: 1px solid #000;
+    padding: 10px;
+    font-size: 10px;
+    height: 105px;
+    position: relative;
+  }
+
+  .signature img {
+    width: 95px;
+    position: absolute;
+    left: 20px;
+    top: 26px;
+  }
+
+  .signature-text {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+  }
+
+  .meta {
+    border-top: 1px solid #000;
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+
+  .terms {
+    border-top: 1px solid #000;
+    padding: 10px;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+</style>
+
+</head>
+
+<body>
+
+<div class="invoice">
+
+  <div class="header">
+    <div class="logo">
+      {% if brand.get('logo_url') %}
+      <img src="{{ brand.get('logo_url', '') }}" alt="{{ brand.get('name', 'Blinkit') }}">
+      {% else %}
+      {{ brand.get('name', 'blink') }}<span>{{ brand.get('accent', 'it') }}</span>
+      {% endif %}
+    </div>
+    <div class="title">{{ header.get('title', 'Tax Invoice') }}</div>
+  </div>
+
+  <div class="section">
+    <div class="left">
+      <div class="bold">{{ seller.get('heading', 'Sold By') }}</div>
+      {{ seller.get('name', '') }}<br>
+      {% for line in seller.get('address_lines', []) %}
+      {{ line }}<br>
+      {% endfor %}
+      <br>
+
+      {% for detail in seller.get('details', []) %}
+      <div class="row"><span class="bold">{{ detail.get('label', '') }}</span><span>{{ detail.get('value', '') }}</span></div>
+      {% endfor %}
+    </div>
+
+    <div class="right qr">
+      {% if seller.get('qr_image_url') %}
+      <img src="{{ seller.get('qr_image_url', '') }}" alt="Invoice QR">
+      {% endif %}
+      <div><b>Invoice Number:</b> {{ seller.get('invoice_number', '') }}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="left">
+      <div class="bold">{{ customer.get('heading', 'Invoice To') }}</div>
+      <div><b>Name :</b> {{ customer.get('name', '') }}</div>
+      <div><b>Address :</b>
+        {% for line in customer.get('address_lines', []) %}
+        {{ line }}{% if not loop.last %}<br>{% endif %}
+        {% endfor %}
+      </div>
+      <div><b>Pincode :</b> {{ customer.get('pincode', '') }}</div>
+    </div>
+
+    <div class="right">
+      <div><b>Order Id :</b> {{ order.get('order_id', '') }}</div>
+      <div><b>Invoice Date :</b> {{ order.get('invoice_date', '') }}</div>
+      <div><b>Place of Supply :</b> {{ order.get('place_of_supply', '') }}</div>
+    </div>
+  </div>
+
+  <table>
+    <tr>
+      <th>Sr. no</th>
+      <th>HSN Code</th>
+      <th class="text-left">Item Description</th>
+      <th>MRP</th>
+      <th>Discount</th>
+      <th>Qty.</th>
+      <th>Taxable Value</th>
+      <th>CGST (%)</th>
+      <th>CGST (INR)</th>
+      <th>SGST (%)</th>
+      <th>SGST (INR)</th>
+      <th>Total</th>
+    </tr>
+
+    {% for row in line_items %}
+    <tr>
+      <td>{{ row.get('sr_no', loop.index) }}</td>
+      <td>{{ row.get('hsn_code', '') }}</td>
+      <td class="text-left">{{ row.get('description', '') }}</td>
+      <td>{{ row.get('mrp', '') }}</td>
+      <td>{{ row.get('discount', '') }}</td>
+      <td>{{ row.get('qty', '') }}</td>
+      <td>{{ row.get('taxable_value', '') }}</td>
+      <td>{{ row.get('cgst_rate', '') }}</td>
+      <td>{{ row.get('cgst_amount', '') }}</td>
+      <td>{{ row.get('sgst_rate', '') }}</td>
+      <td>{{ row.get('sgst_amount', '') }}</td>
+      <td>{{ row.get('total', '') }}</td>
+    </tr>
+    {% endfor %}
+
+    <tr class="total-row">
+      <td colspan="5">{{ total_row.get('label', 'Total') }}</td>
+      <td>{{ total_row.get('qty', '') }}</td>
+      <td>{{ total_row.get('taxable_value', '') }}</td>
+      <td></td>
+      <td>{{ total_row.get('cgst_amount', '') }}</td>
+      <td></td>
+      <td>{{ total_row.get('sgst_amount', '') }}</td>
+      <td>{{ total_row.get('total', '') }}</td>
+    </tr>
+  </table>
+
+  <div class="amount">
+    <b>Amount in Words:</b> {{ amount.get('in_words', '') }}
+  </div>
+
+  <div class="signature">
+    <div class="bold">{{ signature.get('company_label', '') }}</div>
+
+    {% if signature.get('image_url') %}
+    <img src="{{ signature.get('image_url', '') }}" alt="Signature">
+    {% endif %}
+
+    <div class="signature-text">
+      {{ signature.get('text_label', 'Authorised Signatory') }}
+    </div>
+  </div>
+
+  <div class="meta">
+    <b>Delivery confirmation OTP:</b>{% if meta.get('delivery_confirmation_otp') %} {{ meta.get('delivery_confirmation_otp', '') }}{% endif %}<br>
+    <b>Whether the tax is payable on reverse charge - {{ meta.get('reverse_charge', '') }}</b>
+  </div>
+
+  <div class="terms">
+    <b>Terms & Conditions:</b><br>
+    {% for term in terms %}
+    {{ loop.index }}. {{ term }}<br>
+    {% endfor %}
+  </div>
+
+</div>
+
+</body>
+</html>

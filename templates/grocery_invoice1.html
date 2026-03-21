@@ -1,0 +1,369 @@
+{% set data = invoice if invoice is defined else {} %}
+{% set brand = data.get('brand') or {
+  'name': 'blink',
+  'accent': 'it',
+  'logo_url': 'https://i.ibb.co/Gf6qzkx8/Layer-1.png'
+} %}
+{% set header = data.get('header') or {'title': 'Tax Invoice'} %}
+{% set seller = data.get('seller') or {
+  'heading': 'Sold By / Seller',
+  'name': 'BLINK COMMERCE PRIVATE LIMITED',
+  'address_lines': [
+    'BCPL - Ranchi Lalpur ES6',
+    'Maa Parwati Complex ,East Jail Road ,Ranchi-834001',
+    'Ranchi'
+  ],
+  'details': [
+    {'label': 'GSTIN', 'value': '20AAFCG9846E1ZP'},
+    {'label': 'FSSAI License Number', 'value': '10018064001545'},
+    {'label': 'CIN', 'value': 'U74140HR2015FTC055568'},
+    {'label': 'PAN', 'value': 'AAFCG9846E'}
+  ],
+  'qr_image_url': 'https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=invoice',
+  'invoice_number': 'C32041T250276695'
+} %}
+{% set customer = data.get('customer') or {
+  'heading': 'Invoice To',
+  'name': 'Sonal',
+  'address_lines': [
+    'Sonal, Flat number 4b, prabhu dayal complex,',
+    'near jeevan jyoti hospital, 4th floor, Jeevan jyoti hospital,',
+    'Ward Number 20, Deputy Para, Ahirtoli'
+  ],
+  'pincode': '834001',
+  'state': 'Jharkhand'
+} %}
+{% set order = data.get('order') or {
+  'order_id': '1648547255',
+  'invoice_date': '11-Jan-2026',
+  'place_of_supply': 'Jharkhand'
+} %}
+{% set line_items = data.get('line_items') or [
+  {
+    'sr_no': '1',
+    'upc': '8901062032644',
+    'description': 'Britannia Treat Croissant - Cocoa Creme(Pack)',
+    'mrp': '20.00',
+    'discount': '1.00',
+    'qty': '4',
+    'taxable_value': '72.38',
+    'cgst_rate': '2.50',
+    'cgst_amount': '1.81',
+    'sgst_rate': '2.50',
+    'sgst_amount': '1.81',
+    'total': '76.00'
+  }
+] %}
+{% set total_row = data.get('total_row') or {
+  'label': 'Total',
+  'qty': '4',
+  'taxable_value': '',
+  'cgst_amount': '1.81',
+  'sgst_amount': '1.81',
+  'total': '76.00'
+} %}
+{% set amount = data.get('amount') or {'in_words': 'Seventy-Six Rupees And Zero Paisa Only'} %}
+{% set footer = data.get('footer') or {
+  'company_name': 'Blink Commerce Private Limited (formerly known as Grofers India Private Limited)',
+  'details': [
+    {'label': 'GSTIN', 'value': '20AAFCG9846E1ZP'},
+    {'label': 'CIN', 'value': 'U74140HR2015FTC055568'},
+    {'label': 'FSSAI License Number', 'value': '10018064001545'},
+    {'label': 'PAN', 'value': 'AAFCG9846E'}
+  ],
+  'signatory_label': 'Authorised Signatory'
+} %}
+{% set terms = data.get('terms') or [
+  'If you have any issues or queries, contact support.',
+  'Visit FSSAI site for license verification.',
+  'Do not share bank details.',
+  'MRP displayed may vary.'
+] %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>{{ header.get('title', 'Tax Invoice') }}</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: #fff;
+  }
+
+  .invoice {
+    width: 100%;
+    max-width: 190mm;
+    margin: 0 auto;
+    border: 2px solid #000;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 15px;
+    border-bottom: 2px solid #000;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+  }
+
+  .logo img {
+    display: block;
+    height: 26px;
+    width: auto;
+    max-width: 110px;
+    object-fit: contain;
+  }
+
+  .logo span {
+    color: green;
+  }
+
+  .title {
+    font-size: 20px;
+    font-weight: bold;
+  }
+
+  .section {
+    display: flex;
+    border-bottom: 1px solid #000;
+  }
+
+  .left, .right {
+    padding: 10px;
+    width: 50%;
+  }
+
+  .left {
+    border-right: 1px solid #000;
+  }
+
+  .small-text {
+    font-size: 10px;
+    line-height: 1.4;
+  }
+
+  .bold {
+    font-weight: bold;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 9px;
+  }
+
+  .table th, .table td {
+    border: 1px solid #000;
+    padding: 3px 2px;
+    text-align: center;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .table th {
+    font-weight: bold;
+  }
+
+  .text-left {
+    text-align: left;
+  }
+
+  .total-row td {
+    font-weight: bold;
+  }
+
+  .amount-words {
+    padding: 8px;
+    border-top: 1px solid #000;
+    font-size: 10px;
+  }
+
+  .footer {
+    display: flex;
+    border-top: 1px solid #000;
+  }
+
+  .footer-left {
+    width: 70%;
+    padding: 10px;
+    border-right: 1px solid #000;
+    font-size: 10px;
+  }
+
+  .footer-right {
+    width: 30%;
+    padding: 10px;
+    text-align: center;
+    font-size: 10px;
+  }
+
+  .terms {
+    padding: 10px;
+    font-size: 10px;
+    border-top: 1px solid #000;
+  }
+
+  .qr {
+    text-align: center;
+    margin-top: 10px;
+  }
+
+  .qr img {
+    width: 64px;
+  }
+</style>
+</head>
+<body>
+
+<div class="invoice">
+
+  <div class="header">
+    <div class="logo">
+      {% if brand.get('logo_url') %}
+      <img src="{{ brand.get('logo_url', '') }}" alt="{{ brand.get('name', 'Blinkit') }}">
+      {% else %}
+      {{ brand.get('name', 'blink') }}<span>{{ brand.get('accent', 'it') }}</span>
+      {% endif %}
+    </div>
+    <div class="title">{{ header.get('title', 'Tax Invoice') }}</div>
+  </div>
+
+  <div class="section">
+    <div class="left small-text">
+      <div class="bold">{{ seller.get('heading', 'Sold By / Seller') }}</div>
+      <div class="bold">{{ seller.get('name', '') }}</div>
+      {% for line in seller.get('address_lines', []) %}
+      {{ line }}<br>
+      {% endfor %}
+      <br>
+      {% for detail in seller.get('details', []) %}
+      {{ detail.get('label', '') }} : {{ detail.get('value', '') }}<br>
+      {% endfor %}
+    </div>
+
+    <div class="right small-text">
+      <div class="qr">
+        {% if seller.get('qr_image_url') %}
+        <img src="{{ seller.get('qr_image_url', '') }}" alt="Invoice QR" />
+        {% endif %}
+        <div>Invoice Number : {{ seller.get('invoice_number', '') }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="left small-text">
+      <div class="bold">{{ customer.get('heading', 'Invoice To') }}</div>
+      Name : {{ customer.get('name', '') }}<br>
+      Address :
+      {% for line in customer.get('address_lines', []) %}
+      {{ line }}{% if not loop.last %}<br>{% endif %}
+      {% endfor %}<br>
+      Pin code : {{ customer.get('pincode', '') }}<br>
+      State : {{ customer.get('state', '') }}
+    </div>
+
+    <div class="right small-text">
+      Order Id : {{ order.get('order_id', '') }}<br>
+      Invoice Date : {{ order.get('invoice_date', '') }}<br>
+      Place of Supply : {{ order.get('place_of_supply', '') }}
+    </div>
+  </div>
+
+  <table class="table">
+    <tr>
+      <th>Sr.</th>
+      <th>UPC</th>
+      <th class="text-left">Item Description</th>
+      <th>MRP</th>
+      <th>Discount</th>
+      <th>Qty</th>
+      <th>Taxable Value</th>
+      <th>CGST (%)</th>
+      <th>CGST (INR)</th>
+      <th>SGST (%)</th>
+      <th>SGST (INR)</th>
+      <th>Total</th>
+    </tr>
+
+    {% for row in line_items %}
+    <tr>
+      <td>{{ row.get('sr_no', loop.index) }}</td>
+      <td>{{ row.get('upc', '') }}</td>
+      <td class="text-left">{{ row.get('description', '') }}</td>
+      <td>{{ row.get('mrp', '') }}</td>
+      <td>{{ row.get('discount', '') }}</td>
+      <td>{{ row.get('qty', '') }}</td>
+      <td>{{ row.get('taxable_value', '') }}</td>
+      <td>{{ row.get('cgst_rate', '') }}</td>
+      <td>{{ row.get('cgst_amount', '') }}</td>
+      <td>{{ row.get('sgst_rate', '') }}</td>
+      <td>{{ row.get('sgst_amount', '') }}</td>
+      <td>{{ row.get('total', '') }}</td>
+    </tr>
+    {% endfor %}
+
+    <tr class="total-row">
+      <td colspan="5">{{ total_row.get('label', 'Total') }}</td>
+      <td>{{ total_row.get('qty', '') }}</td>
+      <td>{{ total_row.get('taxable_value', '') }}</td>
+      <td></td>
+      <td>{{ total_row.get('cgst_amount', '') }}</td>
+      <td></td>
+      <td>{{ total_row.get('sgst_amount', '') }}</td>
+      <td>{{ total_row.get('total', '') }}</td>
+    </tr>
+  </table>
+
+  <div class="amount-words">
+    <span class="bold">Amount in Words:</span>
+    {{ amount.get('in_words', '') }}
+  </div>
+
+  <div class="footer">
+    <div class="footer-left">
+      <div class="bold">
+        {{ footer.get('company_name', '') }}
+      </div><br>
+      {% for detail in footer.get('details', []) %}
+      {{ detail.get('label', '') }} : {{ detail.get('value', '') }}<br>
+      {% endfor %}
+    </div>
+
+    <div class="footer-right">
+      <br><br><br>
+      {{ footer.get('signatory_label', 'Authorised Signatory') }}
+    </div>
+  </div>
+
+  <div class="terms">
+    <div class="bold">Terms & Conditions:</div>
+    {% for term in terms %}
+    {{ loop.index }}. {{ term }}<br>
+    {% endfor %}
+  </div>
+
+</div>
+
+</body>
+</html>

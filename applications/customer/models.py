@@ -94,6 +94,8 @@ class Order(models.Model):
     order_date = fields.DatetimeField(auto_now_add=True)
     status = fields.CharEnumField(OrderStatus, max_length=50, default=OrderStatus.PENDING, index=True)
     transaction_id = fields.CharField(max_length=255, null=True)
+    invoice1 = fields.CharField(max_length=355, null=True, blank=True)
+    invoice2 = fields.CharField(max_length=355, null=True, blank=True)
     tracking_number = fields.CharField(max_length=255, null=True, index=True)
     estimated_delivery = fields.DatetimeField(null=True)
     
