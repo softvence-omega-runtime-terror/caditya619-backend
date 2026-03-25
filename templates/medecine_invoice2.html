@@ -1,0 +1,245 @@
+{% set data = invoice if invoice is defined else {} %}
+{% set tax_rows = data.get('tax_rows') or [
+  {'gst_percent': '0', 'taxable_amount': '0', 'cgst': '0', 'sgst': '0', 'igst': '0'},
+  {'gst_percent': '5', 'taxable_amount': '899.3', 'cgst': '0', 'sgst': '0', 'igst': '44.96'},
+  {'gst_percent': '12', 'taxable_amount': '0', 'cgst': '0', 'sgst': '0', 'igst': '0'},
+  {'gst_percent': '18', 'taxable_amount': '0', 'cgst': '0', 'sgst': '0', 'igst': '0'},
+  {'gst_percent': '28', 'taxable_amount': '0', 'cgst': '0', 'sgst': '0', 'igst': '0'},
+  {'gst_percent': '40', 'taxable_amount': '0', 'cgst': '0', 'sgst': '0', 'igst': '0'}
+] %}
+{% set amount_rows = data.get('amount_rows') or [
+  {'label': 'TOTAL QUANTITY:', 'value': '4'},
+  {'label': 'GROSS AMOUNT:', 'value': 'Rs.1024.66'},
+  {'label': 'SHIPPING & VAS CHARGES:', 'value': 'Rs.12.00'},
+  {'label': 'DISCOUNT AMOUNT:', 'value': 'Rs.92.40'},
+  {'label': 'BILL AMOUNT:', 'value': 'Rs.944.26'},
+  {'label': 'PAYABLE AMOUNT:', 'value': 'Rs.944.26'}
+] %}
+{% set notes = data.get('notes') or [
+  '*Indicates change in Original MRP (inclusive of applicable taxes) due to revision of goods and services tax (GST)',
+  'All disputes related to this order are subject to the jurisdiction of courts at Howrah, West Bengal',
+  'Computer Generated Invoice.'
+] %}
+{% set support = data.get('support') or {
+  'label': 'For Support Contact:',
+  'value': 'care@1mg.com'
+} %}
+{% set company = data.get('company') or {
+  'name_lines': ['For: TATA 1MG', 'Healthcare Solutions Private Limited'],
+  'qr_image_url': '',
+  'tagline': 'TATA 1mg | SAWAAL UTHAO',
+  'signature_label': 'Pharmacist Signature'
+} %}
+{% set bottom = data.get('bottom') or {
+  'amount_in_words': 'Rupees nine hundred and forty-four point two six only',
+  'eoe_note': 'E.&O.E.'
+} %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ data.get('title', 'Invoice Section Replica') }}</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #fff;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 190mm;
+    margin: 0 auto;
+    border-top: 3px solid #000;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 38% 22% 20% 20%;
+    border-bottom: 2px solid #000;
+  }
+
+  .box {
+    padding: 12px 14px;
+    border-right: 2px solid #000;
+    font-size: 11px;
+  }
+
+  .box:last-child {
+    border-right: none;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 10px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 4px 3px;
+    border-bottom: 1px solid #aaa;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  th {
+    font-weight: bold;
+  }
+
+  .note {
+    font-size: 12px;
+    margin-top: 6px;
+  }
+
+  .amount-box p {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #aaa;
+    padding: 6px 0;
+    margin: 0;
+  }
+
+  .amount-box p:last-child {
+    border-bottom: none;
+    font-weight: bold;
+  }
+
+  .text-block {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+
+  .text-block b {
+    display: block;
+    margin-top: 10px;
+  }
+
+  .right-block {
+    text-align: center;
+    font-size: 10px;
+  }
+
+  .qr {
+    width: 120px;
+    height: 120px;
+    border: 3px solid #000;
+    margin: 10px auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .qr img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .signature {
+    margin-top: 50px;
+    border-top: 1px dashed #000;
+    padding-top: 5px;
+    font-size: 13px;
+  }
+
+  .bottom {
+    padding: 10px 14px;
+    font-size: 11px;
+  }
+
+  .bottom small {
+    display: block;
+    margin-top: 5px;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <div class="row">
+
+    <div class="box">
+      <table>
+        <tr>
+          <th>GST %</th>
+          <th>Taxable Amt</th>
+          <th>CGST</th>
+          <th>SGST</th>
+          <th>IGST</th>
+        </tr>
+        {% for row in tax_rows %}
+        <tr>
+          <td>{{ row.get('gst_percent', '') }}</td>
+          <td>{{ row.get('taxable_amount', '') }}</td>
+          <td>{{ row.get('cgst', '') }}</td>
+          <td>{{ row.get('sgst', '') }}</td>
+          <td>{{ row.get('igst', '') }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="note">*All Values in (Rs.)</div>
+    </div>
+
+    <div class="box amount-box">
+      {% for row in amount_rows %}
+      <p><span>{{ row.get('label', '') }}</span><span>{{ row.get('value', '') }}</span></p>
+      {% endfor %}
+    </div>
+
+    <div class="box text-block">
+      {% for note in notes %}
+      {{ note }}<br><br>
+      {% endfor %}
+
+      <b>{{ support.get('label', 'For Support Contact:') }}</b>
+      {{ support.get('value', '') }}
+    </div>
+
+    <div class="box right-block">
+      <div>
+        {% for line in company.get('name_lines', []) %}
+        {{ line }}{% if not loop.last %}<br>{% endif %}
+        {% endfor %}
+      </div>
+
+      <div class="qr">
+        {% if company.get('qr_image_url') %}
+        <img src="{{ company.get('qr_image_url', '') }}" alt="Company QR">
+        {% endif %}
+      </div>
+
+      <div>{{ company.get('tagline', '') }}</div>
+
+      <div class="signature">{{ company.get('signature_label', 'Pharmacist Signature') }}</div>
+    </div>
+
+  </div>
+
+  <div class="bottom">
+    <b>Amount in Words:</b> {{ bottom.get('amount_in_words', '') }}
+    <small>{{ bottom.get('eoe_note', 'E.&O.E.') }}</small>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,295 @@
+{% set data = invoice if invoice is defined else {} %}
+{% set brand = data.get('brand') or {'name': 'eternal'} %}
+{% set header = data.get('header') or {'title': 'Tax Invoice', 'copy_label': 'ORIGINAL FOR RECIPIENT'} %}
+{% set seller = data.get('seller') or {
+  'heading': 'Tax Invoice on behalf of -',
+  'legal_entity_name': 'BHAVESH RAMANI',
+  'restaurant_name': 'Seasons Restaurant',
+  'restaurant_address': 'Shop 04, Ground Floor, Sri Ram Neotia Arcade, Lalpur, Ranchi',
+  'restaurant_gstin': '20AKVPR9201K1ZS',
+  'restaurant_fssai': '1112200100051',
+  'invoice_number': '25P1SLY80066673',
+  'invoice_date': '20/02/2026'
+} %}
+{% set customer = data.get('customer') or {
+  'name': 'Aditya Singh',
+  'delivery_address': 'Flat number 4b, prabhu dayal complex, near jeevan jyoti hospital, 4th floor, 834001',
+  'place_of_supply': 'Jharkhand (20)'
+} %}
+{% set service = data.get('service') or {
+  'hsn_code': '996331',
+  'description': 'Restaurant Service'
+} %}
+{% set line_items = data.get('line_items') or [
+  {
+    'particulars': '1 x Chicken Biryani',
+    'gross_value': '309',
+    'discount': '100',
+    'net_value': '209',
+    'cgst_rate': '2.5%',
+    'cgst_amount': '5.225',
+    'sgst_rate': '2.5%',
+    'sgst_amount': '5.225',
+    'total': '219.45',
+    'particulars_class': 'text-left'
+  }
+] %}
+{% set additional_rows = data.get('additional_rows') or [
+  {
+    'particulars': 'Items (total)',
+    'gross_value': '309',
+    'discount': '100',
+    'net_value': '209',
+    'cgst_rate': '',
+    'cgst_amount': '5.225',
+    'sgst_rate': '',
+    'sgst_amount': '5.225',
+    'total': '219.45',
+    'particulars_class': 'text-left bold'
+  },
+  {
+    'particulars': 'Restaurant Packaging Charge',
+    'gross_value': '15.00',
+    'discount': '0.00',
+    'net_value': '15.00',
+    'cgst_rate': '2.50%',
+    'cgst_amount': '0.38',
+    'sgst_rate': '2.50%',
+    'sgst_amount': '0.38',
+    'total': '15.75',
+    'particulars_class': 'text-left'
+  }
+] %}
+{% set total_row = data.get('total_row') or {
+  'particulars': 'Total Value',
+  'gross_value': '',
+  'discount': '',
+  'net_value': '224.00',
+  'cgst_rate': '',
+  'cgst_amount': '5.60',
+  'sgst_rate': '',
+  'sgst_amount': '5.60',
+  'total': '235.20'
+} %}
+{% set footer = data.get('footer') or {
+  'amount_in_words': 'Two Hundred Thirty Five Rupees And Twenty Paisa Only',
+  'settlement_text': 'Amount of INR 235.20 settled digitally against Order ID 7817665191 dated 2026-02-20.',
+  'reverse_charge': 'No'
+} %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ header.get('title', 'Tax Invoice') }}</title>
+
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: #fff;
+    color: #000;
+  }
+
+  .invoice {
+    width: 100%;
+    max-width: 190mm;
+    margin: 0 auto;
+    background: #fff;
+    padding: 5mm 6mm;
+    color: #000;
+  }
+
+  .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .logo {
+    font-size: 36px;
+    font-weight: bold;
+  }
+
+  .center-header {
+    text-align: center;
+    flex: 1;
+  }
+
+  .center-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: bold;
+  }
+
+  .center-header p {
+    margin: 2px 0 0;
+    font-size: 12px;
+  }
+
+  .section {
+    margin-top: 15px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .bold {
+    font-weight: bold;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    table-layout: fixed;
+    font-size: 10px;
+  }
+
+  th, td {
+    border: 1px solid #000;
+    padding: 4px 3px;
+    text-align: center;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  th {
+    font-weight: bold;
+  }
+
+  .text-left {
+    text-align: left;
+  }
+
+  .total-row td {
+    font-weight: bold;
+  }
+
+  .footer {
+    margin-top: 15px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+</style>
+
+</head>
+
+<body>
+
+<div class="invoice">
+
+  <div class="top">
+    <div class="logo">{{ brand.get('name', 'eternal') }}</div>
+
+    <div class="center-header">
+      <h2>{{ header.get('title', 'Tax Invoice') }}</h2>
+      <p><b>{{ header.get('copy_label', 'ORIGINAL FOR RECIPIENT') }}</b></p>
+    </div>
+
+    <div style="width:100px;"></div>
+  </div>
+
+  <div class="section">
+    <div class="bold">{{ seller.get('heading', 'Tax Invoice on behalf of -') }}</div><br>
+
+    <div><b>Legal Entity Name:</b> {{ seller.get('legal_entity_name', '') }}</div>
+    <div><b>Restaurant Name:</b> {{ seller.get('restaurant_name', '') }}</div>
+    <div><b>Restaurant Address:</b> {{ seller.get('restaurant_address', '') }}</div>
+    <div><b>Restaurant GSTIN:</b> {{ seller.get('restaurant_gstin', '') }}</div>
+    <div><b>Restaurant FSSAI:</b> {{ seller.get('restaurant_fssai', '') }}</div>
+    <div><b>Invoice No.:</b> {{ seller.get('invoice_number', '') }}</div>
+    <div><b>Invoice Date:</b> {{ seller.get('invoice_date', '') }}</div>
+  </div>
+
+  <div class="section">
+    <div><b>Customer Name:</b> {{ customer.get('name', '') }}</div>
+    <div><b>Delivery Address:</b> {{ customer.get('delivery_address', '') }}</div>
+    <div><b>State name and Place of Supply:</b> {{ customer.get('place_of_supply', '') }}</div>
+  </div>
+
+  <div class="section">
+    <div><b>HSN Code:</b> {{ service.get('hsn_code', '') }}</div>
+    <div><b>Service Description:</b> {{ service.get('description', '') }}</div>
+  </div>
+
+  <table>
+    <tr>
+      <th>Particulars</th>
+      <th>Gross value</th>
+      <th>Discount</th>
+      <th>Net value</th>
+      <th>CGST (Rate)</th>
+      <th>CGST (INR)</th>
+      <th>SGST (Rate)</th>
+      <th>SGST (INR)</th>
+      <th>Total</th>
+    </tr>
+
+    {% for row in line_items %}
+    <tr class="{{ row.get('row_class', '') }}">
+      <td class="{{ row.get('particulars_class', 'text-left') }}">{{ row.get('particulars', '') }}</td>
+      <td>{{ row.get('gross_value', '') }}</td>
+      <td>{{ row.get('discount', '') }}</td>
+      <td>{{ row.get('net_value', '') }}</td>
+      <td>{{ row.get('cgst_rate', '') }}</td>
+      <td>{{ row.get('cgst_amount', '') }}</td>
+      <td>{{ row.get('sgst_rate', '') }}</td>
+      <td>{{ row.get('sgst_amount', '') }}</td>
+      <td>{{ row.get('total', '') }}</td>
+    </tr>
+    {% endfor %}
+
+    {% for row in additional_rows %}
+    <tr class="{{ row.get('row_class', '') }}">
+      <td class="{{ row.get('particulars_class', 'text-left') }}">{{ row.get('particulars', '') }}</td>
+      <td>{{ row.get('gross_value', '') }}</td>
+      <td>{{ row.get('discount', '') }}</td>
+      <td>{{ row.get('net_value', '') }}</td>
+      <td>{{ row.get('cgst_rate', '') }}</td>
+      <td>{{ row.get('cgst_amount', '') }}</td>
+      <td>{{ row.get('sgst_rate', '') }}</td>
+      <td>{{ row.get('sgst_amount', '') }}</td>
+      <td>{{ row.get('total', '') }}</td>
+    </tr>
+    {% endfor %}
+
+    <tr class="total-row">
+      <td class="text-left">{{ total_row.get('particulars', 'Total Value') }}</td>
+      <td>{{ total_row.get('gross_value', '') }}</td>
+      <td>{{ total_row.get('discount', '') }}</td>
+      <td>{{ total_row.get('net_value', '') }}</td>
+      <td>{{ total_row.get('cgst_rate', '') }}</td>
+      <td>{{ total_row.get('cgst_amount', '') }}</td>
+      <td>{{ total_row.get('sgst_rate', '') }}</td>
+      <td>{{ total_row.get('sgst_amount', '') }}</td>
+      <td>{{ total_row.get('total', '') }}</td>
+    </tr>
+  </table>
+
+  <div class="footer">
+    <div><b>Amount (in words):</b> {{ footer.get('amount_in_words', '') }}</div>
+
+    <div>
+      {{ footer.get('settlement_text', '') }}
+    </div>
+
+    <div><b>Supply attracts reverse charge :</b> {{ footer.get('reverse_charge', '') }}</div>
+  </div>
+
+</div>
+
+</body>
+</html>

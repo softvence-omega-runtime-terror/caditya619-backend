@@ -353,6 +353,8 @@ class OrderResponseSchema(BaseModel):
     payment_status: str = "unpaid"
     vendor_id: Optional[str] = None
     cf_order_id: Optional[str] = None
+    invoice1: Optional[str] = None
+    invoice2: Optional[str] = None
      
     @validator('user_id', pre=True)
     def convert_user_id(cls, v):

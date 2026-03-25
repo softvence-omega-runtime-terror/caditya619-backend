@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Form, HTTPException, Depends, Query
+from fastapi import APIRouter, Form, HTTPException, Depends, Query, BackgroundTasks
 from typing import Optional
 from app.auth import permission_required, vendor_required
 from applications.user.models import User
 
 from applications.customer.models import Order, OrderItem, OrderStatus, DeliveryTypeEnum
 from applications.items.models import Item
+from app.utils.generate_pdf import generate_order_invoice_pdf
 
 router = APIRouter(prefix="/order", tags=["Order Management"])
 
@@ -112,6 +113,8 @@ async def serialize_order(order: Order):
         "tracking_number": order.tracking_number,
         "estimated_delivery": order.estimated_delivery,
         "payment_status": order.payment_status,
+        "invoice1": order.invoice1,
+        "invoice2": order.invoice2,
         "created_at": order.created_at,
         "updated_at": order.updated_at,
         "items": items
@@ -120,14 +123,12 @@ async def serialize_order(order: Order):
 
 @router.post("/manage-order-status", dependencies=[Depends(vendor_required)])
 async def order_status_management(
+    background_tasks: BackgroundTasks,
     order_id: str = Form(...),
     status: str = Form(..., description="New status for the order 'confirmed', 'shipped', 'prepared', 'outForDelivery', 'cancelled', 'refunded'"),
-    vendor: User = Depends(vendor_required)
+    vendor: User = Depends(vendor_required),
 ):
     order = await Order.get_or_none(id=order_id, vendor_id=vendor.id)
-    print("Vendor making the request:", vendor)
-    print("Vendor making the request:", vendor.id)
-    print("Order making the request:", order.vendor_id)
     
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -152,11 +153,25 @@ async def order_status_management(
     order.status = new_status
     await order.save(update_fields=["status"])
 
+    invoice_generation_scheduled = False
+    invoice_statuses = {
+        OrderStatus.CONFIRMED,
+        OrderStatus.PREPARED,
+        OrderStatus.SHIPPED,
+        OrderStatus.OUT_FOR_DELIVERY,
+    }
+    if background_tasks and new_status in invoice_statuses and not (order.invoice1 and order.invoice2):
+        background_tasks.add_task(generate_order_invoice_pdf, order.id)
+        invoice_generation_scheduled = True
+
     return {
         "success": True,
         "message": "Order status updated successfully",
         "order_id": order.id,
-        "status": order.status.value
+        "status": order.status.value,
+        "invoice1": order.invoice1,
+        "invoice2": order.invoice2,
+        "invoice_generation_scheduled": invoice_generation_scheduled,
     }
 
 

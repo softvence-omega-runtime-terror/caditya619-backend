@@ -1,0 +1,302 @@
+{% set data = invoice if invoice is defined else {} %}
+{% set brand = data.get('brand') or {'name': 'eternal'} %}
+{% set header = data.get('header') or {'title': 'Tax Invoice', 'copy_label': 'ORIGINAL FOR RECIPIENT'} %}
+{% set issuer = data.get('issuer') or {
+  'box_title': 'ETERNAL LIMITED (FORMERLY KNOWN AS ZOMATO LIMITED)',
+  'left_lines': [
+    'Address: Lavero Infra Services Private Limited, 08th Floor, Mahavir Tower,',
+    'Ranchi Main Road, Ranchi -834001',
+    'State: Jharkhand',
+    'Email ID: order@zomato.com',
+    'Invoice No: Z26JHOUT01394767'
+  ],
+  'right_lines': [
+    'PAN: AADCD4946L',
+    'CIN: L93030DL2010PLC198141',
+    'GSTIN: 20AADCD4946L1ZO',
+    'Invoice Date: 2026-02-20'
+  ]
+} %}
+{% set customer = data.get('customer') or {
+  'section_title': 'Customer Details',
+  'left_lines': [
+    'Name: Aditya Singh',
+    'Delivery Address: Flat number 4b, prabhu dayal complex, near jeevan jyoti hospital, 4th floor, 834001'
+  ],
+  'right_lines': [
+    'GSTIN: UNREGISTERED',
+    'Place of Supply: Jharkhand(20)'
+  ]
+} %}
+{% set service = data.get('service') or {
+  'section_title': 'Service Details',
+  'left_text': 'HSN Code: 999799',
+  'right_text': 'Supply Description: Other Services N.E.C'
+} %}
+{% set line_items = data.get('line_items') or [
+  {
+    'sr_no': '1',
+    'particulars': 'Platform fee',
+    'taxable_amount': '12.49',
+    'cgst': '1.13',
+    'sgst': '1.13',
+    'total': '14.75'
+  }
+] %}
+{% set total_row = data.get('total_row') or {
+  'label': 'Total',
+  'taxable_amount': '12.49',
+  'cgst': '1.13',
+  'sgst': '1.13',
+  'total': '14.75'
+} %}
+{% set footer = data.get('footer') or {
+  'lines': [
+    'Amount of Rs.14.75 settled through digital mode/payment received against Order id (7817665191) dated (2026-02-20)',
+    'Tax is not payable on reverse charge basis'
+  ]
+} %}
+{% set signature = data.get('signature') or {
+  'company_name': 'ETERNAL LIMITED (FORMERLY KNOWN AS ZOMATO LIMITED)',
+  'image_url': 'https://dummyimage.com/120x40/000/fff&text=Sign',
+  'label': 'Authorized Signatory'
+} %}
+{% set bottom_note = data.get('bottom_note') or {
+  'lines': [
+    'Communication Address: Pioneer Square, Ground Floor, Golf Course Extension, Gurugram, Haryana, 122102',
+    'Please refer to https://www.zomato.com/conditions for current version of full terms and conditions which are incorporated in this invoice by reference.'
+  ]
+} %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ header.get('title', 'Tax Invoice') }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 8mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #fff;
+      color: #000;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 190mm;
+      margin: 0 auto;
+      border: 1px solid #000;
+      padding: 5mm;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      font-size: 32px;
+      font-weight: bold;
+    }
+
+    .title {
+      text-align: center;
+      font-size: 14px;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    h2 {
+      margin: 10px 0;
+      font-size: 18px;
+    }
+
+    .box {
+      border: 1px solid #000;
+      padding: 10px;
+      margin-top: 10px;
+    }
+
+    .flex {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .col {
+      width: 48%;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .section-title {
+      border: 1px solid #000;
+      padding: 5px;
+      margin-top: 15px;
+      font-weight: bold;
+      background: #eee;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      table-layout: fixed;
+      font-size: 10px;
+    }
+
+    table, th, td {
+      border: 1px solid #000;
+    }
+
+    th, td {
+      padding: 4px 3px;
+      text-align: center;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .left {
+      text-align: left;
+    }
+
+    .footer {
+      margin-top: 20px;
+      font-size: 12px;
+    }
+
+    .signature {
+      margin-top: 50px;
+      text-align: right;
+    }
+
+    .signature img {
+      height: 40px;
+    }
+
+    .bottom-note {
+      margin-top: 40px;
+      font-size: 11px;
+      text-align: center;
+      border-top: 1px solid #000;
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="header">
+    <div class="logo">{{ brand.get('name', 'eternal') }}</div>
+    <div></div>
+  </div>
+
+  <div class="title">{{ header.get('copy_label', 'ORIGINAL FOR RECIPIENT') }}</div>
+
+  <h2>{{ header.get('title', 'Tax Invoice') }}</h2>
+
+  <div class="box">
+    <strong>{{ issuer.get('box_title', '') }}</strong>
+  </div>
+
+  <div class="flex">
+    <div class="col">
+      {% for line in issuer.get('left_lines', []) %}
+      {{ line }}<br>
+      {% endfor %}
+    </div>
+    <div class="col">
+      {% for line in issuer.get('right_lines', []) %}
+      {{ line }}<br>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="section-title">{{ customer.get('section_title', 'Customer Details') }}</div>
+  <div class="flex">
+    <div class="col">
+      {% for line in customer.get('left_lines', []) %}
+      {{ line }}<br>
+      {% endfor %}
+    </div>
+    <div class="col">
+      {% for line in customer.get('right_lines', []) %}
+      {{ line }}<br>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="section-title">{{ service.get('section_title', 'Service Details') }}</div>
+  <div class="flex">
+    <div class="col">{{ service.get('left_text', '') }}</div>
+    <div class="col">{{ service.get('right_text', '') }}</div>
+  </div>
+
+  <table>
+    <tr>
+      <th>Sr.No</th>
+      <th>Particulars</th>
+      <th>Taxable Amount</th>
+      <th>CGST</th>
+      <th>SGST</th>
+      <th>Total</th>
+    </tr>
+    {% for row in line_items %}
+    <tr>
+      <td>{{ row.get('sr_no', loop.index) }}</td>
+      <td class="left">{{ row.get('particulars', '') }}</td>
+      <td>{{ row.get('taxable_amount', '') }}</td>
+      <td>{{ row.get('cgst', '') }}</td>
+      <td>{{ row.get('sgst', '') }}</td>
+      <td>{{ row.get('total', '') }}</td>
+    </tr>
+    {% endfor %}
+    <tr>
+      <td colspan="2"><strong>{{ total_row.get('label', 'Total') }}</strong></td>
+      <td><strong>{{ total_row.get('taxable_amount', '') }}</strong></td>
+      <td><strong>{{ total_row.get('cgst', '') }}</strong></td>
+      <td><strong>{{ total_row.get('sgst', '') }}</strong></td>
+      <td><strong>{{ total_row.get('total', '') }}</strong></td>
+    </tr>
+  </table>
+
+  <div class="footer">
+    {% for line in footer.get('lines', []) %}
+    {{ line }}<br>
+    {% endfor %}
+  </div>
+
+  <div class="signature">
+    <div>For {{ signature.get('company_name', '') }}</div>
+    <br><br>
+    {% if signature.get('image_url') %}
+    <img src="{{ signature.get('image_url', '') }}" alt="Signature"><br>
+    {% endif %}
+    {{ signature.get('label', 'Authorized Signatory') }}
+  </div>
+
+  <div class="bottom-note">
+    {% for line in bottom_note.get('lines', []) %}
+    {{ line }}<br>
+    {% endfor %}
+  </div>
+
+</div>
+
+</body>
+</html>
