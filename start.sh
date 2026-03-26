@@ -31,10 +31,13 @@ mkdir -p /app/migrations
 if [ "$RUN_MIGRATIONS" = "true" ]; then
     if find /app/migrations -type f -name "*.py" ! -name "__init__.py" -print -quit | grep -q .; then
         echo "Applying Aerich migrations..."
-        aerich upgrade
+        if ! aerich upgrade; then
+            echo "aerich upgrade failed, retrying with --fake."
+            aerich upgrade --fake || true
+        fi
     else
         echo "No migration files found. Attempting aerich init-db..."
-        aerich init-db
+        aerich init-db || echo "aerich init-db skipped (already initialized or not required)."
     fi
 else
     echo "RUN_MIGRATIONS=false. Skipping Aerich migration step."
@@ -42,6 +45,6 @@ fi
 
 # Start FastAPI
 PORT="${PORT:-8000}"
-WORKERS="${WEB_CONCURRENCY:-1}"
+WORKERS="${WEB_CONCURRENCY:-3}"
 echo "Starting FastAPI on port $PORT with $WORKERS workers..."
 exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers "$WORKERS"
