@@ -57,20 +57,10 @@ jobs:
       EC2_HOST: ${{ vars.EC2_HOST || 'ec2-3-109-75-162.ap-south-1.compute.amazonaws.com' }}
       EC2_PORT: ${{ vars.EC2_PORT || '22' }}
       EC2_USER: ${{ vars.EC2_USER || 'moynul' }}
-      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/home/moynul/caditya' }}
-      IMAGE_NAMESPACE: ${{ vars.IMAGE_NAMESPACE || secrets.DOCKERHUB_USERNAME }}
-      IMAGE_TAG: latest
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/home/moynul/quikle' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Validate deployment configuration
-        run: |
-          test -n "${EC2_HOST}" || (echo "Missing EC2_HOST environment variable" && exit 1)
-          test -n "${EC2_USER}" || (echo "Missing EC2_USER environment variable" && exit 1)
-          test -n "${IMAGE_NAMESPACE}" || (echo "Missing IMAGE_NAMESPACE variable or DOCKERHUB_USERNAME secret" && exit 1)
-          test -n "${{ secrets.EC2_SSH_PRIVATE_KEY }}" || (echo "Missing EC2_SSH_PRIVATE_KEY secret" && exit 1)
-          test -n "${{ secrets.APP_ENV_FILE }}" || (echo "Missing APP_ENV_FILE secret" && exit 1)
 
       - name: Prepare deploy artifacts
         run: |
@@ -95,7 +85,7 @@ jobs:
           username: ${{ env.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script_stop: true
-          envs: DEPLOY_PATH,IMAGE_NAMESPACE,IMAGE_TAG
+          envs: DEPLOY_PATH
           script: |
             set -e
             mkdir -p "${DEPLOY_PATH}"
@@ -104,9 +94,6 @@ jobs:
             if [ -f .env.production ]; then
               mv .env.production .env
             fi
-
-            export IMAGE_NAMESPACE="${IMAGE_NAMESPACE}"
-            export IMAGE_TAG="${IMAGE_TAG}"
 
             docker compose pull
             docker compose up -d --remove-orphans
