@@ -1,78 +1,113 @@
-name: Build, Docker & Deploy
+name: Build And Deploy
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
+
+env:
+  IMAGE_NAME: caditya-backend
 
 jobs:
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
     env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Validate Docker Hub credentials
         run: |
-          if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_TOKEN}" ]; then
-            echo "Docker Hub credentials are missing. Set DOCKERHUB_USERNAME/DOCKERHUB_TOKEN (or DOCKER_USERNAME/DOCKER_PASSWORD)." >&2
-            exit 1
-          fi
+          test -n "${DOCKERHUB_USERNAME}" || (echo "Missing DOCKERHUB_USERNAME secret" && exit 1)
+          test -n "${DOCKERHUB_TOKEN}" || (echo "Missing DOCKERHUB_TOKEN secret" && exit 1)
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: docker.io
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
 
-      - name: Build and Push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push image
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ${{ env.DOCKERHUB_USERNAME }}/caditya-backend:latest
-            ${{ env.DOCKERHUB_USERNAME }}/caditya-backend:${{ github.sha }}
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
-    name: Deploy
+    name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build-and-push
+    environment: production
+    permissions:
+      contents: read
+    env:
+      EC2_HOST: ${{ vars.EC2_HOST || 'ec2-3-109-75-162.ap-south-1.compute.amazonaws.com' }}
+      EC2_PORT: ${{ vars.EC2_PORT || '22' }}
+      EC2_USER: ${{ vars.EC2_USER || 'moynul' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/home/moynul/caditya' }}
+      IMAGE_NAMESPACE: ${{ vars.IMAGE_NAMESPACE || secrets.DOCKERHUB_USERNAME }}
+      IMAGE_TAG: latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Transfer project files
+      - name: Validate deployment configuration
+        run: |
+          test -n "${EC2_HOST}" || (echo "Missing EC2_HOST environment variable" && exit 1)
+          test -n "${EC2_USER}" || (echo "Missing EC2_USER environment variable" && exit 1)
+          test -n "${IMAGE_NAMESPACE}" || (echo "Missing IMAGE_NAMESPACE variable or DOCKERHUB_USERNAME secret" && exit 1)
+          test -n "${{ secrets.EC2_SSH_PRIVATE_KEY }}" || (echo "Missing EC2_SSH_PRIVATE_KEY secret" && exit 1)
+          test -n "${{ secrets.APP_ENV_FILE }}" || (echo "Missing APP_ENV_FILE secret" && exit 1)
+
+      - name: Prepare deploy artifacts
+        run: |
+          printf '%s' "${{ secrets.APP_ENV_FILE }}" > .env.production
+
+      - name: Upload compose and env files
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.VPS_HOST }}
-          port: ${{ secrets.VPS_PORT }}
-          username: ${{ secrets.VPS_USERNAME}}
-          password: ${{ secrets.VPS_PASSWORD }}
-          source: "compose.yml,.env"
-          target: /home/${{ secrets.VPS_USERNAME}}/caditya
+          host: ${{ env.EC2_HOST }}
+          port: ${{ env.EC2_PORT }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          source: "compose.yml,.env.production"
+          target: ${{ env.DEPLOY_PATH }}
+          strip_components: 0
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Deploy application
+        uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.VPS_HOST }}
-          port: ${{ secrets.VPS_PORT }}
-          username: ${{ secrets.VPS_USERNAME}}
-          password: ${{ secrets.VPS_PASSWORD }}
+          host: ${{ env.EC2_HOST }}
+          port: ${{ env.EC2_PORT }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script_stop: true
+          envs: DEPLOY_PATH,IMAGE_NAMESPACE,IMAGE_TAG
           script: |
             set -e
-            cd /home/${{ secrets.VPS_USERNAME}}/caditya
+            mkdir -p "${DEPLOY_PATH}"
+            cd "${DEPLOY_PATH}"
 
-            export IMAGE_NAMESPACE=${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME || 'moynul2k3' }}
-            export IMAGE_TAG=latest
+            if [ -f .env.production ]; then
+              mv .env.production .env
+            fi
+
+            export IMAGE_NAMESPACE="${IMAGE_NAMESPACE}"
+            export IMAGE_TAG="${IMAGE_TAG}"
+
             docker compose pull
-            docker compose down --remove-orphans
-            docker compose up -d 
-            docker system prune -f
+            docker compose up -d --remove-orphans
+            docker image prune -f
