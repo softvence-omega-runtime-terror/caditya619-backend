@@ -10,13 +10,15 @@ class Settings(BaseSettings):
     MEDIA_DIR: str = "media/"
     MEDIA_ROOT: str = "media/"
     ENV: str = "development"
+    SEED_DUMMY_DATA: bool = False
+    AUTO_GENERATE_SCHEMAS: bool = False
 
     DB_HOST: str = "localhost"
-    DB_NAME: str = "db.sqlite3"
+    DB_NAME: str = "quikle"
     DB_USER: str = ""
     DB_PASSWORD: str = ""
-    DB_PORT: int = 5432
-    DB_ENGINE: str = "postgres"
+    DB_PORT: int = 3306
+    DB_ENGINE: str = "mysql"
 
     DATABASE_URL: Optional[str] = None
 
@@ -80,10 +82,10 @@ print(json.dumps(TORTOISE_ORM, indent=4))
 
 async def init_db():
     await Tortoise.init(config=TORTOISE_ORM)
-    if settings.ENV != "production":
-        await Tortoise.generate_schemas()
+    if settings.AUTO_GENERATE_SCHEMAS:
+        await Tortoise.generate_schemas(safe=True)
     else:
-        print("Skipping schema generation in production.")
+        print("Skipping runtime schema generation. Use Aerich migrations or set AUTO_GENERATE_SCHEMAS=true.")
 
 
 async def close_db():

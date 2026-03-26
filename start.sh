@@ -45,6 +45,6 @@ fi
 
 # Start FastAPI
 PORT="${PORT:-8000}"
-WORKERS="${WEB_CONCURRENCY:-3}"
+WORKERS="${WEB_CONCURRENCY:-1}"
 echo "Starting FastAPI on port $PORT with $WORKERS workers..."
 exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers "$WORKERS"
