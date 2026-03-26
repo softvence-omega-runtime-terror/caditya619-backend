@@ -4,6 +4,8 @@ networks:
 
 services:
   api:
+    build:
+      context: .
     image: ${IMAGE_NAMESPACE:-moynul2k3}/caditya-backend:${IMAGE_TAG:-latest}
     container_name: caditya_api
     ports:
