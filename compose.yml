@@ -1,21 +1,16 @@
-networks:
-  caditya_net:
-    driver: bridge
-
 services:
   api:
     build:
       context: .
     image: ${IMAGE_NAMESPACE:-moynul2k3}/caditya-backend:${IMAGE_TAG:-latest}
     container_name: caditya_api
-    ports:
-      - "8000:8000"
+    network_mode: host
     env_file:
       - .env
     environment:
       ENV: ${ENV:-production}
       DB_ENGINE: ${DB_ENGINE:-mysql}
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_HOST: ${DB_HOST:-127.0.0.1}
       DB_PORT: ${DB_PORT:-3306}
       DB_NAME: ${DB_NAME:-quikle}
       DB_USER: ${DB_USER:-moynul}
@@ -23,16 +18,12 @@ services:
       AUTO_GENERATE_SCHEMAS: "false"
       SEED_DUMMY_DATA: "false"
       WEB_CONCURRENCY: 1
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./media:/app/media
     restart: always
     healthcheck:
-      test: [ "CMD-SHELL", "curl -fsS http://localhost:8000/healthz > /dev/null || exit 1" ]
+      test: [ "CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz > /dev/null || exit 1" ]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 45s
-    networks:
-      - caditya_net

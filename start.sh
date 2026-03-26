@@ -31,13 +31,10 @@ mkdir -p /app/migrations
 if [ "$RUN_MIGRATIONS" = "true" ]; then
     if find /app/migrations -type f -name "*.py" ! -name "__init__.py" -print -quit | grep -q .; then
         echo "Applying Aerich migrations..."
-        if ! aerich upgrade; then
-            echo "aerich upgrade failed, retrying with --fake."
-            aerich upgrade --fake || true
-        fi
+        aerich upgrade
     else
         echo "No migration files found. Attempting aerich init-db..."
-        aerich init-db || echo "aerich init-db skipped (already initialized or not required)."
+        aerich init-db
     fi
 else
     echo "RUN_MIGRATIONS=false. Skipping Aerich migration step."
