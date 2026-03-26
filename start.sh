@@ -43,5 +43,5 @@ echo "Aerich migration step completed."
 # Start FastAPI
 echo "Starting FastAPI..."
 PORT="${PORT:-8000}"
-WORKERS="${WEB_CONCURRENCY:-3}"
-exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers "$WORKERS"
+# WORKERS="${WEB_CONCURRENCY:-3}"
+exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
