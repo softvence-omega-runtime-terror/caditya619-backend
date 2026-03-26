@@ -7,17 +7,6 @@ services:
     network_mode: host
     env_file:
       - .env
-    environment:
-      ENV: ${ENV:-production}
-      DB_ENGINE: ${DB_ENGINE:-mysql}
-      DB_HOST: ${DB_HOST:-127.0.0.1}
-      DB_PORT: ${DB_PORT:-3306}
-      DB_NAME: ${DB_NAME:-quikle}
-      DB_USER: ${DB_USER:-moynul}
-      DB_PASSWORD: ${DB_PASSWORD:-moynul}
-      AUTO_GENERATE_SCHEMAS: "false"
-      SEED_DUMMY_DATA: "false"
-      WEB_CONCURRENCY: 1
     volumes:
       - ./media:/app/media
     restart: always
