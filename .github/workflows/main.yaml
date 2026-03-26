@@ -73,7 +73,7 @@ jobs:
           port: ${{ env.EC2_PORT }}
           username: ${{ env.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          source: "compose.yml,.env.production"
+          source: "compose.yml"
           target: ${{ env.DEPLOY_PATH }}
           strip_components: 0
 
