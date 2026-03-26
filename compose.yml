@@ -3,7 +3,7 @@ services:
     image: ${IMAGE_NAMESPACE:-moynul2k3}/caditya-backend:${IMAGE_TAG:-latest}
     container_name: caditya_api
     env_file:
-      - .env
+      - ${ENV_FILE:-.env.backend}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
