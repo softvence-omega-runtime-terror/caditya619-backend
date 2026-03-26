@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
 
     TWOFACTOR_API_KEY: str = "f1972b11-9a1c-11f0-b922-0200cd936042"
+    TWOFACTOR_OTP_TEMPLATE_NAME: str = "OTP"
     SECRET_KEY: Optional[str] = None
+    BACKEND_URL: Optional[str] = None
     BASE_URL: str = "http://localhost:8000"
     RADIS_URL: str = "redis://localhost:6379/0"
     FRONTEND_URL: str = ""
@@ -50,13 +52,16 @@ class Settings(BaseSettings):
     PETPOOJA_VERIFY_CALLBACK_CREDENTIALS: bool = False
 
     def model_post_init(self, __context):
-        if self.DB_ENGINE == "sqlite":
-            self.DATABASE_URL = f"sqlite:///{self.DB_NAME}"
-        else:
-            self.DATABASE_URL = (
-                f"{self.DB_ENGINE}://{self.DB_USER}:{self.DB_PASSWORD}"
-                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-            )
+        if self.BACKEND_URL and self.BASE_URL == "http://localhost:8000":
+            self.BASE_URL = self.BACKEND_URL
+        if not self.DATABASE_URL:
+            if self.DB_ENGINE == "sqlite":
+                self.DATABASE_URL = f"sqlite:///{self.DB_NAME}"
+            else:
+                self.DATABASE_URL = (
+                    f"{self.DB_ENGINE}://{self.DB_USER}:{self.DB_PASSWORD}"
+                    f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+                )
 
     class Config:
         env_file = ".env"
