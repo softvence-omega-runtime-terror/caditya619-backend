@@ -2,6 +2,7 @@ services:
   api:
     image: ${IMAGE_NAMESPACE:-moynul2k3}/caditya-backend:${IMAGE_TAG:-latest}
     container_name: caditya_api
+    network_mode: host
     env_file:
       - ${ENV_FILE:-.env.backend}
     extra_hosts:
