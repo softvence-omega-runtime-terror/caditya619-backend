@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 CLIENT_ID = settings.CASHFREE_CLIENT_PAYOUT_ID
 CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYOUT_SECRET
-PUBLIC_KEY = settings.CASHFREE_PUBLIC_KEY
+CASHFREE_PUBLIC_KEY = settings.CASHFREE_PUBLIC_KEY
 BASE_URL = "https://sandbox.cashfree.com/payout"  # Change to production URL in .env
 
 # Payout configuration
@@ -113,7 +113,7 @@ def generate_signature():
     try:
         timestamp = int(time.time())
         sign_string = f"{CLIENT_ID}.{timestamp}".encode()
-        public_key = serialization.load_pem_public_key(PUBLIC_KEY.encode())
+        public_key = serialization.load_pem_public_key(CASHFREE_PUBLIC_KEY.encode())
         encrypted = public_key.encrypt(
             sign_string,
             padding.OAEP(

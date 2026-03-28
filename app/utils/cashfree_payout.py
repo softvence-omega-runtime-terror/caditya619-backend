@@ -7,14 +7,14 @@ from app.config import settings
 
 CLIENT_ID = settings.CASHFREE_CLIENT_PAYOUT_ID
 CLIENT_SECRET = settings.CASHFREE_CLIENT_PAYOUT_SECRET
-PUBLIC_KEY = settings.CASHFREE_PUBLIC_KEY
+CASHFREE_PUBLIC_KEY = settings.CASHFREE_PUBLIC_KEY
 BASE_URL = settings.CASHFREE_BASE_URL or "https://sandbox.cashfree.com/payout"
 
 def generate_signature_and_headers():
     timestamp = str(int(time.time()))
     sign_string = f"{CLIENT_ID}.{timestamp}".encode()
 
-    public_key = serialization.load_pem_public_key(PUBLIC_KEY.encode())
+    public_key = serialization.load_pem_public_key(CASHFREE_PUBLIC_KEY.encode())
     encrypted = public_key.encrypt(
         sign_string,
         padding.OAEP(

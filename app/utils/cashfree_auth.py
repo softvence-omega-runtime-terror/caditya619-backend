@@ -13,7 +13,7 @@ PUBLIC_KEY_PATH = PROJECT_ROOT / "cashfree_public_key.pem"
 print(f"Using public key at: {PUBLIC_KEY_PATH}")
 
 with open(PUBLIC_KEY_PATH, "rb") as f:
-    PUBLIC_KEY = serialization.load_pem_public_key(f.read(), backend=default_backend())
+    CASHFREE_PUBLIC_KEY = serialization.load_pem_public_key(f.read(), backend=default_backend())
 
 
 # ----------------------------
@@ -24,7 +24,7 @@ def encrypt_otp(otp: str) -> str:
     Encrypt the OTP using Cashfree public key.
     Returns base64 encoded string for API request.
     """
-    encrypted = PUBLIC_KEY.encrypt(
+    encrypted = CASHFREE_PUBLIC_KEY.encrypt(
         otp.encode(),
         asymmetric.padding.OAEP(
             mgf=asymmetric.padding.MGF1(hashes.SHA256()),
