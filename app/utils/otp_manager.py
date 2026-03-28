@@ -45,7 +45,7 @@ async def generate_otp(phone: str, purpose: str) -> str:
     attempts_key = await _check_rate_limit(phone, purpose)
     otp = f"{secrets.randbelow(900000) + 100000}"
 
-    if not settings.DEBUG:
+    if settings.DEBUG:
         await redis.set(otp_key, otp, ex=OTP_EXPIRY_SECONDS)
         await _record_attempt(attempts_key)
         print(f"OTP for {phone}: {otp}")
