@@ -29,7 +29,7 @@ async def lifespan(routerAPI: FastAPI):
     start()
     await sync_permissions()
 
-    if settings.DEBUG:
+    if settings.DEBUG and settings.ENV == "development" and settings.SEED_DUMMY_DATA:
         await create_test_users()
         await create_test_categories()
         await create_test_subcategories()
@@ -56,6 +56,11 @@ register_routes(app)
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="templates/static"), name="static")
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     routes = get_module()

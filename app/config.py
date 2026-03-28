@@ -10,18 +10,20 @@ class Settings(BaseSettings):
     MEDIA_DIR: str = "media/"
     MEDIA_ROOT: str = "media/"
     ENV: str = "development"
+    SEED_DUMMY_DATA: bool = False
+    AUTO_GENERATE_SCHEMAS: bool = False
 
     DB_HOST: str = "localhost"
-    DB_NAME: str = "db.sqlite3"
+    DB_NAME: str = "quikle"
     DB_USER: str = ""
     DB_PASSWORD: str = ""
-    DB_ROOT_PASSWORD: str = ""
-    DB_PORT: int = 5432
-    DB_ENGINE: str = "postgres"
+    DB_PORT: int = 3306
+    DB_ENGINE: str = "mysql"
 
     DATABASE_URL: Optional[str] = None
 
     TWOFACTOR_API_KEY: str = "f1972b11-9a1c-11f0-b922-0200cd936042"
+    TWOFACTOR_OTP_TEMPLATE_NAME: str = "OTP"
     SECRET_KEY: Optional[str] = None
     BASE_URL: str = "http://localhost:8000"
     RADIS_URL: str = "redis://localhost:6379/0"
@@ -50,13 +52,14 @@ class Settings(BaseSettings):
     PETPOOJA_VERIFY_CALLBACK_CREDENTIALS: bool = False
 
     def model_post_init(self, __context):
-        if self.DB_ENGINE == "sqlite":
-            self.DATABASE_URL = f"sqlite:///{self.DB_NAME}"
-        else:
-            self.DATABASE_URL = (
-                f"{self.DB_ENGINE}://{self.DB_USER}:{self.DB_PASSWORD}"
-                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-            )
+        if not self.DATABASE_URL:
+            if self.DB_ENGINE == "sqlite":
+                self.DATABASE_URL = f"sqlite:///{self.DB_NAME}"
+            else:
+                self.DATABASE_URL = (
+                    f"{self.DB_ENGINE}://{self.DB_USER}:{self.DB_PASSWORD}"
+                    f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+                )
 
     class Config:
         env_file = ".env"
@@ -79,10 +82,10 @@ print(json.dumps(TORTOISE_ORM, indent=4))
 
 async def init_db():
     await Tortoise.init(config=TORTOISE_ORM)
-    if settings.ENV != "production":
-        await Tortoise.generate_schemas()
+    if settings.AUTO_GENERATE_SCHEMAS:
+        await Tortoise.generate_schemas(safe=True)
     else:
-        print("Skipping schema generation in production.")
+        print("Skipping runtime schema generation. Use Aerich migrations or set AUTO_GENERATE_SCHEMAS=true.")
 
 
 async def close_db():

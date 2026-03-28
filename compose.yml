@@ -1,25 +1,18 @@
-networks:
-  caditya_net:
-    driver: bridge
-
 services:
   api:
     image: ${IMAGE_NAMESPACE:-moynul2k3}/caditya-backend:${IMAGE_TAG:-latest}
     container_name: caditya_api
-    ports:
-      - "9919:8000"
+    network_mode: host
     env_file:
-      - .env
+      - ${ENV_FILE:-.env.backend}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./media:/app/media
     restart: always
     healthcheck:
-      test: [ "CMD-SHELL", "curl -fsS http://localhost:8000/ > /dev/null || exit 1" ]
+      test: [ "CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz > /dev/null || exit 1" ]
       interval: 15s
       timeout: 5s
       retries: 5
-
-    networks:
-      - caditya_net
+      start_period: 45s
