@@ -1,6 +1,5 @@
 # VSCode settings
 media/
-.env
 .idea
 **/.idea/
 *.iml
@@ -20,8 +19,6 @@ migrations/models/
 
 # Environment filesgit add
 .env/
-.env.local
-.env
 
 # Build and packaging
 *.pyc
@@ -57,3 +54,6 @@ aerich.ini
 aerich/
 .gitignore
 temp_interactive_push.bat
+branch_structure.json
+config.bat
+node_modules
