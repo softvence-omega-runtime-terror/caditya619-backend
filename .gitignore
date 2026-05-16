@@ -57,3 +57,4 @@ aerich.ini
 aerich/
 .gitignore
 temp_interactive_push.bat
+branch_structure.json
